@@ -43,7 +43,7 @@ OpenReliant improves on the original's look and sound. `--original` turns the im
 | `--software` | Draw on the software device, OpenReliant's reference, rather than the GPU |
 | `--16-bit` | 16-bit colour, dithered |
 | `--msaa <1\|2\|4\|8>` | Samples a pixel, for smooth edges; 4 by default |
-| `--filter <original\|trilinear\|crisp>` | How textures are filtered; `crisp` by default (trilinear, sixteen times anisotropic, and magnified with a Catmull-Rom filter) |
+| `--filter <original\|trilinear\|crisp>` | How textures are filtered; `crisp` by default (trilinear, sixteen times anisotropic, and magnified with a Catmull-Rom filter, or the nebulae with a smooth cubic one) |
 | `--no-bloom` | Draw without the bloom around bright things |
 | `--no-dither` | Draw 32-bit colour without dithering |
 | `--no-pixel-lighting` | Light each vertex rather than each pixel, as the original does |

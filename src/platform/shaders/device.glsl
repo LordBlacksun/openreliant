@@ -22,9 +22,10 @@ layout(location = 3) in int layer;
 layout(location = 4) in vec3 view;
 layout(location = 5) in vec3 normal;
 layout(location = 6) in uint lightMask;
-// The shadows its pixels take: 0 none, 1 the world's cascades, 2 the cockpit's map (device.zig's
-// Receives).
-layout(location = 7) in uint receives;
+// What its pixels take besides their lights (gpu.zig's Shading): in the low byte the shadows, 0
+// none, 1 the world's cascades, 2 the cockpit's map (device.zig's Receives); in the next bit, 1 to
+// magnify its texture smoothly (srtexture.zig's Magnify).
+layout(location = 7) in uint shading;
 
 layout(set = 1, binding = 0) uniform Target {
     // The frame's width and height in pixels.
@@ -53,7 +54,7 @@ void main() {
     place = view;
     facing = normal;
     mask = lightMask;
-    shade = receives;
+    shade = shading;
 }
 
 #endif
@@ -153,11 +154,16 @@ float lookUp(int map, vec3 n) {
     return 1.0 - box.depth * (1.0 - sum / float(across * across));
 }
 
+// The shadows the pixel takes, the low byte of its shading.
+uint receives() {
+    return shade & 0xFFu;
+}
+
 // How much of the sun reaches the pixel: the cockpit's in its own map, where there is one; the
 // world's in the first cascade that reaches as deep as it stands, fading to lit toward the last
 // cascade's end.
 float sunlit(vec3 n) {
-    if (shade == 2u) return shadows.cockpit != 0u ? lookUp(cockpitMap, n) : 1.0;
+    if (receives() == 2u) return shadows.cockpit != 0u ? lookUp(cockpitMap, n) : 1.0;
     for (int i = 0; i < cascadeCount; i++) {
         float far = shadows.boxes[i].far;
         if (place.z > far) continue;
@@ -177,7 +183,7 @@ vec3 lights() {
     if (mask == 0xFFFFFFFFu || length < 1e-6) return vec3(0.0);
     vec3 n = facing / length;
     vec3 sum = vec3(0.0);
-    bool shaded = shade != 0u && shadows.enabled != 0u;
+    bool shaded = receives() != 0u && shadows.enabled != 0u;
     float sun = -1.0;
     for (uint i = 0u; i < lighting.count.x; i++) {
         Light light = lighting.lights[i];
@@ -237,10 +243,39 @@ vec4 catmullRom(vec2 at, float layer) {
     return clamp(sum, 0.0, 1.0);
 }
 
-// The texture at the fragment: magnified as the settings say, minified by the sampler.
+// A texture magnified with a cubic B-spline, from four bilinear taps: smooth, neither ringing nor
+// sharpening, for a soft image stretched far. Each tap falls between two texels, so that the
+// bilinear filter weighs them as the spline does.
+vec4 bSpline(vec2 at, float layer) {
+    vec2 size = vec2(textureSize(images, 0).xy);
+    vec2 position = at * size - 0.5;
+    vec2 base = floor(position);
+    vec2 f = position - base;
+    vec2 f2 = f * f;
+    vec2 f3 = f2 * f;
+    vec2 w0 = (1.0 - 3.0 * f + 3.0 * f2 - f3) / 6.0;
+    vec2 w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0;
+    vec2 w2 = (1.0 + 3.0 * f + 3.0 * f2 - 3.0 * f3) / 6.0;
+    vec2 w3 = f3 / 6.0;
+    vec2 g0 = w0 + w1;
+    vec2 g1 = w2 + w3;
+    vec2 t0 = (base - 0.5 + w1 / g0) / size;
+    vec2 t1 = (base + 1.5 + w3 / g1) / size;
+    vec4 sum = vec4(0.0);
+    sum += textureLod(images, vec3(t0.x, t0.y, layer), 0.0) * g0.x * g0.y;
+    sum += textureLod(images, vec3(t1.x, t0.y, layer), 0.0) * g1.x * g0.y;
+    sum += textureLod(images, vec3(t0.x, t1.y, layer), 0.0) * g0.x * g1.y;
+    sum += textureLod(images, vec3(t1.x, t1.y, layer), 0.0) * g1.x * g1.y;
+    return sum;
+}
+
+// The texture at the fragment: magnified as the settings say, smoothly where its shading asks,
+// minified by the sampler.
 vec4 sampled() {
     float layer = float(image);
-    if (frame.settings.y > 0.0 && textureQueryLod(images, uv).y < 0.0) return catmullRom(uv, layer);
+    if (frame.settings.y > 0.0 && textureQueryLod(images, uv).y < 0.0) {
+        return (shade & 0x100u) != 0u ? bSpline(uv, layer) : catmullRom(uv, layer);
+    }
     return texture(images, vec3(uv, layer));
 }
 
