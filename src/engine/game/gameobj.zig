@@ -1432,6 +1432,8 @@ pub const World = struct {
     clock: *const Clock,
     /// The game's difficulty, which scales damage (`collision.byDifficulty`).
     difficulty: collision.Difficulty = .medium,
+    /// How far the launch's hangar's beacons reach.
+    hangar_beacons: objects.HangarBeacons = .to_the_ship,
     view: camera.View,
     shake: *f32,
     /// The runtime's numbers (`libcmt.Rand`), which the guns' step draws a damaged gun's misfire

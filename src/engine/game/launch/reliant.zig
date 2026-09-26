@@ -111,6 +111,10 @@ const hangar_light_mask: u32 = 0x3B;
 const hangar_door = 2;
 const hangar_retainer = 3;
 
+/// How much farther the hangar's two beacons reach, whose own reach falls short of the ship on the
+/// retainer by about a quarter (`objects.HangarBeacons`). Not the game's.
+const beacon_reach: f32 = 2;
+
 /// The hangar's launch points: the first for a gate of odd number, the second, turned half a turn
 /// with the hangar, for an even.
 const hangar_points = [2]i16{ 0, 1 };
@@ -191,7 +195,9 @@ fn tube(reliant: *const create.Slot, gate: i16) ?math.Vector {
 }
 
 /// The hangar the player's ship launches in, as `init` shows it: made in the cutaway slot, passing
-/// through everything, its hull and doors lit by its dim light alone (`hangar_light_mask`), and
+/// through everything, its hull and doors lit by its dim light alone (`hangar_light_mask`), its
+/// beacons reaching the ship and its cockpit as the world's setting has it
+/// (`objects.HangarBeacons`), and
 /// laid over the tube so that the ship stands `in_tube` at one of its launch points
 /// (`hangar_points`): the ship is placed at the point with the hangar at the origin, turned as the
 /// Reliant is, or half a turn more for a gate of even number (`launch.attach`), the hangar moves by
@@ -208,6 +214,7 @@ fn showHangar(ctx: aigeneric.Context, index: u16, gate: i16, in_tube: math.Vecto
     shown.object.flags.no_collisions = true;
     if (shown.model) |*model| {
         for (model.parts[0..@min(lit_parts, model.parts.len)]) |*part| part.object.light_mask = hangar_light_mask;
+        if (world.hangar_beacons == .to_the_ship) model.reachFarther(beacon_reach);
     }
     const even = @mod(gate, 2) == 0;
     const entry = &all.slots[index].orders[0];

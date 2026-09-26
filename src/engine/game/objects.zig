@@ -997,6 +997,15 @@ pub fn lightMask(model_lists_components: bool) u32 {
     return if (model_lists_components) components_light_mask else whole_light_mask;
 }
 
+/// How far the launch's hangar's two beacons reach (`Model.reachFarther`).
+pub const HangarBeacons = enum {
+    /// **Improvement:** twice their own reach, so that their flash lights the ship on the retainer
+    /// and its cockpit, which their own falls short of by about a quarter.
+    to_the_ship,
+    /// Their own reach, as the original has it.
+    own,
+};
+
 /// The light masks of `node_add_part` (`0x00499430`): a model that lists components keeps out the
 /// backdrop's lights `0x08` and `0x10`, and any other `0x01` and `0x02`.
 const components_light_mask: u32 = 0x18;
@@ -1733,6 +1742,15 @@ pub const Model = struct {
             }
         }
         return lights;
+    }
+
+    /// **Improvement:** the light the model's blinking lights cast reaches `reach` times as far as
+    /// their own (`Light.cast`). The launch's hangar's beacons reach the ship in it so
+    /// (`HangarBeacons`).
+    pub fn reachFarther(model: *Model, reach: f32) void {
+        for (model.lights) |*light| if (light.cast) |*cast| {
+            cast.kind.point.range *= reach;
+        };
     }
 
     /// One glow for each attachment of kind `engine_glow` a part carries, at its place in the model
@@ -2786,6 +2804,13 @@ test "a model's lights: their sprites, and the light a blinking one casts" {
     scene.clear();
     try built.draw(gpa, &scene, .world, .{ .frame_start = 150, .blink_offset = 60 });
     try std.testing.expectEqual(1, scene.lights.items.len);
+
+    // Reaching farther, the blinking one's light reaches twice as far; the others cast nothing
+    // still.
+    built.reachFarther(2);
+    try std.testing.expectEqual(100, built.lights[1].cast.?.kind.point.range);
+    try std.testing.expectEqual(null, built.lights[0].cast);
+    try std.testing.expectEqual(null, built.lights[2].cast);
 }
 
 test "an engine glow burns with the throttle" {

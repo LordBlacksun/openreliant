@@ -178,6 +178,14 @@ Reliant whose model lacks a tube's door, leave the ship where it stands.
 the hangar's walls cast none over the ship, which shows lit within them as in the original
 ([Renderer](../port/renderer.md#improvements)).
 
+The hangar's lights: two red beacons on its hull, which blink, 100 of their clock on and 800 off,
+and cast a light of brightness 2 and range 1000, reaching 2000; and four steady red lights, three on
+the hull and one on the retainer, which the loader bakes into the hangar's own colours and which
+light nothing else ([Rendering](rendering.md#static-lights)). The beacons stand about 2550 from the
+ship on the retainer, so their light falls short of it. **Improvement:** OpenReliant has the
+beacons reach twice as far, so that their flash lights the ship and its cockpit; `--original` keeps
+their own reach.
+
 Not ported:
 
 - The other styles ([#304](https://github.com/vdmkenny/openreliant/issues/304)). A ship that
