@@ -70,7 +70,11 @@ the radio has its line (`0x00456E50`).
 
 Each frame, `mission_frame`'s pass over the objects places a ship that rides its node (`0x00492C14`),
 where its current order is Launch and its carrier is not exploding: it stands on the node where its
-launch put it, turned as it was there.
+launch put it, turned as it was there. The pass takes the objects in slot order, so a ship riding a
+node that the pass frames after it stands where the node was the frame before: the player's ship
+trails the hangar's retainer as it lowers the ship. **Improvement:** OpenReliant places each riding
+ship on its node again once every object is framed, so that it keeps with the retainer;
+`--original` leaves it a frame behind.
 
 The order's state (`LaunchState`): the style at `+0x00`, the tick after which the next step runs at
 `+0x04`, the step at `+0x08`, where the ship stands in the node's frame at `+0x0C` and how it is

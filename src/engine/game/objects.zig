@@ -2297,14 +2297,26 @@ pub fn pastTick(clock: *const Clock, smooth: bool) f32 {
 }
 
 /// How far along a frame is drawn: `fraction` of the way through the simulation's step
-/// (`stepFraction`), and `ahead` of a tick past the last tick (`pastTick`).
+/// (`stepFraction`), and `ahead` of a tick past the last tick (`pastTick`); and when a ship riding
+/// a node is placed on it (`Riders`).
 pub const Timing = struct {
     fraction: f32 = 0,
     ahead: f32 = 0,
+    riders: Riders = .together,
 
-    pub fn of(clock: *const Clock, smooth: bool) Timing {
-        return .{ .fraction = stepFraction(clock, smooth), .ahead = pastTick(clock, smooth) };
+    pub fn of(clock: *const Clock, smooth: bool, riders: Riders) Timing {
+        return .{ .fraction = stepFraction(clock, smooth), .ahead = pastTick(clock, smooth), .riders = riders };
     }
+};
+
+/// When the frame places a ship riding a node on it (`main.frameObjects`, `launch.hold`).
+pub const Riders = enum {
+    /// **Improvement:** once more after every object is framed, so that it keeps with a node
+    /// framed after it, as the player's ship keeps with the hangar's retainer that lowers it.
+    together,
+    /// As the pass over the objects reaches it, as the original does, which leaves it a frame
+    /// behind a node framed after it.
+    in_turn,
 };
 
 /// Where `node_frame_update` draws a node that moved rather than posed, `fraction` of the way from

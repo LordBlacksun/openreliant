@@ -305,20 +305,21 @@ pub fn dropping(all: *const create.Objects, index: u16) bool {
 /// `mission_frame`'s placing of a ship riding its node (`0x00492C14`), once a frame before the
 /// ship's frame is drawn (`main.frameObjects`): where the current order of the ship in slot
 /// `index` is Launch, its carrier is not exploding and the ship rides its node, it stands on the
-/// node where its launch put it, turned as it was there.
-pub fn hold(all: *create.Objects, index: u16) void {
+/// node where its launch put it, turned as it was there. Whether it stood the ship there.
+pub fn hold(all: *create.Objects, index: u16) bool {
     const slot = &all.slots[index];
-    const entry = slot.current() orelse return;
-    if (entry.order != .launch) return;
-    const carrier = entry.target.slotIn(all) orelse return;
-    if (all.slots[carrier].object.flags.exploding) return;
+    const entry = slot.current() orelse return false;
+    if (entry.order != .launch) return false;
+    const carrier = entry.target.slotIn(all) orelse return false;
+    if (all.slots[carrier].object.flags.exploding) return false;
     const state = &slot.state.launch;
-    if (!state.attached) return;
-    const node = (slot.riding orelse return).place(all) orelse return;
+    if (!state.attached) return false;
+    const node = (slot.riding orelse return false).place(all) orelse return false;
     const riding: math.Place = .{ .position = gameobj.vector(state.position), .orientation = state.orientation };
     const at = riding.within(node);
     objects.setPosition(&slot.object, &slot.drawn, at.position);
     objects.setOrientation(&slot.object, &slot.drawn, at.orientation);
+    return true;
 }
 
 // --- Launch points ------------------------------------------------------------------------------
@@ -548,7 +549,7 @@ test "a torpedo launches from its tube, riding it until it boosts away" {
 
     // It rides its node as the carrier moves.
     objects.setPosition(&mission.slot(carrier).object, &mission.slot(carrier).drawn, .{ 1000, 50, 0 });
-    hold(mission.objects, torpedo_slot);
+    try std.testing.expect(hold(mission.objects, torpedo_slot));
     try std.testing.expectEqual(math.Vector{ 1100, 50, 20 }, slot.drawn.position);
 
     // It waits until the launch starts, then a moment of up to two seconds.

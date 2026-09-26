@@ -109,7 +109,7 @@ const Doc = struct {
 
 /// Every option's help, which the compiler holds to having one for each.
 const docs: std.enums.EnumArray(Arg, Doc) = .init(.{
-    .@"--original" = .{ .section = .original, .text = "the original's look and sound: 16-bit colour, one sample a pixel, bilinear filtering, lighting each vertex, light worked out on encoded colours, no shadows, motion that moves on with the game's ticks, lights from the latest shots only, muzzle flashes that light nothing and none from the turrets, the force feedback's own effects only, a blow shaking the camera only while the controller rumbles, an explosion's debris lit by every light, its fireballs, rings, particles and burning bits as few, plain and brief as the original's, the Uber Explode as coarse, unlit and tied to the frame rate as the original's, a damaged ship's smoke as even as the original's, the shields' bubbles as coarse as the original's, the sun and its lens flares from their small textures and the sun's glow going out at once behind what hides it, the levels of detail changing as near as the original's, as little drawn a frame as the original allows, the marker for a target out of sight placed as the original misplaces it, a missile's sound left where it was launched, and the sound mixed plainly in stereo" },
+    .@"--original" = .{ .section = .original, .text = "the original's look and sound: 16-bit colour, one sample a pixel, bilinear filtering, lighting each vertex, light worked out on encoded colours, no shadows, motion that moves on with the game's ticks, a launching ship a frame behind the retainer that lowers it, lights from the latest shots only, muzzle flashes that light nothing and none from the turrets, the force feedback's own effects only, a blow shaking the camera only while the controller rumbles, an explosion's debris lit by every light, its fireballs, rings, particles and burning bits as few, plain and brief as the original's, the Uber Explode as coarse, unlit and tied to the frame rate as the original's, a damaged ship's smoke as even as the original's, the shields' bubbles as coarse as the original's, the sun and its lens flares from their small textures and the sun's glow going out at once behind what hides it, the levels of detail changing as near as the original's, as little drawn a frame as the original allows, the marker for a target out of sight placed as the original misplaces it, a missile's sound left where it was launched, and the sound mixed plainly in stereo" },
     .@"--mission" = .{ .section = .mission, .value = "<number>", .text = "the mission to play, by the number the game names its file by, mission<number>.dte, from the game's missions folder or resource.hog; 0 by default, OpenReliant's own sandbox, which openreliant carries where the game has no mission 0" },
     .@"--ship" = .{ .section = .mission, .value = "<type>", .text = "the ship type to fly, by its number in shipstats.bin, in place of the loadout screen's choice, with its default missiles; the mission's own by default" },
     .@"--view" = .{ .section = .mission, .value = "<0|1|2>", .text = "the view it starts in, as the game's settings keep it: 0 the cockpit; 1 the chase view; 2 no cockpit. The settings' own by default, which the pause menu's video screen changes" },
@@ -230,6 +230,8 @@ const Options = struct {
     /// Draw what moves between the game's ticks as well as between its steps
     /// (`Clock.stepFraction`).
     smooth_motion: bool = true,
+    /// When a ship riding a node, as a launching ship rides the hangar's retainer, is placed on it.
+    riders: game.objects.Riders = .together,
     /// Which shots cast a light: every one, or the latest two of each side as the original does.
     shot_lights: game.guns.ShotLights = .every_shot,
     /// Whether a muzzle's flash lights what stands round it, and whether the turrets' guns flash.
@@ -309,6 +311,7 @@ const Options = struct {
             .@"--original" => {
                 options.settings = .original;
                 options.smooth_motion = false;
+                options.riders = .in_turn;
                 options.shot_lights = .latest_two;
                 options.flashes = .original;
                 options.forces = .original;
@@ -844,7 +847,7 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
             // the player's controls, and then, before anything is drawn, has every object's frames
             // drawn between its last two places, as far into the step as the clock is; the camera
             // follows the player's.
-            const over = game.main.missionFrame(orders, .of(&clock, options.smooth_motion), play.loaded);
+            const over = game.main.missionFrame(orders, .of(&clock, options.smooth_motion, options.riders), play.loaded);
             // The mission over, once the camera has watched the player's end or the pilot's pickup,
             // or once its script ends it, it starts again where the game would go to its
             // debriefing.
@@ -1226,6 +1229,8 @@ test Options {
     try std.testing.expect(!retro.settings.vsync);
     try std.testing.expectEqual(0, retro.fps.?);
     try std.testing.expect(!retro.smooth_motion);
+    try std.testing.expectEqual(.together, plain.riders);
+    try std.testing.expectEqual(.in_turn, retro.riders);
     try std.testing.expectEqual(.latest_two, retro.shot_lights);
     try std.testing.expectEqual(game.guns.flash.Settings.original, retro.flashes);
     try std.testing.expectEqual(game.guns.flash.Settings{}, plain.flashes);
