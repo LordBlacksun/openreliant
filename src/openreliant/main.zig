@@ -109,7 +109,7 @@ const Doc = struct {
 
 /// Every option's help, which the compiler holds to having one for each.
 const docs: std.enums.EnumArray(Arg, Doc) = .init(.{
-    .@"--original" = .{ .section = .original, .text = "the original's look and sound: 16-bit colour, one sample a pixel, bilinear filtering, lighting each vertex, light worked out on encoded colours, no shadows, motion that moves on with the game's ticks, a launching ship a frame behind the retainer that lowers it, lights from the latest shots only, muzzle flashes that light nothing and none from the turrets, the force feedback's own effects only, a blow shaking the camera only while the controller rumbles, an explosion's debris lit by every light, its fireballs, rings, particles and burning bits as few, plain and brief as the original's, the Uber Explode as coarse, unlit and tied to the frame rate as the original's, a damaged ship's smoke as even as the original's, the shields' bubbles as coarse as the original's, the hangar's beacons falling short of the launching ship, the sun and its lens flares from their small textures and the sun's glow going out at once behind what hides it, the levels of detail changing as near as the original's, as little drawn a frame as the original allows, the marker for a target out of sight placed as the original misplaces it, a missile's sound left where it was launched, and the sound mixed plainly in stereo" },
+    .@"--original" = .{ .section = .original, .text = "the original's look and sound: 16-bit colour, one sample a pixel, bilinear filtering, lighting each vertex, light worked out on encoded colours, no shadows, motion that moves on with the game's ticks, a launching ship a frame behind the retainer that lowers it, lights from the latest shots only, muzzle flashes that light nothing and none from the turrets, the force feedback's own effects only, a blow shaking the camera only while the controller rumbles, an explosion's debris lit by every light, its fireballs, rings, particles and burning bits as few, plain and brief as the original's, the Uber Explode as coarse, unlit and tied to the frame rate as the original's, a damaged ship's smoke as even as the original's, the shields' bubbles as coarse as the original's, the tractor beams as thin as the original's, the hangar's beacons falling short of the launching ship, the sun and its lens flares from their small textures and the sun's glow going out at once behind what hides it, the levels of detail changing as near as the original's, as little drawn a frame as the original allows, the marker for a target out of sight placed as the original misplaces it, a missile's sound left where it was launched, and the sound mixed plainly in stereo" },
     .@"--mission" = .{ .section = .mission, .value = "<number>", .text = "the mission to play, by the number the game names its file by, mission<number>.dte, from the game's missions folder or resource.hog; 0 by default, OpenReliant's own sandbox, which openreliant carries where the game has no mission 0" },
     .@"--ship" = .{ .section = .mission, .value = "<type>", .text = "the ship type to fly, by its number in shipstats.bin, in place of the loadout screen's choice, with its default missiles; the mission's own by default" },
     .@"--view" = .{ .section = .mission, .value = "<0|1|2>", .text = "the view it starts in, as the game's settings keep it: 0 the cockpit; 1 the chase view; 2 no cockpit. The settings' own by default, which the pause menu's video screen changes" },
@@ -256,6 +256,8 @@ const Options = struct {
     shields: game.shield.Style = .smooth,
     /// How far the launch's hangar's beacons reach.
     hangar_beacons: game.objects.HangarBeacons = .to_the_ship,
+    /// How the tractors' and the Rippers' beams are drawn.
+    beam_glow: game.tractor.Glow = .halo,
     /// How the sun and the lens flares are drawn.
     sun: game.backdrop.Sun = .smooth,
     /// How far the finer levels of detail reach.
@@ -326,6 +328,7 @@ const Options = struct {
                 options.smoke = .alike;
                 options.shields = .original;
                 options.hangar_beacons = .own;
+                options.beam_glow = .none;
                 options.sun = .original;
                 options.detail_reach = .original;
                 options.draw_budget = .original;
@@ -692,8 +695,10 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
     defer rays.deinit();
     var tractors: game.tractor.Tractors = try .init(gpa, &textures);
     defer tractors.deinit();
+    tractors.glow = options.beam_glow;
     var rippers: game.airipper.Rippers = try .init(gpa, &textures);
     defer rippers.deinit();
+    rippers.glow = options.beam_glow;
     var flash: game.main.flash.Flash = .{};
     // The countermeasures' model, read once for the whole run, as `decoys_init` reads it.
     var effects_models: game.create.library.MountCache = .{ .gpa = arena, .resources = &resources, .textures = &textures };
@@ -1256,6 +1261,8 @@ test Options {
     try std.testing.expectEqual(.original, retro.shields);
     try std.testing.expectEqual(.to_the_ship, plain.hangar_beacons);
     try std.testing.expectEqual(.own, retro.hangar_beacons);
+    try std.testing.expectEqual(.halo, plain.beam_glow);
+    try std.testing.expectEqual(.none, retro.beam_glow);
     try std.testing.expectEqual(.far, plain.detail_reach);
     try std.testing.expectEqual(.original, retro.detail_reach);
     try std.testing.expectEqual(.roomy, plain.draw_budget);

@@ -53,6 +53,8 @@ pub const capacity = 150;
 pub const Rippers = struct {
     gpa: Allocator,
     image: *srtexture.Image,
+    /// How the beams are drawn.
+    glow: tractor.Glow = .halo,
     cargo: [capacity]?Carried = @splat(null),
     next_cargo: usize = 0,
     grips: [capacity]?*Grip = @splat(null),
@@ -92,7 +94,7 @@ pub const Rippers = struct {
             const part = model.partNamed(name) orelse continue;
             if (part.model != model) continue;
             const point = firstPoint(part) orelse continue;
-            beam.* = tractor.Beam.create(rippers.gpa, rippers.image, ripper, part.index, point) catch null;
+            beam.* = tractor.Beam.create(rippers.gpa, rippers.image, rippers.glow, ripper, part.index, point) catch null;
         }
         return index;
     }
