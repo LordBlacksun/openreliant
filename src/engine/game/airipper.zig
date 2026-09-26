@@ -604,6 +604,24 @@ fn over(since: i32, now: i32, ticks: i32) bool {
     return since + ticks < now;
 }
 
+/// Where the Ripper's beams have drawn the object it grabs by tick `now`, in `step`: halfway from
+/// where it stood to `lifted_to` off the Ripper as they lift it, and the rest of the way as they
+/// draw it in (`GrabStep.lifting`, `GrabStep.drawing`).
+fn liftedAt(state: *const GrabState, step: GrabStep, now: i32) Vector {
+    const t = through(state.since, now, step.ticks());
+    const share = @min((if (step == .drawing) t + 1 else t) * 0.5, 1);
+    return math.lerp(@as(Vector, state.from), @as(Vector, state.to), share);
+}
+
+/// Where the Ripper's beams have carried the pod by tick `now` as they fit it onto the component,
+/// easing each way from where it stood (`AttachStep.fitting`).
+fn fittedAt(state: *const AttachState, now: i32) Vector {
+    const share = through(state.since, now, AttachStep.fitting.ticks());
+    var at: Vector = undefined;
+    inline for (0..3) |axis| at[axis] = shield.ease(state.from[axis], state.port[axis], share);
+    return at;
+}
+
 /// `angles` of each, `share` of the way from `a` to `b`, slow at each end (`cosine_ease`).
 fn easeAngles(a: [3]f32, b: [3]f32, share: f32) Vector {
     var out: Vector = undefined;
@@ -681,6 +699,9 @@ pub fn grabExit(ctx: Context, index: u16) void {
 /// is disabled and can be harmed again, and the Ripper, which flies astern from now on
 /// (`motion_backward`), carries it (`Rippers.hold`), and has its RipperGrabbedObject
 /// (`events.ripperGrabbed`). Should the object go first, the Ripper gives up.
+///
+/// **Improvement:** the object is drawn on between the ticks as it is drawn in
+/// (`create.Slot.glide`); the game draws it where each tick places it.
 pub fn grab(ctx: Context, index: u16) void {
     const world = ctx.world;
     const all = world.objects;
@@ -734,8 +755,9 @@ pub fn grab(ctx: Context, index: u16) void {
             sound3d.playIn(world, null, null, held_at, .tractor, 1, .not_reserved);
         },
         .lifting => {
-            const share = @min(through(state.since, now, GrabStep.lifting.ticks()) * 0.5, 1);
-            objects.setPosition(&held.object, &held.drawn, math.lerp(@as(Vector, state.from), @as(Vector, state.to), share));
+            const at = liftedAt(state, .lifting, now);
+            objects.setPosition(&held.object, &held.drawn, at);
+            held.glide = liftedAt(state, .lifting, now + 1) - at;
             if (grip) |beams| beams.show(1);
             if (!over(state.since, now, GrabStep.lifting.ticks())) return;
             next(state, now);
@@ -753,11 +775,9 @@ pub fn grab(ctx: Context, index: u16) void {
             if (over(state.since, now, GrabStep.turning.ticks())) next(state, now);
         },
         .drawing => {
-            const share = @min((through(state.since, now, GrabStep.drawing.ticks()) + 1) * 0.5, 1);
-            setPlace(held, .{
-                .position = math.lerp(@as(Vector, state.from), @as(Vector, state.to), share),
-                .orientation = orientationOf(state.own_angles),
-            });
+            const at = liftedAt(state, .drawing, now);
+            setPlace(held, .{ .position = at, .orientation = orientationOf(state.own_angles) });
+            held.glide = liftedAt(state, .drawing, now + 1) - at;
             if (grip) |beams| beams.show(1);
             if (!over(state.since, now, GrabStep.drawing.ticks())) return;
             next(state, now);
@@ -1013,6 +1033,9 @@ fn fitTurn(ship: gameobj.Type) math.Axis {
 /// **Fix:** the game goes on as the Ripper carries nothing, and stops as it looks for what it
 /// carries; OpenReliant gives up.
 ///
+/// **Improvement:** the pod is drawn on between the ticks as it is carried onto the component
+/// (`create.Slot.glide`); the game draws it where each tick places it.
+///
 /// **Unknown:** what keeps a Mammoth's cargo slots hidden until then; OpenReliant shows them from
 /// the start ([#324](https://github.com/vdmkenny/openreliant/issues/324)).
 pub fn attach(ctx: Context, index: u16) void {
@@ -1085,9 +1108,9 @@ pub fn attach(ctx: Context, index: u16) void {
         .fitting => {
             const share = through(state.since, now, AttachStep.fitting.ticks());
             if (grip) |beams| beams.show(1);
-            var at: Vector = undefined;
-            inline for (0..3) |axis| at[axis] = shield.ease(state.from[axis], state.port[axis], share);
+            const at = fittedAt(state, now);
             objects.setPosition(&pod.object, &pod.drawn, at);
+            pod.glide = fittedAt(state, now + 1) - at;
             state.beside = port.place.point(.{ 0, standing_by, 0 });
             state.port = port.place.position;
             state.fitted_angles = math.angles(math.turned(port.place.orientation, fitTurn(all.slots[port.ship].object.type), -std.math.pi / 2.0));
@@ -1282,6 +1305,8 @@ test "a Ripper grabs a pod ahead of it, and stows it aboard" {
     t.run(75 + 150);
     try std.testing.expectEqual(GrabStep.lifting, ripper.state.ripper_grab.step);
     try std.testing.expectApproxEqAbs(1000 - 700 * 0.25, pod.drawn.position[2], 5);
+    // It is drawn on between the ticks, a tick's worth of the lift.
+    try std.testing.expectApproxEqAbs(-700 * 0.5 / @as(f32, @floatFromInt(GrabStep.lifting.ticks())), pod.glide[2], 1e-3);
     t.run(2000);
     // Aboard: the Ripper carries it, its own pod shows in its place, and it flies astern.
     try std.testing.expectEqual(null, t.doing());
@@ -1363,7 +1388,10 @@ test "a Ripper told to drop its pod onto a ship's component fits it there" {
     try std.testing.expectEqual(AttachStep.fitting, state.step);
     try std.testing.expect(!pod.object.flags.disabled);
     try std.testing.expect(!pod.model.?.parts[0].hidden);
-    t.run(1010);
+    // Carried onto the component, it is drawn on toward it between the ticks.
+    t.run(500);
+    try std.testing.expect(math.dot(pod.glide, port - pod.drawn.position) > 0);
+    t.run(510);
     try std.testing.expectEqual(AttachStep.facing_away, state.step);
     try std.testing.expectApproxEqAbs(0, math.distance(pod.drawn.position, port), 1);
     // A quarter turn back about the component's Z, a ship not being a Mammoth.
