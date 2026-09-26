@@ -14,6 +14,7 @@ const Allocator = std.mem.Allocator;
 
 const input = @import("../input.zig");
 const libcmt = @import("../libcmt.zig");
+const mss = @import("../mss.zig");
 const shp = @import("../../formats/shp.zig");
 const math = @import("../surrender/math.zig");
 const srapi = @import("../surrender/surrenderlib/srapi.zig");
@@ -100,6 +101,15 @@ pub const Showing = enum(u8) {
     /// destroyed, with neither the camera's watch nor the pilot counted killed on the way.
     ejection = 4,
     _,
+
+    /// **Improvement:** what surrounds the camera as the scene shows it, for the reverb: a
+    /// hangar while a launch's cutaway shows the bay from within, and space otherwise.
+    pub fn surroundings(showing: Showing) mss.Surroundings {
+        return switch (showing) {
+            .launch => .hangar,
+            .everything, ._unknown_3, .ejection, _ => .space,
+        };
+    }
 };
 
 /// What the mission's scene shows, as the player's state has it: `Showing`, and the ship the
@@ -472,6 +482,7 @@ pub fn controlsFrame(controls: Controls) void {
     slot.object.flags.hidden = view.inside(all.player);
     if (world.hearing) |hearing| {
         hearing.sound.timerTick(clock.game_ticks);
+        hearing.sound.surround(world.player.showing.surroundings());
         if (hearing.sound.stdsmp) |bank| hearing.sound.frame(bank, hearing.scene(world));
     }
     devices.joystick.rumble(controls.forces.motors(clock.frame_start));
@@ -895,6 +906,11 @@ test "the objects are framed and drawn, save those left out" {
     try std.testing.expectEqual(2, scene.layers.get(.world).items.len);
 }
 
+test "the camera is in a hangar while a launch shows the bay from within" {
+    try std.testing.expectEqual(.hangar, Showing.launch.surroundings());
+    for ([_]Showing{ .everything, ._unknown_3, .ejection }) |showing| try std.testing.expectEqual(.space, showing.surroundings());
+}
+
 test "a launching ship keeps with the node it rides, though that is framed after it" {
     const gpa = std.testing.allocator;
     var mission: gameobj.testing.Mission = undefined;
@@ -1282,7 +1298,6 @@ const armor_warning_interval = 500;
 const armor_warning_share: f32 = 0.5;
 
 test armorWarning {
-    const mss = @import("../mss.zig");
     var mixer: mss.Mixer = .init(22050);
     const driver = mixer.driver();
     var sound: hog_snd.Sound = undefined;

@@ -367,6 +367,8 @@ pub const Sound = struct {
     player_hit_at: i32 = 0,
     /// Where a missile's sound is heard from.
     missile_sound: sound3d.MissileSound = .follows,
+    /// What surrounds the camera, which the reverb plays (`surround`).
+    surroundings: mss.Surroundings = .space,
 
     /// `sound_init` (`0x00481440`), as far as OpenReliant goes: up to 16 voices for the banks, each
     /// a sample of `driver`, and the timer that steps the fades. `driver` is null where the
@@ -374,6 +376,8 @@ pub const Sound = struct {
     pub fn init(sound: *Sound, driver: ?mss.Driver, voice_count: u8, files: ?Files) void {
         sound.* = .{ .files = files };
         const opened = driver orelse return;
+        // The driver may have played an earlier mission, which could leave it in a hangar.
+        opened.setSurroundings(sound.surroundings);
         for (sound.voices[0..@min(voice_count, max_voices)]) |*voice| {
             voice.* = std.mem.zeroes(Voice);
             voice.sample = opened.allocateSample() orelse break;
@@ -456,6 +460,22 @@ pub const Sound = struct {
         voice.rate = rate;
         voice.volume = volume;
         driver.startSample(voice.sample);
+    }
+
+    /// Not the game's: the sample on voice `v` rings in what surrounds the camera, as the 3D
+    /// sounds do (`mss.Room.scene`): for a sound of the scene that the game plays as a sample.
+    pub fn inScene(sound: *Sound, v: u8) void {
+        const driver = sound.driver orelse return;
+        if (v < sound.voice_count) driver.setSampleRoom(sound.voices[v].sample, .scene);
+    }
+
+    /// Not the game's: what surrounds the camera, whose reverb the 3D sounds and the samples of the
+    /// scene ring in, told to the driver as it changes.
+    pub fn surround(sound: *Sound, surroundings: mss.Surroundings) void {
+        if (surroundings == sound.surroundings) return;
+        sound.surroundings = surroundings;
+        const driver = sound.driver orelse return;
+        driver.setSurroundings(surroundings);
     }
 
     /// Whether `bank` is the cockpit's own, `betty.fat`.
@@ -1088,6 +1108,17 @@ test "Sound.reserved" {
     try std.testing.expect(!sound.reserved(4));
     sound.burner_voice = null;
     try std.testing.expect(!sound.reserved(5));
+}
+
+test "the sound follows what surrounds the camera" {
+    var mixer: mss.Mixer = .init(22050);
+    var sound: Sound = undefined;
+    sound.init(mixer.driver(), 2, null);
+    try std.testing.expectEqual(.space, sound.surroundings);
+    sound.surround(.hangar);
+    try std.testing.expectEqual(.hangar, sound.surroundings);
+    sound.surround(.space);
+    try std.testing.expectEqual(.space, sound.surroundings);
 }
 
 test "Sound.playMusic queues a piece until the music has stopped" {

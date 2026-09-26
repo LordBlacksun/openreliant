@@ -42,6 +42,18 @@ pub const Room = enum {
     none,
     /// The cockpit's cabin, for the ship's own voice.
     cockpit,
+    /// What surrounds the camera, as the 3D sounds are (`Surroundings`): for a sound of the scene
+    /// that plays as a sample, as a launch's hangar doors do.
+    scene,
+};
+
+/// Not Miles's: what surrounds the camera, which the 3D sounds, and the samples of the scene
+/// (`Room.scene`), ring in.
+pub const Surroundings = enum {
+    /// Space, as the game has it: the generic room it asks EAX for.
+    space,
+    /// A carrier's hangar, as a launch shows it from within.
+    hangar,
 };
 
 /// What keeps the platform's mixing thread out while the game changes the driver.
@@ -123,6 +135,7 @@ pub const Driver = struct {
         initSample: *const fn (*anyopaque, Sample) void,
         setSampleFile: *const fn (*anyopaque, Sample, []const u8) bool,
         setSampleRoom: *const fn (*anyopaque, Sample, Room) void,
+        setSurroundings: *const fn (*anyopaque, Surroundings) void,
         setSampleVolume: *const fn (*anyopaque, Sample, i32) void,
         sampleVolume: *const fn (*anyopaque, Sample) i32,
         setSamplePan: *const fn (*anyopaque, Sample, i32) void,
@@ -228,6 +241,9 @@ pub const Driver = struct {
     }
     pub fn setSampleRoom(driver: Driver, handle: Sample, room: Room) void {
         driver.vtable.setSampleRoom(driver.context, handle, room);
+    }
+    pub fn setSurroundings(driver: Driver, surroundings: Surroundings) void {
+        driver.vtable.setSurroundings(driver.context, surroundings);
     }
     pub fn setSampleVolume(driver: Driver, handle: Sample, volume: i32) void {
         driver.vtable.setSampleVolume(driver.context, handle, volume);
@@ -447,6 +463,12 @@ pub const Mixer = struct {
         _ = mixer;
         _ = handle;
         _ = room;
+    }
+
+    /// Not Miles's: what surrounds the camera. The software mixer has no reverbs.
+    pub fn setSurroundings(mixer: *Mixer, surroundings: Surroundings) void {
+        _ = mixer;
+        _ = surroundings;
     }
 
     pub fn setSampleVolume(mixer: *Mixer, handle: Sample, volume: i32) void {
