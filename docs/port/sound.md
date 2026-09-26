@@ -23,7 +23,7 @@ What Miles made of a volume or a pan, and how its providers placed a sound, is n
 
 The game sets EAX's room to the generic one, with an effect volume of 0, and each 3D sample's effects level to 0, so the original's reverb is silent. It opens no listener, so the listener stands still, and it places every sound at a point.
 
-Three calls are not Miles's: the listener's velocity, which the 3D update sets to the player's ship's each frame; a 3D sample's radius, which a sound following an object takes from its model's radius; and a sample's room, the cockpit for a sound of `betty.fat`, the cockpit's warnings, and none for any other. They serve OpenAL's improvements; the software mixer leaves them out.
+Four calls are not Miles's: the listener's velocity, which the 3D update sets to the player's ship's each frame; a 3D sample's radius, which a sound following an object takes from its model's radius; a sample's room, the cockpit for a sound of `betty.fat`, the cockpit's warnings, the scene for the hangar's clamps and doors as the player's ship launches, and none for any other; and what surrounds the camera, a hangar while a launch's cutaway shows the bay from within and space otherwise, which the game sets each frame from what the scene shows. They serve OpenAL's improvements; the software mixer leaves them out.
 
 ## The software mixer
 
@@ -50,7 +50,7 @@ Each sample, 3D sample and stream is an OpenAL source. A bank's sound is decoded
 - A sound that follows an object spreads around the listener as it comes within the object's model's radius (`AL_SOURCE_RADIUS`), so a capital ship close by fills the space rather than sitting at a point.
 - The 3D sounds lose their high frequencies with distance (`AL_AIR_ABSORPTION_FACTOR`).
 - On a device with a subwoofer, 5.1 or 7.1, the 3D sounds send about half their level to it through OpenAL Soft's dedicated low-frequency effect, with their highs taken off and falling off with distance as the sound does; the receiver's crossover takes the rest.
-- The 3D sounds send to a reverb, the generic room of EFX's presets, the room the game asks EAX for, at a fairly low level, falling off with distance as the sound does.
+- The 3D sounds send to a reverb, the generic room of EFX's presets, the room the game asks EAX for, at a fairly low level, falling off with distance as the sound does. While a launch's cutaway shows the bay from within, the room is a hangar's instead: EFX's large room of a space station, metal and ringing for about four seconds, which the hangar's clamps and doors, played as samples, send to as well.
 - The cockpit's warnings send to a reverb of the cockpit's cabin: EFX's race car cabin preset, the nearest of its presets to a fighter's cockpit, short and hard, at half its level. The other samples play dry. `--no-reverb` leaves both reverbs out.
 - A sample's pan keeps its power, as a 3D sample's does.
 
@@ -74,7 +74,7 @@ As the window goes inactive, the message pump's part in [`game/winmain.zig`](../
 - **Improvement:** a missile's sound follows the missile, moving with it, so it can be told where it is and heard passing by, and ends with it (`sound3d.MissileSound.follows`). It keeps its full volume half as far again as its definition has it, so it carries a little as the missile flies off. The game leaves it where the missile was launched. `--original` leaves it there too.
 - OpenAL Soft's resampling, placing, moving listener, sizes, air absorption, subwoofer and reverbs, and the master bus, above.
 
-A reverb for the hangar during launch and landing is gathered in [#164](https://github.com/vdmkenny/openreliant/issues/164).
+The landing's hangar takes the same room once the landing is ported ([#280](https://github.com/vdmkenny/openreliant/issues/280)).
 
 ## Not ported
 

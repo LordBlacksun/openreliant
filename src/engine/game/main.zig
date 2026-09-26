@@ -14,6 +14,7 @@ const Allocator = std.mem.Allocator;
 
 const input = @import("../input.zig");
 const libcmt = @import("../libcmt.zig");
+const mss = @import("../mss.zig");
 const shp = @import("../../formats/shp.zig");
 const math = @import("../surrender/math.zig");
 const srapi = @import("../surrender/surrenderlib/srapi.zig");
@@ -100,6 +101,15 @@ pub const Showing = enum(u8) {
     /// destroyed, with neither the camera's watch nor the pilot counted killed on the way.
     ejection = 4,
     _,
+
+    /// **Improvement:** what surrounds the camera as the scene shows it, for the reverb: a
+    /// hangar while a launch's cutaway shows the bay from within, and space otherwise.
+    pub fn surroundings(showing: Showing) mss.Surroundings {
+        return switch (showing) {
+            .launch => .hangar,
+            .everything, ._unknown_3, .ejection, _ => .space,
+        };
+    }
 };
 
 /// What the mission's scene shows, as the player's state has it: `Showing`, and the ship the
@@ -472,6 +482,7 @@ pub fn controlsFrame(controls: Controls) void {
     slot.object.flags.hidden = view.inside(all.player);
     if (world.hearing) |hearing| {
         hearing.sound.timerTick(clock.game_ticks);
+        hearing.sound.surround(world.player.showing.surroundings());
         if (hearing.sound.stdsmp) |bank| hearing.sound.frame(bank, hearing.scene(world));
     }
     devices.joystick.rumble(controls.forces.motors(clock.frame_start));
@@ -658,9 +669,12 @@ fn avoidanceScan(world: gameobj.World, index: u16) void {
 /// `mission_frame`'s pass over the objects before the camera's frame: each live object, save
 /// stand-ins and disabled and jumping ones, has `missile_homing` cleared, stands on the node it
 /// rides where it is launching (`launch.hold`), and is framed as far through the simulation's step
-/// as `timing` says (`objects.frameTree`), one the orders placed going on by its glide for the time
-/// past the tick, which the orders set afresh each frame; a cloaked one's frame then wobbles as its
-/// cloak changes, by the frame's tick `now` (`cloak.wobble`).
+/// as `timing` says (`frameObject`), one the orders placed going on by its glide for the time past
+/// the tick, which the orders set afresh each frame.
+///
+/// **Improvement:** with `timing.riders` `together`, each ship riding a node stands on it again
+/// once every object is framed, and is framed again, so that it keeps with a node framed after it
+/// (`objects.Riders`).
 pub fn frameObjects(all: *create.Objects, timing: objects.Timing, now: i32) void {
     var walk = all.walk();
     while (walk.next()) |index| {
@@ -673,10 +687,24 @@ pub fn frameObjects(all: *create.Objects, timing: objects.Timing, now: i32) void
         const glide: ?math.Vector = if (gliding or slot.glided) slot.glide * @as(math.Vector, @splat(timing.ahead)) else null;
         slot.glided = gliding;
         slot.glide = @splat(0);
-        launch.hold(all, index);
-        objects.frameTree(&object.root, if (slot.model) |*model| model else null, &slot.drawn, timing.fraction, glide);
-        cloak.wobble(slot, now);
+        _ = launch.hold(all, index);
+        frameObject(slot, timing, glide, now);
     }
+    if (timing.riders == .in_turn) return;
+    var riders = all.walk();
+    while (riders.next()) |index| {
+        const slot = &all.slots[index];
+        if (slot.object.flags.outOfFrame()) continue;
+        if (launch.hold(all, index)) frameObject(slot, timing, null, now);
+    }
+}
+
+/// Frames the object in `slot` as far through the simulation's step as `timing` says
+/// (`objects.frameTree`), going on by `glide` where the orders placed it; a cloaked one's frame
+/// then wobbles as its cloak changes, by the frame's tick `now` (`cloak.wobble`).
+fn frameObject(slot: *create.Slot, timing: objects.Timing, glide: ?math.Vector, now: i32) void {
+    objects.frameTree(&slot.object.root, if (slot.model) |*model| model else null, &slot.drawn, timing.fraction, glide);
+    cloak.wobble(slot, now);
 }
 
 /// Puts the frame's scene together and draws it, in `mission_frame`'s order: the objects
@@ -876,6 +904,36 @@ test "the objects are framed and drawn, save those left out" {
     try drawObjects(gpa, &scene, all, .{}, null, null, .{ .showing = .launch, .carrier = 3 });
     for (scene.layers.get(.world).items) |item| try std.testing.expect(!std.meta.eql(item.mesh.position, all.slots[3].drawn.position));
     try std.testing.expectEqual(2, scene.layers.get(.world).items.len);
+}
+
+test "the camera is in a hangar while a launch shows the bay from within" {
+    try std.testing.expectEqual(.hangar, Showing.launch.surroundings());
+    for ([_]Showing{ .everything, ._unknown_3, .ejection }) |showing| try std.testing.expectEqual(.space, showing.surroundings());
+}
+
+test "a launching ship keeps with the node it rides, though that is framed after it" {
+    const gpa = std.testing.allocator;
+    var mission: gameobj.testing.Mission = undefined;
+    try mission.init(gpa);
+    defer mission.deinit();
+    const ship = try mission.add(.predator, @splat(0));
+    const carrier = try mission.add(.reliant, @splat(0));
+    _ = try aigeneric.pushShip(mission.orders(), ship, .launch, carrier, 0);
+    const slot = mission.slot(ship);
+    slot.riding = .{ .object = carrier };
+    slot.state.launch.attached = true;
+    slot.state.launch.orientation = math.identity;
+    // The carrier moves on through the step, from where the last frame drew it.
+    const root = &mission.slot(carrier).object.root;
+    root.flags.committed = true;
+    root.next_position = .{ .x = 100, .y = 0, .z = 0 };
+    for ([_]objects.Riders{ .in_turn, .together }, [_]f32{ 0, 50 }) |riders, x| {
+        mission.slot(carrier).drawn.position = @splat(0);
+        frameObjects(mission.objects, .{ .fraction = 0.5, .riders = riders }, 0);
+        try std.testing.expectEqual(math.Vector{ 50, 0, 0 }, mission.slot(carrier).drawn.position);
+        // The original leaves the ship where the carrier was drawn the frame before.
+        try std.testing.expectEqual(math.Vector{ x, 0, 0 }, slot.drawn.position);
+    }
 }
 
 test "an object the orders place is drawn on by its glide, for the time past the tick" {
@@ -1240,7 +1298,6 @@ const armor_warning_interval = 500;
 const armor_warning_share: f32 = 0.5;
 
 test armorWarning {
-    const mss = @import("../mss.zig");
     var mixer: mss.Mixer = .init(22050);
     const driver = mixer.driver();
     var sound: hog_snd.Sound = undefined;

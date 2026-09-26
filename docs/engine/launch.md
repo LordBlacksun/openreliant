@@ -70,7 +70,11 @@ the radio has its line (`0x00456E50`).
 
 Each frame, `mission_frame`'s pass over the objects places a ship that rides its node (`0x00492C14`),
 where its current order is Launch and its carrier is not exploding: it stands on the node where its
-launch put it, turned as it was there.
+launch put it, turned as it was there. The pass takes the objects in slot order, so a ship riding a
+node that the pass frames after it stands where the node was the frame before: the player's ship
+trails the hangar's retainer as it lowers the ship. **Improvement:** OpenReliant places each riding
+ship on its node again once every object is framed, so that it keeps with the retainer;
+`--original` leaves it a frame behind.
 
 The order's state (`LaunchState`): the style at `+0x00`, the tick after which the next step runs at
 `+0x04`, the step at `+0x08`, where the ship stands in the node's frame at `+0x0C` and how it is
@@ -173,6 +177,14 @@ Reliant whose model lacks a tube's door, leave the ship where it stands.
 **Improvement:** OpenReliant's shadows leave out a mesh that keeps the sun out by its light mask, so
 the hangar's walls cast none over the ship, which shows lit within them as in the original
 ([Renderer](../port/renderer.md#improvements)).
+
+The hangar's lights: two red beacons on its hull, which blink, 100 of their clock on and 800 off,
+and cast a light of brightness 2 and range 1000, reaching 2000; and four steady red lights, three on
+the hull and one on the retainer, which the loader bakes into the hangar's own colours and which
+light nothing else ([Rendering](rendering.md#static-lights)). The beacons stand about 2550 from the
+ship on the retainer, so their light falls short of it. **Improvement:** OpenReliant has the
+beacons reach twice as far, so that their flash lights the ship and its cockpit; `--original` keeps
+their own reach.
 
 Not ported:
 
