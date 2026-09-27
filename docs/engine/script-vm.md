@@ -69,20 +69,48 @@ exact one rounded to a float. `push_percent n` pushes the top value times `n` ti
 
 `select_array`, `select_global` and `select_argument` make a place the store target
 (`vm_store_target`) and push its value; `assign` and the compound stores write it and pop both. The
-array is a block of the game's variables from `jump_ready` (`0x0052A3F0`) on, which scripts use by
-number: 0 is `jump_ready`, 1 `warp_ready`, 4 `player_missiles_left`, 9 `mission_over`, 10
-`landing_cleared`, which lets PERMISSION TO LAND land the player's ship
-([Landing](orders.md#landing)), 14 `mission_success`, how the script rates the mission: -1 a
-total failure, then failure, partial failure, partial success, success, and 4 success with a
-bonus, as the game's debug line names them, and 15 `script_players`, how many players fly the
-mission, which WinMain sets before the mission loads (`script_set_players`, `0x004124D0`): 1
-outside a multiplayer game. The scripts test it for the enemies a multiplayer game adds and for
-which ending of a part runs; mission 1's ambush ends only through it. **Unknown:** most of the
-others, and where the block ends; the shipped missions use the first 38.
+array is the game's variables ([The game's variables](#the-games-variables)).
 
 The loop also serves a script debugger. With one attached, it can stop a thread at a byte that
 section 10, one flag per script byte, marks, and report the position. **Unknown:** the debugger's
 protocol.
+
+## The game's variables
+
+The array `push_array` and `select_array` reach is a block of 64 of the game's variables, from
+`jump_ready` (`0x0052A3F0`) up to the next global (`0x0052A4F0`), which scripts use by number. The
+engine and the shipped missions use the first 38. A number past the block reaches the globals after
+it in the game; OpenReliant gives every number a byte names a variable of its own
+([`vm.Variables`](../../src/engine/vm.zig)).
+
+| Number | Name | What it holds |
+|---|---|---|
+| 0, 1 | `jump_ready`, `warp_ready` | Whether the mission has a jump or a warp ready for JUMP DRIVE, which the display's prompt reads ([Jumps](jump.md)) |
+| 3 | `backup_available` | Whether the carrier sends backup: the radio's REQUEST BACKUP (`0x004558D0`) raises the mission's PlayerWantsBackup event for the first request while it is set, and the carrier refuses otherwise. The scripts set it as backup can come and clear it as it can no longer |
+| 4 | `player_missiles_left` | The missile display's counts together ([Missiles](missiles.md)) |
+| 9 | `mission_over` | Set once the camera has watched the mission's end long enough, or once the player's ship has landed |
+| 10 | `landing_cleared` | Whether PERMISSION TO LAND lands the player's ship ([Landing](orders.md#landing)) |
+| 14 | `mission_success` | How the script rates the mission: -1 a total failure, then failure, partial failure, partial success, success, and 4 success with a bonus, as the game's debug line names them |
+| 15 | `script_players` | How many players fly the mission, which WinMain sets before the mission loads (`script_set_players`, `0x004124D0`): 1 outside a multiplayer game. The scripts test it for the enemies a multiplayer game adds and for which ending of a part runs; mission 1's ambush ends only through it |
+| 27 | `last_success` | The rating of the last mission the pilot came through, which `mission_end_record` (`0x00475A90`) keeps unless it is a total failure. Mission 25's second part weighs its own rating by it |
+| 28 | `objectives_met` | Set by the script once the mission's objectives are met, as mission 1's is once the ambushers are destroyed. The debriefing of a mission the ejected pilot was picked up in tells the pilot the mission was a success by it, and a failure without it (`0x00424ECE`, `0x0042545B`) |
+| 30 | `ghost_alive` | Whether Ghost, the ace mission 1 puts up against the player, lives: mission 1's script clears it as Ghost dies, and mission 4's has Petrov say a line by it |
+| 33 | `countdown` | Seconds left, which mission 29's script sets. The game takes one off at every 100th tick of the mission (`0x00477889`), and in mission 29 the display shows it as a clock in minutes and seconds (`0x00486221`) |
+| 37 | `ion_cannons_hold_lock` | While it is set, the Dark Reign's ion cannon (order 110) keeps its target rather than losing it as the target flies into its cone or out of its angle, or giving up a long search in a multiplayer game (`0x0040D40F`, `0x0040D7D9`) |
+
+Some variables belong to an attempt at a mission, and the rest to the campaign.
+`mission_reset_variables` (`0x00475620`) clears 0, 1, 3, 9, 10, 14, 28, 34 and 37 before each
+attempt. A new campaign (`campaign_new`, `0x004751B0`), which WinMain starts as the game starts,
+clears 0 to 31, then sets 5 to 8, 13, 14, 16 to 23, 29 to 32, 35 and 36 to 1: flags which the
+scripts clear as the story's characters die, as mission 1's does `ghost_alive`, and which the flow
+between missions reads to pick its films and messages. The pilot's saved game keeps 5 to 8, 11 to
+13, 16 to 27, 29 to 32, 34 and 36 in its `VARS` chunk (`game_save`, `0x00475650`; `game_load`,
+`0x00475430`). WinMain saves the game as a restart point before a mission's attempts and loads it
+again for a replay or a restart (`restart_save`, `0x00475D20`; `restart_load`, `0x00475D30`), so
+that every attempt starts from the variables the first had. OpenReliant, which has no campaign yet,
+starts every attempt from a new campaign's variables (`gameflow.restartPoint`), as the game's first
+mission does. **Unknown:** what the campaign's other flags stand for
+([#381](https://github.com/vdmkenny/openreliant/issues/381)).
 
 ## Calls
 

@@ -57,6 +57,7 @@ const objects = @import("objects.zig");
 const srofiles = @import("srofiles.zig");
 const xtrabits = @import("xtrabits.zig");
 const winmain = @import("winmain.zig");
+const gameflow = @import("gameflow.zig");
 const Loaded = @import("mission.zig").Loaded;
 
 pub const smoke = @import("main/smoke.zig");
@@ -1483,10 +1484,11 @@ const camera_marker_at: math.Vector = .{ 0, 0, -8000 };
 ///    the options' setting picks, and the ejected pilot always picked up, and puts back the pilot's
 ///    kills (`winmain.startMission`);
 /// 2. binds the mission, whose records the orders then reach (`gameobj.World.mission`), gives its
-///    script the number of players, which WinMain sets before the mission loads
-///    (`script_set_players`, `0x004124D0`, `vm.Variables.players`), and starts the script
-///    (`mission.Loaded.start`), whose start part makes the mission's first ships and gives them
-///    their orders, a launch among them;
+///    script the game's variables an attempt starts with (`gameflow.restartPoint`) and the number
+///    of players, which WinMain sets before the mission loads (`script_set_players`,
+///    `0x004124D0`, `vm.Variables.players`), and starts the script (`mission.Loaded.start`),
+///    whose start part makes the mission's first ships and gives them their orders, a launch
+///    among them;
 /// 3. lists the player's wing's icons (`startWing`), and makes the camera's marker in the next
 ///    slot;
 /// 4. lets go of the types no object is of any more, and loads the model of each type the mission
@@ -1554,6 +1556,7 @@ pub fn startMission(gpa: Allocator, start: Start, image: []u8, number: u16) !*Lo
     all.mission_number = number;
     const loaded = try Loaded.create(gpa, image, world.random);
     errdefer loaded.destroy();
+    loaded.script.variables = gameflow.restartPoint();
     loaded.script.variables.players = all.players;
     orders.world.mission = &loaded.bound;
     orders.world.events = &loaded.events;
@@ -1687,9 +1690,10 @@ test startMission {
     // The mission's ships in the first slots, the player's with its model, then the camera's marker.
     const all = mission.objects;
     try std.testing.expectEqual(3, all.count);
-    // The script knows the mission is flown by one player.
+    // The script knows the mission is flown by one player, and has a new campaign's variables.
     try std.testing.expectEqual(all.players, loaded.script.variables.players);
     try std.testing.expectEqual(1, loaded.script.variables.players);
+    try std.testing.expectEqual(1, loaded.script.variables.ghost_alive);
     try std.testing.expect(all.slots[0].type != null);
     try std.testing.expectEqual(gameobj.Type.marker, all.slots[2].object.type);
     try std.testing.expectEqual(camera_marker_at[2], all.slots[2].object.root.position.z);
