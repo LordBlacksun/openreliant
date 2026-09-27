@@ -14,6 +14,7 @@ const srapi = @import("../../surrender/surrenderlib/srapi.zig");
 const srapiext = @import("../../surrender/surrenderlib/srapiext.zig");
 const srcore = @import("../../surrender/surrenderlib/srcore.zig");
 const srtexture = @import("../../surrender/surrenderlib/srtexture.zig");
+const loadout = @import("../../interface/loadout/loadout.zig");
 const matmanager = @import("../matmanager.zig");
 const xtrabits = @import("../xtrabits.zig");
 
@@ -80,14 +81,10 @@ const Square = struct {
     /// two triangles over the whole of `image`, added to what is drawn and coloured by `own`
     /// colours, or at full strength without them.
     fn init(square: *Square, gpa: Allocator, size: f32, drop: f32, image: *srtexture.Image, own: ?[4]f32) Allocator.Error!void {
-        var mesh: srapiext.Mesh = try .create(gpa, .{ .polygons = 2, .vertices = corners, .indices = 6 });
+        var mesh = try loadout.squareMesh(gpa, false, size, size);
         errdefer mesh.deinit(gpa);
-        const half = size / 2;
-        mesh.positions[0..corners].* = .{ .{ -half, -half - drop, 0 }, .{ half, -half - drop, 0 }, .{ half, half - drop, 0 }, .{ -half, half - drop, 0 } };
-        mesh.numberPolygons(3);
-        mesh.indices[0..6].* = .{ 3, 2, 0, 2, 1, 0 };
-        const uv = try mesh.addCoordinates(gpa);
-        uv[0..6].* = .{ .{ 0, 1 }, .{ 1, 1 }, .{ 0, 0 }, .{ 1, 1 }, .{ 1, 0 }, .{ 0, 0 } };
+        for (mesh.positions) |*corner| corner[1] -= drop;
+        mesh.uv[0].?[0..6].* = .{ .{ 0, 1 }, .{ 1, 1 }, .{ 0, 0 }, .{ 1, 1 }, .{ 1, 0 }, .{ 0, 0 } };
         mesh.surfaces[0] = .{
             .polygons = 2,
             .material = .onePass(.{ .coordinates = .mesh, .lit = own != null, .blend = .add }),

@@ -230,7 +230,7 @@ fn firstPoint(part: objects.PartRef) ?Vector {
 const pincers = [_][]const u8{ "Ripper Back pincer 2", "Ripper Back pincer 03", "Ripper Back pincer 04", "Ripper Back pincer 05" };
 
 /// The part a pod shows as, which the Ripper has one of too, shown while it carries (`0x004E20F8`).
-const cargo_part = "Cargo pod";
+pub const cargo_part = "Cargo pod";
 
 /// The Ripper's cabin, whose turn back the end of a drop waits for (`0x004E226C`).
 const cabin_part = "Ripper Cabin";

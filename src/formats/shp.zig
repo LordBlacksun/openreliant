@@ -367,6 +367,10 @@ pub const PointList = struct {
         /// Where a ship's two tractor beams come from: the list's first two points
         /// (`order_scoop_up`).
         tractor = 6,
+        /// Where a jump's trails stream from, the ship's engines (`jump_effect_start`).
+        jump_trails = 7,
+        /// Where a jump's lights stand along the hull (`jump_effect_start`).
+        jump_lights = 8,
         _,
     };
 };

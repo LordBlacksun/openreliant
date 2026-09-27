@@ -1478,6 +1478,8 @@ pub const World = struct {
     tractors: ?*@import("tractor.zig").Tractors = null,
     /// What the Rippers carry, and their beams (`airipper.cpp`); null where no Ripper carries.
     rippers: ?*@import("airipper.zig").Rippers = null,
+    /// What the jumps show (`jump.effect`).
+    jump_effects: ?*@import("jump/effect.zig").Effects = null,
     /// The planets' atmospheres (`create.atmosphere`); null where no planet has one drawn.
     atmospheres: ?*@import("create/atmosphere.zig").Atmospheres = null,
     /// The escort point's marker (`create.escort`), whose pulse each mission starts again.

@@ -156,6 +156,7 @@ pub const exported = [_]Export{
     .{ "LaunchStep", engine.game.launch.Step },
     .{ "LaunchData", engine.game.launch.Data },
     .{ "JumpState", engine.game.jump.State },
+    .{ "JumpEffect", engine.game.jump.effect.Record },
     .{ "JumpOutStep", engine.game.jump.OutStep },
     .{ "JumpInStep", engine.game.jump.InStep },
     .{ "FollowData", engine.game.ai.follow.Data },

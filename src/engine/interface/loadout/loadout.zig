@@ -1,5 +1,6 @@
 //! `C:\lancer\interface\loadout\loadout.cpp`: the loadout screen. OpenReliant ports only what the
-//! mission's objects use of it so far: the band a planet's atmosphere is made of (`bandMesh`).
+//! mission's objects use of it so far: the band a planet's atmosphere is made of (`bandMesh`), and
+//! the square the chase view's sights and a jump's flare are drawn on (`squareMesh`).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -43,6 +44,53 @@ pub fn bandMesh(gpa: Allocator, segments: u16, radius: f32, depth: f32) Allocato
     srapi.calcVertexNormals(&mesh);
     srapi.findBoundingBox(&mesh);
     return mesh;
+}
+
+/// `mesh_build_square` (`0x0044F000`): a rectangle facing along Z, `width` by `height` about its
+/// centre, its corners from the lower left round to the upper left, as two triangles, and where
+/// `two_sided` two more facing the other way. The texture spans it from its left edge to
+/// `square_span` of the way across, `v` 1 at the top; the callers set `u` to the whole of it. Its
+/// faces' planes, its vertex normals and its bounds are worked out; its one surface is left for the
+/// caller.
+pub fn squareMesh(gpa: Allocator, two_sided: bool, width: f32, height: f32) Allocator.Error!srapiext.Mesh {
+    const faces: usize = if (two_sided) 4 else 2;
+    var mesh: srapiext.Mesh = try .create(gpa, .{ .polygons = faces, .vertices = 4, .indices = 3 * faces });
+    errdefer mesh.deinit(gpa);
+    const w = width / 2;
+    const h = height / 2;
+    mesh.positions[0..4].* = .{ .{ -w, -h, 0 }, .{ w, -h, 0 }, .{ w, h, 0 }, .{ -w, h, 0 } };
+    mesh.numberPolygons(3);
+    const uv = try mesh.addCoordinates(gpa);
+    mesh.indices[0..6].* = .{ 3, 2, 0, 2, 1, 0 };
+    uv[0..6].* = .{ .{ 0, 1 }, .{ square_span, 1 }, .{ 0, 0 }, .{ square_span, 1 }, .{ square_span, 0 }, .{ 0, 0 } };
+    if (two_sided) {
+        mesh.indices[6..12].* = .{ 0, 2, 3, 0, 1, 2 };
+        uv[6..12].* = .{ .{ square_span, 0 }, .{ 0, 1 }, .{ square_span, 1 }, .{ square_span, 0 }, .{ 0, 0 }, .{ 0, 1 } };
+    }
+    srapi.calcPolyNormals(&mesh);
+    srapi.calcVertexNormals(&mesh);
+    srapi.findBoundingBox(&mesh);
+    return mesh;
+}
+
+/// How far across its texture `squareMesh` spans (`0x3F3F0000`).
+pub const square_span: f32 = 0.74609375;
+
+test squareMesh {
+    const gpa = std.testing.allocator;
+    var mesh = try squareMesh(gpa, false, 4, 2);
+    defer mesh.deinit(gpa);
+    try std.testing.expectEqualSlices(Vector, &.{ .{ -2, -1, 0 }, .{ 2, -1, 0 }, .{ 2, 1, 0 }, .{ -2, 1, 0 } }, mesh.positions);
+    try std.testing.expectEqualSlices(u16, &.{ 3, 2, 0, 2, 1, 0 }, mesh.indices);
+    try std.testing.expectEqual([2]f32{ square_span, 0 }, mesh.uv[0].?[4]);
+    // It faces along Z.
+    for (mesh.planes) |plane| try std.testing.expectApproxEqAbs(1, @abs(plane.normal[2]), 1e-6);
+    // Two-sided, the same corners again the other way round.
+    var both = try squareMesh(gpa, true, 4, 2);
+    defer both.deinit(gpa);
+    try std.testing.expectEqual(4, both.polygons.len);
+    try std.testing.expectEqualSlices(u16, &.{ 0, 2, 3, 0, 1, 2 }, both.indices[6..12]);
+    try std.testing.expectEqual(-both.planes[0].normal[2], both.planes[2].normal[2]);
 }
 
 test bandMesh {

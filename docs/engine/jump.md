@@ -107,12 +107,68 @@ Each takes the order's state ([Objects](objects.md#the-orders-motion-functions))
 
 ## What a jump shows
 
-**Unknown**, and not ported ([#309](https://github.com/vdmkenny/openreliant/issues/309)): what each
-jump shows, from its effect record, `0x94` bytes, which one of the 64 pointers at `0x0051CFA4` holds;
-Jump In stops the game with "Jump has overrun array" when all are taken. `0x00416490`, as a mission loads, makes the
-flare's mesh (`0x0051D0A8`) and loads the trails' texture (`0x0051D0AC`), and clears the flags at
-`0x005E82F0` and `0x0051D0B0`; `0x00416510` frees the mesh as it ends. `0x00417670` begins Jump
-Out's effect: a burst's mesh behind the ship, a trail at each of its attachments of kind 7, five at
-most, and a light at each of kind 8, twenty at most. `0x00417AF0` makes a trail's mesh,
-`0x00417E30` a burst's, `0x00418120` the flare, `0x00418150` and `0x004181C0` fade and light the
-burst, and `0x00418390` stretches the trails.
+Each jump keeps a record (`jump_effects`, `0x0051CFA4`, 64 of them, `0x94` bytes each), which Jump
+Out takes as it is held still and Jump In as it is placed (`jump_effect_alloc`, `0x00418900`), and
+which each lets go as it ends (`jump_effect_free`, `0x004189A0`); the game stops with "Jump has
+overrun array." when all are taken. It holds up to five trails at `+0x00`, up to twenty lights at
+`+0x14`, Jump Out's burst at `+0x64`, Jump In's at `+0x68`, the flare at `+0x6C`, and how Jump In's
+flare is turned at `+0x70`. The updates add them to the world's layer each frame, as each step says
+below; all but the flare hang from the ship's root frame.
+
+`jump_init` (`0x00416490`), as a mission loads, makes the flare's mesh (`jump_flare_mesh`,
+`0x0051D0A8`): a square 4 by 2 facing along Z (`mesh_build_square`, `0x0044F000`) over the whole of
+`jflare`, white and added. It loads the trails' texture, `trail3` (`0x0051D0AC`), and clears
+`0x005E82F0` and `0x0051D0B0`. `jump_free` (`0x00416510`) frees the mesh and the records as it ends.
+
+`jump_effect_start` (`0x00417670`), as Jump Out's ship has been held still for a frame:
+
+- A burst behind the ship, at `(0, 0, -200)` in its frame, which Jump Out fades as it goes but
+  never adds to the scene.
+- A trail at each point of kind 7 of each part hanging from the model's root, in the ship's frame,
+  five at most ("Too many jumpt trail meshes assigned to this ship.  Check the pointlists!"), or one
+  at the ship's own place where it has none (`jump_trail_mesh`, `0x00417AF0`, "JumpTrail Mesh"): a
+  square 200 across at its start, then three blades a third of a turn apart through its axis, each
+  200 wide and 20000 long, or 2000 wide and 40000 long for a ship that lists components, over
+  `trail3` from 0.04 to 0.99, coloured by its own colours and added. It is turned half round so
+  that it streams back, but for a Ripper whose `Cargo pod` shows, which flies astern.
+- A light at each point of kind 8 of those parts, twenty at most ("Too many jump lights assigned to
+  this ship.  Check the pointlists!"), and their count at `+0x58`: a sprite set of one sprite ("Jump
+  BMO") 150 across either way, sorted as if 150 nearer, over `lights\flare-b`, coloured and added.
+
+`jump_trail_shade` (`0x00418390`) shades a trail by a share `s`: every vertex opaque, each
+blade's two near corners `(0.5, 0.7, 1)` times `0.3 s`, its far ones black. The square at its start
+keeps its colours, nothing, and does not show.
+
+`jump_burst_mesh` (`0x00417E30`, "JumpBurst Mesh") makes a burst: a point at its centre, which
+nothing uses, then six rings `k` of twelve points, each `k` times 180 behind the centre and
+`sin(0.1 pi k)` times 300 plus 30 across for Jump In, `k` times 1620 and 1080 plus 30 for Jump Out,
+Jump In's first ring closing to its centre. Triangles band each ring to the next, over
+`shield128` by where each corner stands, `u` its Z over 108000 and `v` its Y over 10800, all but
+the first, which the game leaves at the texture's corner; coloured by their colours and added by
+their alpha. `jump_burst_fade` (`0x00418150`) greys the colours from the first twelve on, a ring's
+worth at a time, by 0.5 of the share down to nothing in steps of 0.1 of it, opaque, which puts them a
+place ahead of the rings. `jump_burst_glow` (`0x004181C0`) colours them so too, the first twelve
+`(0.5, 0.21, 0)` times the share squared and as opaque as the share, each twelve after them a step
+of 0.04 of the share less from four steps, red; under the software renderer (`sr + 0x1AC` clear)
+grey instead.
+
+`jump_flare_object` (`0x00418120`, "Jump flare mesh") makes the flare, scaled to a width: the
+ship's model's width across (`+0x5AC` less `+0x5A0`).
+
+| Step | What shows |
+|---|---|
+| Jump Out 2 | The trails, shaded by the charge. The lights come on grey with it, 1.25 times the charge, until 0.8; from there light `round((c - 0.8) 5 (n - 1))`, `n` the lights, turns to `lights\flare-lb`, and the one two before it goes out. At full charge the lights go out |
+| Jump Out 3 | The trails, shaded by 1 less the progress, and the lights. As it ends, the flare stands where the ship's root frame is |
+| Jump Out 4 | The flare, `1 - p` of its width, and the trails and the lights |
+| Jump In 0 | The flare where the ship starts to fly in from, turned as it is, and a copy of that turn at `+0x70`; the burst, hanging at `(0, 0, 800)`, `ddheat` in place of `shield128` under the software renderer, glowing at 1 and made twice as wide; and the trails. The update runs on into step 1 as if no time had passed |
+| Jump In 1 | The flare, `p` of its width, the trails and the burst |
+| Jump In 2 | The trails shaded and the burst glowing by 1 less the progress, and the trails and the burst. Until 0.3 of the flight the flare, full width, turned as it arrived times a scaling of `1 + 3 p` across and `1 - p / 0.3` up, which stretches and flattens it in the world's own X and Y |
+| Jump In 3 | Order 40's hold: the trails and the burst |
+
+`0x00417E20`, which Jump Out calls with the ship's root as it goes and as it ends, does nothing.
+
+In OpenReliant ([`jump/effect.zig`](../../src/engine/game/jump/effect.zig)), the meshes the records
+share are built once. Jump Out's burst, which the game never draws, is left out. A ship with more
+trails or lights than the records hold keeps the first, and a jump for which no record is free goes
+on without one, where the game stops.
+

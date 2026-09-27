@@ -39,6 +39,7 @@ const shield = @import("shield.zig");
 const erayfx = @import("erayfx.zig");
 const tractor = @import("tractor.zig");
 const airipper = @import("airipper.zig");
+const jump = @import("jump.zig");
 pub const flash = @import("main/flash.zig");
 pub const cockpit = @import("main/cockpit.zig");
 const shockwave = @import("shockwave.zig");
@@ -324,6 +325,8 @@ pub const Frame = struct {
     tractors: ?*tractor.Tractors = null,
     /// The Rippers' beams, which go into the world's layer after the objects.
     rippers: ?*airipper.Rippers = null,
+    /// What the jumps show, which goes into the world's layer after the Rippers' beams.
+    jump_effects: ?*jump.effect.Effects = null,
     /// The planets' atmospheres, which go into the background layer after the backdrop, lit by its
     /// sun and as bright as its lens flares, their planets turning.
     atmospheres: ?*create.atmosphere.Atmospheres = null,
@@ -548,6 +551,7 @@ pub fn missionFrame(orders: aigeneric.Context, timing: objects.Timing, loaded: ?
         }
     }
     if (orders.world.display) |display| display.uncloakSpent(orders.world);
+    if (orders.world.jump_effects) |effects| effects.beginFrame();
     aigeneric.ordersUpdate(orders);
     frameObjects(orders.world.objects, timing, orders.clock.frame_start);
     missiles.frame(orders.world, timing.fraction);
@@ -746,6 +750,7 @@ pub fn drawFrame(gpa: Allocator, arena: Allocator, scene: *srcore.Scene, context
     try drawObjects(gpa, scene, frame.objects, attachments, frame.seat, if (frame.explosions) |explosions| &explosions.splits else null, frame.shown);
     if (frame.tractors) |tractors| try tractors.draw(gpa, scene, frame.objects);
     if (frame.rippers) |rippers| try rippers.draw(gpa, scene, frame.objects);
+    if (frame.jump_effects) |effects| try effects.draw(gpa, scene, frame.objects);
     try missiles.draw(frame.objects, gpa, scene, attachments);
     if (frame.trails) |trails| try trails.draw(gpa, scene);
     if (frame.countermeasures) |dropped| try dropped.draw(gpa, scene, attachments);
@@ -1522,6 +1527,7 @@ pub fn startMission(gpa: Allocator, start: Start, image: []u8, number: u16) !*Lo
     if (world.rays) |rays| rays.reset();
     if (world.tractors) |tractors| tractors.reset();
     if (world.rippers) |rippers| rippers.reset();
+    if (world.jump_effects) |effects| effects.reset();
     if (world.atmospheres) |atmospheres| atmospheres.reset();
     if (world.escort_marker) |marker| marker.reset();
     if (world.radio) |radio| radio.reset(if (world.hearing) |hearing| hearing.sound else null);
