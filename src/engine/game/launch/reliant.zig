@@ -112,8 +112,13 @@ const hangar_door = 2;
 const hangar_retainer = 3;
 
 /// How much farther the hangar's two beacons reach, whose own reach falls short of the ship on the
-/// retainer by about a quarter (`objects.HangarBeacons`). Not the game's.
+/// retainer by about a quarter; the share of their flash the red walls throw back on the ship and
+/// its cockpit, which the beacons light on the nose, out of the cutaways' sight; and the light bit
+/// that share goes by, which every part of the hangar keeps out, one no light of the game's has
+/// (`objects.HangarBeacons`). Not the game's.
 const beacon_reach: f32 = 2;
+const beacon_bounce: f32 = 0.1;
+const bounce_mask: u32 = 0x40;
 
 /// The hangar's launch points: the first for a gate of odd number, the second, turned half a turn
 /// with the hangar, for an even.
@@ -214,7 +219,10 @@ fn showHangar(ctx: aigeneric.Context, index: u16, gate: i16, in_tube: math.Vecto
     shown.object.flags.no_collisions = true;
     if (shown.model) |*model| {
         for (model.parts[0..@min(lit_parts, model.parts.len)]) |*part| part.object.light_mask = hangar_light_mask;
-        if (world.hangar_beacons == .to_the_ship) model.reachFarther(beacon_reach);
+        if (world.hangar_beacons == .to_the_ship) {
+            model.reachFarther(beacon_reach);
+            model.bounceLights(beacon_bounce, bounce_mask);
+        }
     }
     const even = @mod(gate, 2) == 0;
     const entry = &all.slots[index].orders[0];
@@ -297,6 +305,8 @@ pub fn run(ctx: aigeneric.Context, index: u16) void {
         },
         .drop => {
             if (player) if (world.display) |display| display.caption.start(ctx.clock.game_ticks);
+            // The ship leaves the hangar, whose walls throw the beacons' flash on it no more.
+            if (player) if (hangarModel(all)) |model| model.endBounce();
             slot.motion = .downward;
             slot.object.throttle = 1;
             moveOn(state, .drop, now);
@@ -359,12 +369,17 @@ fn tubeDoor(all: *create.Objects, slot: *const create.Slot, step: usize) ?struct
 /// The time a track keeps as it is played again (`node_play_named` with a time below zero).
 const keep_time: f32 = -1;
 
+/// The hangar's model, where the hangar stands in the cutaway slot.
+fn hangarModel(all: *create.Objects) ?*objects.Model {
+    const hangar = &all.slots[create.cutaway_slot];
+    if (hangar.object.type != .reliant_hangar) return null;
+    return if (hangar.model) |*held| held else null;
+}
+
 /// Plays `track` on the hangar's part `part` from `time` at `speed`, where the hangar stands in
 /// the cutaway slot.
 fn playOnHangar(all: *create.Objects, part: usize, track: []const u8, time: f32, speed: f32) void {
-    const hangar = &all.slots[create.cutaway_slot];
-    if (hangar.object.type != .reliant_hangar) return;
-    const model = if (hangar.model) |*held| held else return;
+    const model = hangarModel(all) orelse return;
     if (part < model.parts.len) model.playNamed(part, track, time, null, speed);
 }
 

@@ -182,9 +182,13 @@ The hangar's lights: two red beacons on its hull, which blink, 100 of their cloc
 and cast a light of brightness 2 and range 1000, reaching 2000; and four steady red lights, three on
 the hull and one on the retainer, which the loader bakes into the hangar's own colours and which
 light nothing else ([Rendering](rendering.md#static-lights)). The beacons stand about 2550 from the
-ship on the retainer, so their light falls short of it. **Improvement:** OpenReliant has the
-beacons reach twice as far, so that their flash lights the ship and its cockpit; `--original` keeps
-their own reach.
+ship on the retainer, so their light falls short of it, and they stand almost straight ahead of
+its nose, which the cutaways don't show. **Improvement:** OpenReliant has the beacons reach twice
+as far, and throws a tenth of their flash back off the red walls, while they shine, as an even
+light on what stands in the hangar, kept off the hangar's own parts by a light bit of its own
+(`0x40`), so that the ship and its cockpit flash red with them. That light has no place, so it
+ends as the ship drops out of the hangar (step 6), before it would reach the wing outside;
+`--original` keeps the beacons' own reach and throws nothing back.
 
 Not ported:
 
