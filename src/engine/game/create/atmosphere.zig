@@ -27,8 +27,26 @@ pub const capacity = 4;
 /// The texture an atmosphere is drawn over (`planet_atmosphere_texture`, `0x005458FC`).
 pub const texture_name = "atmos";
 
-/// The quads of the band an atmosphere is made of (`0x0046796B`).
+/// The quads of the band an atmosphere is made of (`0x0046796B`), and as many as OpenReliant makes
+/// it of for a round ring (`Detail.round`).
 pub const segments = 20;
+pub const round_segments = 96;
+
+/// How finely the atmospheres' rings are made.
+pub const Detail = enum {
+    /// **Improvement:** of `round_segments` quads, round at any size, where the game's show their
+    /// sides at high resolutions.
+    round,
+    /// Of `segments` quads, as the game makes them.
+    original,
+
+    fn quads(detail: Detail) u16 {
+        return switch (detail) {
+            .round => round_segments,
+            .original => segments,
+        };
+    }
+};
 
 /// Where an atmosphere's inner edge stands, as a share of the planet's radius (`0x00467A05`).
 pub const inner_edge: f32 = 0.85;
@@ -60,17 +78,18 @@ pub const Ring = struct {
     mesh: srapiext.Mesh,
     level: [1]srapiext.Level,
     object: srapiext.MeshObject,
-    colours: [2 * segments][4]f32,
+    colours: [2 * round_segments][4]f32,
 
     /// The ring of a planet of `radius` that looks as `look` says (`create_object`,
-    /// `0x0046795D`): a band of `segments` quads (`loadout.bandMesh`), flat, its first circle drawn
+    /// `0x0046795D`): a band of `quads` (`loadout.bandMesh`), flat, its first circle drawn
     /// in to `inner_edge` of the radius and its second to the look's outer edge, over `image`,
     /// added by the alpha of its colours; the first circle in the look's colour, the second black,
     /// all solid until the frame sets their alpha. It is never culled, and is coloured by its own.
-    pub fn create(gpa: Allocator, image: *srtexture.Image, radius: f32, look: Look) Allocator.Error!*Ring {
+    pub fn create(gpa: Allocator, image: *srtexture.Image, radius: f32, look: Look, quads: u16) Allocator.Error!*Ring {
+        std.debug.assert(quads <= round_segments);
         const ring = try gpa.create(Ring);
         errdefer gpa.destroy(ring);
-        ring.mesh = try loadout.bandMesh(gpa, segments, radius, 0);
+        ring.mesh = try loadout.bandMesh(gpa, quads, radius, 0);
         errdefer ring.mesh.deinit(gpa);
         const mesh = &ring.mesh;
         mesh.surfaces[0] = .{
@@ -78,7 +97,8 @@ pub const Ring = struct {
             .material = .onePass(.{ .coordinates = .mesh, .lit = true, .blend = .add_alpha }),
             .textures = .{ .{ .image = image }, .none },
         };
-        for (mesh.positions[0..segments], mesh.positions[segments..], ring.colours[0..segments], ring.colours[segments..]) |*inner, *outer, *inner_colour, *outer_colour| {
+        const colours = ring.colours[0 .. 2 * @as(usize, quads)];
+        for (mesh.positions[0..quads], mesh.positions[quads..], colours[0..quads], colours[quads..]) |*inner, *outer, *inner_colour, *outer_colour| {
             inner.* *= @splat(inner_edge);
             outer.* *= @splat(look.outer_edge);
             inner_colour.* = .{ look.colour[0], look.colour[1], look.colour[2], 1 };
@@ -93,7 +113,7 @@ pub const Ring = struct {
             .position = @splat(0),
             .radius = mesh.radius,
             .levels = &ring.level,
-            .baked = &ring.colours,
+            .baked = colours,
         };
         return ring;
     }
@@ -108,6 +128,8 @@ pub const Ring = struct {
 pub const Atmospheres = struct {
     gpa: Allocator,
     image: *srtexture.Image,
+    /// How finely their rings are made.
+    detail: Detail = .round,
     entries: [capacity]Entry = undefined,
     count: usize = 0,
     /// The frame the planets last turned at (`0x00595BC0`).
@@ -115,11 +137,18 @@ pub const Atmospheres = struct {
 
     /// An atmosphere: its ring, how fast its planet turns, and the planet's slot (`+0x00`, `+0x04`
     /// and `+0x20` of the table's entries). The table also keeps where the planet stood as it was
-    /// made (`+0x14`), which nothing reads.
+    /// made (`+0x14`), which nothing reads. OpenReliant keeps the middle of the planet's sphere in
+    /// its model's frame, the middle of its first part's finest mesh (`frame`).
     pub const Entry = struct {
         ring: *Ring,
         spin: f32,
         planet: u16,
+        middle: Vector,
+
+        /// Where the planet's sphere stands, the planet at `place`.
+        fn sphereAt(entry: Entry, place: math.Place) Vector {
+            return place.point(entry.middle);
+        }
     };
 
     /// As `objects_reset` (`0x00466630`) loads `atmos`, with no atmospheres.
@@ -153,11 +182,14 @@ pub const Atmospheres = struct {
             log.warn("the atmosphere of object {d} is left out: there are {d} already", .{ index, capacity });
             return;
         }
-        const ring = Ring.create(atmospheres.gpa, atmospheres.image, model.parts[0].object.radius, look) catch |err| {
+        const part = &model.parts[0].object;
+        const ring = Ring.create(atmospheres.gpa, atmospheres.image, part.radius, look, atmospheres.detail.quads()) catch |err| {
             log.warn("the atmosphere of object {d} is left out: {s}", .{ index, @errorName(err) });
             return;
         };
-        atmospheres.entries[atmospheres.count] = .{ .ring = ring, .spin = spin, .planet = index };
+        const bounds = if (part.levels.len > 0) part.levels[0].mesh.bounds else [2]Vector{ @splat(0), @splat(0) };
+        const middle = (bounds[0] + bounds[1]) * @as(Vector, @splat(0.5));
+        atmospheres.entries[atmospheres.count] = .{ .ring = ring, .spin = spin, .planet = index, .middle = middle };
         atmospheres.count += 1;
     }
 
@@ -167,18 +199,25 @@ pub const Atmospheres = struct {
     /// atmosphere stands where the planet does, turned to face the camera at `camera`, as solid as
     /// the lens flares' `brightness` (`backdrop.flareBrightness`), and goes on the background
     /// layer.
+    ///
+    /// **Fix:** the planets' models stand their spheres off their origins, about a sixth of their
+    /// radius along Z, and the game stands the ring round the planet's position and turns the
+    /// planet about it, so that the ring stands off to one side and the sphere swings round;
+    /// OpenReliant turns the planet about its sphere's middle, and stands the ring there.
     pub fn frame(atmospheres: *Atmospheres, gpa: Allocator, scene: *srcore.Scene, all: *create.Objects, camera: Vector, hardware: bool, brightness: f32, now: i32) Allocator.Error!void {
         const ticks: f32 = @floatFromInt(now - atmospheres.turned_at);
         defer atmospheres.turned_at = now;
         for (atmospheres.entries[0..atmospheres.count]) |entry| {
             const planet = &all.slots[entry.planet];
+            const sphere = entry.sphereAt(planet.drawn);
             planet.drawn.orientation = math.turned(planet.drawn.orientation, .y, ticks * entry.spin);
+            planet.drawn.position += sphere - entry.sphereAt(planet.drawn);
             if (planet.model) |*model| model.place(planet.drawn.position, planet.drawn.orientation);
             if (!hardware or planet.object.flags.disabled) continue;
             const object = &entry.ring.object;
-            object.position = planet.drawn.position;
+            object.position = sphere;
             object.orientation = math.lookAt(camera - object.position);
-            for (&entry.ring.colours) |*colour| colour[3] = brightness;
+            for (entry.ring.colours[0..entry.ring.mesh.positions.len]) |*colour| colour[3] = brightness;
             try xtrabits.sceneAdd(gpa, scene, .{ .mesh = object }, .background);
         }
     }
@@ -212,7 +251,7 @@ test Look {
 test Ring {
     const gpa = std.testing.allocator;
     var image: srtexture.Image = .{ .levels = &.{} };
-    const ring = try Ring.create(gpa, &image, 1000, Look.of(.jupiter_hi).?);
+    const ring = try Ring.create(gpa, &image, 1000, Look.of(.jupiter_hi).?, segments);
     defer ring.destroy(gpa);
     // Flat, from 0.85 of the radius in the look's colour out to its outer edge, black.
     try std.testing.expectApproxEqAbs(850, math.length(ring.mesh.positions[0]), 1e-2);
@@ -225,6 +264,17 @@ test Ring {
     try std.testing.expectEqual(&image, ring.mesh.surfaces[0].textures[0].image);
     try std.testing.expectEqual(srapiext.Material.Blend.add_alpha, ring.mesh.surfaces[0].material.blend[0]);
     try std.testing.expect(ring.object.flags.baked_object and ring.object.flags.not_culled);
+    try std.testing.expectEqual(2 * segments, ring.object.baked.?.len);
+}
+
+test "a round ring" {
+    const gpa = std.testing.allocator;
+    var image: srtexture.Image = .{ .levels = &.{} };
+    const ring = try Ring.create(gpa, &image, 1000, Look.of(.neptune_hi).?, round_segments);
+    defer ring.destroy(gpa);
+    try std.testing.expectEqual(2 * round_segments, ring.mesh.positions.len);
+    try std.testing.expectEqual(2 * round_segments, ring.object.baked.?.len);
+    try std.testing.expectEqual([4]f32{ 0, 0, 0, 1 }, ring.colours[round_segments]);
 }
 
 test Atmospheres {
@@ -236,7 +286,7 @@ test Atmospheres {
     try model.init(gpa);
     defer model.deinit(gpa);
     var image: srtexture.Image = .{ .levels = &.{} };
-    var atmospheres: Atmospheres = .{ .gpa = gpa, .image = &image };
+    var atmospheres: Atmospheres = .{ .gpa = gpa, .image = &image, .detail = .original };
     defer atmospheres.deinit();
     const all = mission.objects;
     var planets: [capacity + 1]u16 = undefined;
@@ -281,4 +331,35 @@ test Atmospheres {
     for (atmospheres.entries[0..atmospheres.count]) |entry| try std.testing.expect(entry.planet != planets[1]);
     atmospheres.release(ship);
     try std.testing.expectEqual(capacity - 1, atmospheres.count);
+}
+
+test "an atmosphere round a planet's sphere, turning in place" {
+    const gpa = std.testing.allocator;
+    var mission: gameobj.testing.Mission = undefined;
+    try mission.init(gpa);
+    defer mission.deinit();
+    var model: create.testing.Model = undefined;
+    try model.init(gpa);
+    defer model.deinit(gpa);
+    var image: srtexture.Image = .{ .levels = &.{} };
+    var atmospheres: Atmospheres = .{ .gpa = gpa, .image = &image };
+    defer atmospheres.deinit();
+    const all = mission.objects;
+    const planet = try create.createObject(all, &mission.tables, model.types(), null, .predator, 0, .{ 1000, 0, 0 }, &mission.random);
+    all.slots[planet].object.type = .uranus_lo;
+    atmospheres.made(all, planet);
+    try std.testing.expectEqual(2 * round_segments, atmospheres.entries[0].ring.mesh.positions.len);
+    // A sphere off its model's origin along Z, as the planets' are.
+    atmospheres.entries[0].middle = .{ 0, 0, 200 };
+    const sphere = atmospheres.entries[0].sphereAt(all.slots[planet].drawn);
+
+    // Turning, the planet keeps its sphere where it stands, and the ring stands round it.
+    var scene: srcore.Scene = .{};
+    defer scene.deinit(gpa);
+    try atmospheres.frame(gpa, &scene, all, .{ 0, 0, -5000 }, true, 0.5, 1000);
+    const now = atmospheres.entries[0].sphereAt(all.slots[planet].drawn);
+    try std.testing.expectApproxEqAbs(0, math.distance(sphere, now), 1e-2);
+    try std.testing.expect(math.distance(all.slots[planet].drawn.position, .{ 1000, 0, 0 }) > 1);
+    const ring_at = atmospheres.entries[0].ring.object.position;
+    try std.testing.expectApproxEqAbs(0, math.distance(sphere, ring_at), 1e-2);
 }

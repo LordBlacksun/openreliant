@@ -132,7 +132,13 @@ camera, as solid as the lens flares are bright (`backdrop.flareBrightness`), on 
 layer, which the world is drawn over. The ring's radius is the part's, its farthest vertex from the
 origin, and Neptune's detailed model stands off its own origin by about 218000 along Z, so its
 radius is some 1.17 times the sphere's: the ring runs from about the rim to a tenth beyond it, and
-stands off the sphere's middle, which circles the planet's position as it turns.
+stands off the sphere's middle, which circles the planet's position as it turns. The other planets'
+models stand as far off their origins.
+
+**Fix:** OpenReliant stands the ring round the sphere's middle, the middle of the first part's
+finest mesh as the planet is turned, and turns the planet about it, so that it stays where it
+stands; the ring keeps the game's radii, so that it starts at the rim, as the game's sizes mean it
+to. **Improvement:** the ring is made of 96 quads, round at any size; `--original` makes it of 20.
 
 **Fix:** a fifth atmosphere would write past the table; OpenReliant makes none. With the sun square
 to the view, the game leaves the flares' brightness unset for the rings; OpenReliant keeps the last.
