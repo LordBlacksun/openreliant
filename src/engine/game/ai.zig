@@ -217,24 +217,25 @@ pub fn escapeDirection(slot: *const create.Slot, from: Vector) Vector {
 const crash_target_share: f32 = -2;
 const least_closing: f32 = 0.001;
 
-/// `0x00401980`: whether the ship at `index` is on course to hit `target`, one without listed
-/// components, within `steps` simulation steps and with `margin` to spare: they are within reach
-/// of each other at their cruise speeds, the target is ahead of the ship, and the ship is closing
-/// on it by its velocity less twice the target's, to within both radii and the margin.
-///
-/// Not ported: against a target with listed components, the parts of it the ship could hit
-/// ([#239](https://github.com/vdmkenny/openreliant/issues/239)); that is taken as no.
+/// `ai_collision_course` (`0x00401980`): whether the ship at `index` is on course to hit `target`
+/// within `steps` simulation steps and with `margin` to spare. First they must be within reach of
+/// each other at their cruise speeds. Against a target that lists components, the ship must then be
+/// within reach of a box of one of its parts (`partsInReach`). Against any other, the target must
+/// be ahead of the ship, and the ship closing on it by its velocity less twice the target's, to
+/// within both radii and the margin. The game also hands back the part and the box, which no
+/// caller reads.
 pub fn collisionCourse(world: gameobj.World, index: u16, target: u16, steps: f32, margin: f32) bool {
     const all = world.objects;
     const ship = &all.slots[index];
     const struck = &all.slots[target];
-    if (struck.object.flags.components) return false;
     const ship_flight = ship.flight orelse return false;
     const struck_flight = struck.flight orelse return false;
     var apart = ship.object.nextPosition() - struck.object.nextPosition();
-    const speeds = cruiseSpeed(&struck.object, struck_flight, world.view) + cruiseSpeed(&ship.object, ship_flight, world.view);
+    const own_cruise = cruiseSpeed(&ship.object, ship_flight, world.view);
+    const speeds = cruiseSpeed(&struck.object, struck_flight, world.view) + own_cruise;
     const reach = speeds * steps + struck.object.radius + ship.object.radius + margin;
     if (math.lengthSquared(apart) > reach * reach) return false;
+    if (struck.object.flags.components) return partsInReach(struck, ship.object.nextPosition(), own_cruise * steps + margin);
     const closing = gameobj.vector(struck.object.velocity) * @as(Vector, @splat(crash_target_share)) + gameobj.vector(ship.object.velocity);
     if (math.dot(ship.object.nextHeading(), apart) > 0) return false;
     const along = math.dot(apart, closing);
@@ -244,6 +245,28 @@ pub fn collisionCourse(world: gameobj.World, index: u16, target: u16, steps: f32
     apart += closing * @as(Vector, @splat(@min(-along / rate, steps)));
     const touching = struck.object.radius + ship.object.radius + margin;
     return math.lengthSquared(apart) < touching * touching;
+}
+
+/// `ai_collision_course`'s test of a target that lists components (`0x00401A5E`): whether `at`
+/// lies within `reach` of one of the target's parts. Of the parts that hang from its root, shown
+/// and with a collision tree, each whose frame's sphere, `reach` wider, holds `at` has each box of
+/// its tree tested: `at` lies within reach of the box where it stands nearer to the box's centre,
+/// squared, than the box's half size and the reach, each squared, together.
+fn partsInReach(struck: *const create.Slot, at: Vector, reach: f32) bool {
+    const model = if (struck.model) |*live| live else return false;
+    for (model.parts, 0..) |*part, index| {
+        if (part.parent != null or part.removed or part.hidden) continue;
+        const data = (objects.PartRef{ .model = @constCast(model), .index = index }).data() orelse continue;
+        if (data.nodes.len == 0) continue;
+        const place = part.drawn();
+        const limit = reach + part.object.radius;
+        if (limit * limit < math.distanceSquared(place.position, at)) continue;
+        for (data.nodes) |node| {
+            const half = math.lengthSquared(gameobj.vector(node.half_size));
+            if (half + reach * reach > math.distanceSquared(place.point(gameobj.vector(node.centre)), at)) return true;
+        }
+    }
+    return false;
 }
 
 /// A pilot ejects rather than go down with the ship where its `eject_roll` is below this
@@ -1247,6 +1270,43 @@ test collisionCourse {
     all.slots[ship].object.velocity = .{ .x = 0, .y = 0, .z = 50 };
     all.slots[target].object.root.next_position = .{ .x = 0, .y = 0, .z = -2000 };
     try std.testing.expect(!collisionCourse(world, ship, target, 100, 500));
+}
+
+test "a collision course against a ship's parts" {
+    const gpa = std.testing.allocator;
+    var mission: gameobj.testing.Mission = undefined;
+    try mission.init(gpa);
+    defer mission.deinit();
+    var hull: create.testing.Model = undefined;
+    try hull.init(gpa);
+    defer hull.deinit(gpa);
+    hull.withHull();
+    const target = try create.createObject(mission.objects, &mission.tables, hull.types(), null, .reaper, 0, @splat(0), &mission.random);
+    const struck = mission.slot(target);
+    struck.model.?.place(struck.drawn.position, struck.drawn.orientation);
+    const part = &struck.model.?.parts[0];
+
+    // The part's box is 100 across either way and 10 deep: 400 off it, a reach of 500 meets it,
+    // and 600 off it does not.
+    try std.testing.expect(partsInReach(struck, .{ 0, 0, 400 }, 500));
+    try std.testing.expect(!partsInReach(struck, .{ 0, 0, 600 }, 500));
+    // Beyond the part's sphere and the reach, its boxes are not tested.
+    try std.testing.expect(!partsInReach(struck, .{ 0, 0, 400 }, 200));
+    // A part hidden, or hanging from another, is passed over.
+    part.hidden = true;
+    try std.testing.expect(!partsInReach(struck, .{ 0, 0, 400 }, 500));
+    part.hidden = false;
+    part.parent = 0;
+    try std.testing.expect(!partsInReach(struck, .{ 0, 0, 400 }, 500));
+    part.parent = null;
+
+    // A ship on its way to such a target is tested against its parts, ahead of it or not.
+    const world = mission.world();
+    const ship = try mission.add(.predator, .{ 0, 0, 400 });
+    if (struck.flight == null) struck.flight = mission.slot(ship).flight;
+    struck.object.flags.components = true;
+    try std.testing.expect(collisionCourse(world, ship, target, 0, 500));
+    try std.testing.expect(!collisionCourse(world, ship, target, 0, 200));
 }
 
 test rollUpright {

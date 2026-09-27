@@ -391,8 +391,10 @@ pub const Point = extern struct {
 };
 
 pub const FiringArc = extern struct {
-    /// **Unknown.** Nothing reads it; (0, -1, 0) or (0, 1, 0) in the shipped models.
-    _unknown_00: Vec3,
+    /// The way a fighter's attack run on the component pulls out, in the object's frame
+    /// (`maneuver_new_attack_run_start`, `0x004065D0`): (0, -1, 0) or (0, 1, 0) in the shipped
+    /// models, away from the side of the hull the component stands on.
+    way_out: Vec3,
     /// 32 rows about the component's Y axis by 16 columns from it, a bit a direction, set where a
     /// turret may fire.
     rows: [32]u16,

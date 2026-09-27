@@ -209,6 +209,17 @@ pass-through slot:
 - any other goes on the second, where the ship lists no components, while the ship is on course to
   hit it within 50 steps by 2000 (`ai_collision_course`, `0x00401980`).
 
+`ai_collision_course` first asks that the two be within reach of each other over the steps, at
+their cruise speeds, with both radii and the margin. Against a target without components, the
+target must then lie ahead of the ship, and the ship close on it by its velocity less twice the
+target's, to within both radii and the margin. Against a target with components, the ship's next
+position must instead lie within the ship's cruise speed times the steps, and the margin, of a box
+of one of the target's parts: of the parts hanging from its root, shown and with a collision tree,
+each whose sphere, that reach wider, holds the position has each box of its tree tested, and the
+position is within reach of a box where it stands nearer to the box's centre, squared, than the
+box's half size and the reach, each squared, together. The game also hands back the part and the
+box, which no caller reads.
+
 `avoid_near` (`0x004028F0`) works the first list, from the line between where the ship goes next
 and the point it steers at. For each object not standing in, exploding or disabled, not farther
 behind along that line than both radii, closing along it, and to be met within 250 steps: it
