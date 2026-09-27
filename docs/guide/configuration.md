@@ -98,8 +98,8 @@ The flight keys are the game's own, as `starlancer.ini` binds them. OpenReliant 
 
 | Key | Action |
 |---|---|
-| F2, F3 | Start the mission again in the previous or next ship type |
-| F4 | Bring in another wing |
+| F2, F3 | In the sandbox, start it again in the previous or next ship type |
+| F4 | In the sandbox, bring in another wing |
 | Alt+Enter | Switch between windowed and fullscreen mode |
 | Escape | Open the pause menu, whose LEAVE MISSION quits and RESTART restarts |
 | 1 to 8 | Camera views: 1 cockpit, 2 left, 3 right, 4 rear, 5 flyby, 6 target, 7 external, 8 missile |

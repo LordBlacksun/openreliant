@@ -1,7 +1,7 @@
 //! The keys OpenReliant adds for testing, which the original leaves unbound, and which act outside
-//! any mission's file: F2 and F3 start the mission again with the loadout's ship the previous or
-//! next ship type (`nextShipType`), and F4 brings another wing of Sabres in front of the player
-//! (`bringWing`).
+//! any mission's file, in the sandbox alone (`active`): F2 and F3 start the mission again with the
+//! loadout's ship the previous or next ship type (`nextShipType`), and F4 brings another wing of
+//! Sabres in front of the player (`bringWing`).
 
 const std = @import("std");
 const log = std.log.scoped(.test_keys);
@@ -11,6 +11,17 @@ const engine = openreliant.engine;
 const game = engine.game;
 const math = engine.surrender.math;
 const mission0 = @import("mission0.zig");
+
+/// Whether the test keys work in mission `number`: in the sandbox alone (`mission0.number`), so that
+/// they never change one of the game's missions.
+pub fn active(number: u16) bool {
+    return number == mission0.number;
+}
+
+test active {
+    try std.testing.expect(active(mission0.number));
+    try std.testing.expect(!active(1));
+}
 
 /// F2 and F3, with the way each steps through the ship types.
 pub const ship_keys = [_]struct { engine.input.Key, isize }{ .{ .f2, -1 }, .{ .f3, 1 } };

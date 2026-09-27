@@ -170,8 +170,8 @@ const help_page = page: {
     break :page out ++ "\nWhile playing:\n" ++
         help.paragraph("The flight keys are the game's own, as starlancer.ini binds them. OpenReliant adds:", 2) ++
         help.table(&.{
-            .{ .typed = "F2, F3", .text = "start the mission again in the previous or next ship type" },
-            .{ .typed = "F4", .text = "bring in another wing" },
+            .{ .typed = "F2, F3", .text = "in the sandbox, start it again in the previous or next ship type" },
+            .{ .typed = "F4", .text = "in the sandbox, bring in another wing" },
             .{ .typed = "Alt+Enter", .text = "switch between the window and the full screen" },
             .{ .typed = "Escape", .text = "the pause menu, whose LEAVE MISSION quits" },
         }) ++ "\nCommands:\n" ++
@@ -897,10 +897,12 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
                     try game.main.pause(pausing, true);
                 } else try play.again(orders);
             }
-            for (test_keys.ship_keys) |step| {
-                if (devices.keyboard.pressed(@intFromEnum(step[0]), .none, true)) try play.changeShip(orders, step[1]);
+            if (test_keys.active(play.number)) {
+                for (test_keys.ship_keys) |step| {
+                    if (devices.keyboard.pressed(@intFromEnum(step[0]), .none, true)) try play.changeShip(orders, step[1]);
+                }
+                if (devices.keyboard.pressed(@intFromEnum(test_keys.wing_key), .none, true)) test_keys.bringWing(orders);
             }
-            if (devices.keyboard.pressed(@intFromEnum(test_keys.wing_key), .none, true)) test_keys.bringWing(orders);
 
             game.main.controlsFrame(.{
                 .orders = orders,
