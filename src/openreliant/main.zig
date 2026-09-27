@@ -3,12 +3,13 @@
 //! `resource.hog` and the texture cache from it as the game does. `openreliant install` installs
 //! the game's files from its discs; see `install.zig`.
 //!
-//! It plays a mission, which starts again as each attempt ends: by default mission 0, OpenReliant's
-//! own sandbox (`mission0.zig`), which it carries, or the game's mission `--mission` names. It draws
-//! through Surrender's pipeline and its Direct3D driver with the GPU, or onto the software device,
-//! from the camera's views, which the game's camera keys pick and steer. Added for OpenReliant: the
-//! test keys (`test_keys.zig`), and Alt and Enter, which switch to the full screen and back. Escape
-//! opens the game's pause menu, whose LEAVE MISSION quits.
+//! It plays a mission, which pauses into the game's menu as each attempt ends, to be flown again:
+//! by default mission 0, OpenReliant's own sandbox (`mission0.zig`), which it carries, or the
+//! game's mission `--mission` names. It draws through Surrender's pipeline and its Direct3D driver
+//! with the GPU, or onto the software device, from the camera's views, which the game's camera keys
+//! pick and steer. Added for OpenReliant: the test keys (`test_keys.zig`), and Alt and Enter, which
+//! switch to the full screen and back. Escape opens the game's pause menu, whose LEAVE MISSION
+//! quits.
 
 const std = @import("std");
 const Io = std.Io;
@@ -115,7 +116,7 @@ const docs: std.enums.EnumArray(Arg, Doc) = .init(.{
     .@"--view" = .{ .section = .mission, .value = "<0|1|2>", .text = "the view it starts in, as the game's settings keep it: 0 the cockpit; 1 the chase view; 2 no cockpit. The settings' own by default, which the pause menu's video screen changes" },
     .@"--difficulty" = .{ .section = .mission, .value = "<easy|medium|hard>", .text = "the game's difficulty: how hard hits land on your ship, and shots on the enemy; medium by default, as in the game" },
     .@"--music" = .{ .section = .mission, .value = "<file>", .text = "a piece from the game's music folder to play from the start, until the mission's script plays its own; none by default" },
-    .@"--no-pause-menu" = .{ .section = .mission, .text = "start flying, where the mission otherwise starts in the game's pause menu, as there is no front end yet" },
+    .@"--no-pause-menu" = .{ .section = .mission, .text = "start flying, and fly the mission again as soon as it ends, where it otherwise starts and ends in the game's pause menu, as there is no front end yet" },
     .@"--fullscreen" = .{ .section = .display, .text = "fill the display; Alt and Enter switch while playing" },
     .@"--size" = .{ .section = .display, .value = "<width>x<height>", .text = "draw frames of this size in pixels whatever the window's, which shows them scaled; for a screenshot larger than the display" },
     .@"--fps" = .{ .section = .display, .value = "<rate>", .text = "frames a second at most; without vsync, the display's rate by default; 0 for no limit" },
@@ -817,7 +818,7 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
         .camera = &view,
         .player = &objects.player,
     };
-    if (options.pause_menu and frames_left == null) try game.main.pause(pausing, true);
+    if (inPauseMenu(options, frames_left)) try game.main.pause(pausing, true);
     // Whether the system's pointer shows over the window, and whether the window holds the mouse.
     var pointer_shown = true;
     var mouse_held = false;
@@ -876,9 +877,16 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
             // follows the player's.
             const over = game.main.missionFrame(orders, .of(&clock, options.smooth_motion, options.riders), play.loaded);
             // The mission over, once the camera has watched the player's end or the pilot's pickup,
-            // once the player's ship has landed, or once its script ends it, it starts again where
-            // the game would go to its debriefing.
-            if (over) try play.again(orders);
+            // once the player's ship has landed, or once its script ends it, the game goes to its
+            // debriefing. Until the front end, OpenReliant pauses into the menu over the last
+            // frame, where RESTART, and CONTINUE with nothing left to continue, fly it again; a
+            // screenshot, or a game that starts flying at once, starts it again straight away.
+            if (over) {
+                if (inPauseMenu(options, frames_left)) {
+                    play.over = true;
+                    try game.main.pause(pausing, true);
+                } else try play.again(orders);
+            }
             for (test_keys.ship_keys) |step| {
                 if (devices.keyboard.pressed(@intFromEnum(step[0]), .none, true)) try play.changeShip(orders, step[1]);
             }
@@ -971,11 +979,12 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
         last_view = view.view;
         view.cut = false;
         // What the menu's choice ends the pause in, as `mission_paused_frame` acts on it: the
-        // mission starts again for RESTART, and LEAVE MISSION leaves it.
+        // mission starts again for RESTART, and for CONTINUE once it is over, and LEAVE MISSION
+        // leaves it.
         if (pause_menu.outcome()) |outcome| {
             try game.main.pause(pausing, false);
             switch (outcome) {
-                .continue_mission => {},
+                .continue_mission => if (play.over) try play.again(orders),
                 .restart => try play.again(orders),
                 .leave_mission => return,
             }
@@ -1040,6 +1049,19 @@ fn save(io: Io, gpa: Allocator, path: []const u8, rgba: []const u8, size: [2]u32
     try writer.interface.flush();
 }
 
+/// Whether the mission starts and ends in the pause menu, which stands in for the front end and the
+/// debriefing: unless the game starts flying at once (`--no-pause-menu`), or takes a screenshot,
+/// which reads no controls and counts its frames down (`frames_left`).
+fn inPauseMenu(options: Options, frames_left: ?usize) bool {
+    return options.pause_menu and frames_left == null;
+}
+
+test inPauseMenu {
+    try std.testing.expect(inPauseMenu(try parsed(&.{}), null));
+    try std.testing.expect(!inPauseMenu(try parsed(&.{"--no-pause-menu"}), null));
+    try std.testing.expect(!inPauseMenu(try parsed(&.{}), 2));
+}
+
 /// The mission being played: the file it starts from, and the mission loaded for play, which
 /// starts again as each attempt ends, with what each start readies (`game.main.startMission`).
 const Play = struct {
@@ -1056,10 +1078,13 @@ const Play = struct {
     display: *game.hud.State,
     /// The camera, which shows the player's ship in the view it starts in (`startingView`).
     view: *camera.Camera,
+    /// Whether the attempt is over, the pause menu standing in the debriefing's place.
+    over: bool = false,
 
     /// Starts the mission, letting go of the one before.
     fn start(play: *Play, orders: game.aigeneric.Context) !void {
         play.end();
+        play.over = false;
         play.loaded = try game.main.startMission(play.gpa, .{
             .orders = orders,
             .clock = play.clock,
