@@ -123,6 +123,12 @@ Joystick=Extreme 3D
 ThrottleAxis=3
 TwistAxis=2
 ThrottleInvert=0
+
+[Device]
+View=0
+Gamma=100
 ```
 
+`[Device]` keeps the view a mission starts in (`View`: 0 the cockpit, 1 the chase view, 2 no
+cockpit) and the brightness in hundredths (`Gamma`), which the pause menu's graphics screen changes.
 See [Controllers and input](controllers.md) for detailed controller options.
