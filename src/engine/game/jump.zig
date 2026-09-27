@@ -7,10 +7,11 @@
 //! which the source map misses, as it lies in a case of a switch
 //! ([#310](https://github.com/vdmkenny/openreliant/issues/310)).
 //!
-//! Not ported: what a jump shows, the trails, the lights, the burst and the flare its effect record
-//! holds (`State.effect`, [#309](https://github.com/vdmkenny/openreliant/issues/309)); a countdown
-//! Jump Out keeps while the player's ship jumps, which nothing reads (`0x0051D0B0`, `0x0051D0B4`,
-//! `0x0051CFA0`, `0x0051D0A4`); and a multiplayer game's jumps
+//! What a jump shows, the trails, the lights, the burst and the flare of its effect record, is
+//! [`jump/effect.zig`](jump/effect.zig)'s.
+//!
+//! Not ported: a countdown Jump Out keeps while the player's ship jumps, which nothing reads
+//! (`0x0051D0B0`, `0x0051D0B4`, `0x0051CFA0`, `0x0051D0A4`); and a multiplayer game's jumps
 //! ([#55](https://github.com/vdmkenny/openreliant/issues/55)).
 
 const std = @import("std");
@@ -32,6 +33,10 @@ const GameObject = gameobj.GameObject;
 const objects = @import("objects.zig");
 const sound3d = @import("sound3d.zig");
 
+pub const effect = @import("jump/effect.zig");
+
+const log = std.log.scoped(.jump);
+
 /// What a jump keeps in the object's order state.
 pub const State = extern struct {
     _unknown_00: u32,
@@ -51,7 +56,8 @@ pub const State = extern struct {
     updated: i32,
     /// How far through its step it is, from 0 to past 1.
     progress: f32,
-    /// **Unknown.** How many lights its effect has (`0x00417670`), which only the effect reads.
+    /// How many lights its effect has (`jump_effect_start`), which the lights' sweep along the hull
+    /// reads (`effect.Effect.chargeLights`).
     lights: i32,
     /// Where Jump Out's motion takes it from and to (`motion.Motion.jump_out`).
     from: shp.Vec3,
@@ -59,8 +65,9 @@ pub const State = extern struct {
     /// The motion it puts aside while it flies its own: the routine's address, which OpenReliant
     /// keeps as `create.Slot.motion_aside`.
     motion: engine.Pointer(gameobj.Routine),
-    /// Its effect record (`0x0051CFA4`): its trails, lights, burst and flare.
-    effect: engine.Pointer(anyopaque),
+    /// Its effect record (`jump_effects`, `0x0051CFA4`): its trails, lights, burst and flare.
+    /// OpenReliant keeps the record's place among them, from 1 (`effectOf`).
+    effect: engine.Pointer(effect.Record),
     /// Whether it jumps out with the player's ship, in formation behind it (`placeOut`).
     with_player: u32,
     _unknown_80: [0x90 - 0x80]u8,
@@ -97,6 +104,48 @@ pub const State = extern struct {
         state.progress = 0;
     }
 };
+
+/// The jump's effect record, where it has one.
+fn effectOf(world: gameobj.World, state: *const State) ?*effect.Effect {
+    const effects = world.jump_effects orelse return null;
+    const place = @intFromEnum(state.effect);
+    if (place == 0 or place > effect.max_records) return null;
+    return effects.get(@intCast(place - 1));
+}
+
+/// `jump_effect_alloc` for the jump of the ship in slot `index`.
+///
+/// **Fix:** the game stops with "Jump has overrun array." where all the records are taken;
+/// OpenReliant's jump goes on without one.
+fn takeEffect(world: gameobj.World, state: *State, index: u16) ?*effect.Effect {
+    state.effect = .null;
+    const effects = world.jump_effects orelse return null;
+    const place = effects.alloc(index) catch null orelse {
+        log.warn("every jump's effect record is taken: this jump shows nothing", .{});
+        return null;
+    };
+    state.effect = @enumFromInt(@as(u32, place) + 1);
+    return effects.get(place);
+}
+
+/// `jump_effect_free`, as the jump ends.
+fn freeEffect(world: gameobj.World, state: *State) void {
+    const effects = world.jump_effects orelse return;
+    const place = @intFromEnum(state.effect);
+    if (place != 0 and place <= effect.max_records) effects.free(@intCast(place - 1));
+    state.effect = .null;
+}
+
+/// What the jump's update adds to the scene this frame, on top of what it added already.
+fn show(record: ?*effect.Effect, what: effect.Shown) void {
+    const fx = record orelse return;
+    fx.shown = @bitCast(@as(u8, @bitCast(fx.shown)) | @as(u8, @bitCast(what)));
+}
+
+/// How wide the ship's model is across, which the flare is scaled by.
+fn width(object: *const GameObject) f32 {
+    return object.bounds_max.x - object.bounds_min.x;
+}
 
 /// Jump Out's steps.
 pub const OutStep = enum(u32) {
@@ -230,6 +279,11 @@ fn soundClass(all: *const create.Objects, index: u16) sound3d.Class {
 /// colliding with nothing, drawn at its finest (`showFinest`), for `going_ticks`. Then it flies
 /// ahead again, jumping, while its flare fades, and collides again.
 ///
+/// What it shows (`effect`): held still, trails stream back from its engines and lights stand
+/// along its hull. As it charges the trails brighten and the lights come on, then are swept along
+/// the hull; as it goes the lights are out and the trails fade; gone, a flare of its width stands
+/// where it was, shrinking away.
+///
 /// At its end it is turned back as it was, powered and free to move, flies its own motion again,
 /// and draws as it did. The player's jump ends every object's jumping. A jump that names another
 /// object gives way to Jump In at it, of the matching number and the same place among its group;
@@ -259,6 +313,7 @@ pub fn outUpdate(ctx: aigeneric.Context, index: u16) void {
             } else if (now < state.since + formation_wait) return;
             state.step = @intFromEnum(OutStep.stilling);
             state.since = now;
+            _ = takeEffect(world, state, index);
             sound3d.playIn(world, null, null, index, .jumpout, 1, soundClass(all, index));
         },
         .stilling => {
@@ -272,33 +327,48 @@ pub fn outUpdate(ctx: aigeneric.Context, index: u16) void {
             object.rotation = math.identity;
             if (now <= state.since) return;
             beginCourse(slot);
+            if (effectOf(world, state)) |fx| state.lights = @intCast(world.jump_effects.?.start(fx, slot));
             state.progress = 0;
             state.step = @intFromEnum(OutStep.charging);
         },
         .charging => {
+            const fx = effectOf(world, state);
+            defer show(fx, .{ .trails = true, .lights = true });
             if (state.progress > 1) {
                 slot.motion_aside = slot.motion;
                 slot.motion = .jump_out;
                 object.flags.no_collisions = true;
                 state.advance(@intFromEnum(OutStep.going), now);
                 if (slot.model) |*model| showFinest(model, true);
+                if (fx) |record| record.lightsOut();
                 state.from = object.root.position;
                 return;
+            }
+            if (fx) |record| {
+                record.shadeTrails(state.progress);
+                record.chargeLights(state.progress, world.jump_effects.?.light_going_image);
             }
             state.progress += dt * charge_rate;
         },
         .going => {
+            const fx = effectOf(world, state);
+            defer show(fx, .{ .trails = true, .lights = true });
             if (state.since + going_ticks < now) {
+                if (fx) |record| world.jump_effects.?.startFlare(record, slot.drawn, width(object));
                 slot.motion = .forward;
                 object.flags.jumping = true;
                 state.progress = 0;
                 state.step = @intFromEnum(OutStep.gone);
                 return;
             }
+            if (fx) |record| record.shadeTrails(1 - state.progress);
             state.progress += dt * going_rate;
         },
         .gone => {
+            const fx = effectOf(world, state);
+            if (fx) |record| if (record.flare) |*flare| flare.grow(1 - state.progress);
             state.progress += dt * flare_rate;
+            show(fx, .{ .flare = true, .trails = true, .lights = true });
             if (state.progress >= 1) {
                 state.progress = 0;
                 state.step = @intFromEnum(OutStep.ending);
@@ -336,6 +406,7 @@ fn end(ctx: aigeneric.Context, index: u16) void {
     if (index == all.player) {
         for (all.slots[0..all.count]) |*each| each.object.flags.jumping = false;
     }
+    freeEffect(ctx.world, state);
     if (slot.model) |*model| showFinest(model, false);
     if (entry.target.slotIn(all)) |target| if (target != index) {
         const next: Order = if (entry.order == .jump_out_41) .jump_in_40 else .jump_in;
@@ -489,12 +560,18 @@ fn placeIn(all: *create.Objects, index: u16) void {
 /// `arrival_distance`, or `arrival_distance_components` for a ship that lists components. It is
 /// heard (`jumpin`); for the player's ship, the camera watches from one of the arrival's three
 /// views at random, the mission's space takes on what its script asked of it
-/// (`environfx.Environment.update`), and the stars streak shorter (`srstars`). It flashes in, and
-/// then flies in by its motion, no longer jumping, the player's view shaking less and less, until
+/// (`environfx.Environment.update`), and the stars streak shorter (`srstars`). From the same
+/// update it flashes in (`flash`), and then flies in by its motion, no longer jumping, the player's
+/// view shaking less and less, until
 /// it flies ahead again at full throttle, colliding again, powered and free to move. Then its
 /// order ends: for the player's ship the camera goes back to the cockpit, and its JumpedIn event
 /// is posted (`events.jumpedIn`). A ship of Jump In's second number first holds `settle_ticks` in
 /// its formation, rolling and pitching by its place in it.
+///
+/// What it shows (`effect`): a flare where it appears, which grows to its width as it flashes in;
+/// a burst hanging ahead of it, and trails from its engines. As it flies in, the trails and the
+/// burst fade, and over the first `flare_squash` of the flight the flare stretches across and
+/// flattens.
 ///
 /// Not ported: in a multiplayer game, the JumpedIn posted for the first player's ship too as the
 /// ship of the first player still flying jumps in.
@@ -510,6 +587,7 @@ pub fn inUpdate(ctx: aigeneric.Context, index: u16) void {
     switch (@as(InStep, @enumFromInt(state.step))) {
         .placing => {
             const target = slot.orders[0].target.slotIn(all) orelse return;
+            const fx = takeEffect(world, state, index);
             state.orientation = all.slots[target].drawn.orientation;
             state.position = object.root.position;
             objects.setOrientation(object, &slot.drawn, state.orientation);
@@ -518,6 +596,12 @@ pub fn inUpdate(ctx: aigeneric.Context, index: u16) void {
             const back = if (object.flags.components) arrival_distance_components else arrival_distance;
             const start = math.forward(state.orientation) * @as(Vector, @splat(-back)) + gameobj.vector(object.root.position);
             objects.setPosition(object, &slot.drawn, start);
+            if (fx) |record| {
+                const effects = world.jump_effects.?;
+                effects.startFlare(record, .{ .position = start, .orientation = state.orientation }, width(object));
+                record.flare_turn = state.orientation;
+                effects.startBurst(record);
+            }
             state.advance(@intFromEnum(InStep.flashing), now);
             sound3d.playIn(world, null, null, index, .jumpin, 1, soundClass(all, index));
             if (index == all.player) {
@@ -528,20 +612,28 @@ pub fn inUpdate(ctx: aigeneric.Context, index: u16) void {
                 if (world.environment) |space| space.update();
                 world.player.jumping_in = true;
             }
+            if (fx) |record| world.jump_effects.?.startTrails(record, slot);
+            // It flashes in from the same update, as if no time had passed (`0x0041679B`).
+            flash(world, slot, 0);
         },
-        .flashing => {
-            state.progress += dt * flash_rate;
-            if (state.progress > 1) {
-                state.progress = 0;
-                state.step = @intFromEnum(InStep.flying);
-                slot.motion_aside = slot.motion;
-                slot.motion = .jump_in;
-                object.flags.jumping = false;
-            }
-        },
+        .flashing => flash(world, slot, dt),
         .flying => {
+            const fx = effectOf(world, state);
+            defer show(fx, .{ .trails = true, .burst = true });
+            if (fx) |record| {
+                record.shadeTrails(1 - state.progress);
+                effect.glow(record, 1 - state.progress, world.jump_effects.?.hardware);
+            }
             if (index == all.player) world.shake.* = math.lerp(@as(f32, 1), 0, state.progress);
             state.progress += dt * fly_rate;
+            if (state.progress < flare_squash) if (fx) |record| if (record.flare) |*flare| {
+                const height = 1 - state.progress / flare_squash + flare_thinnest;
+                flare.grow(1);
+                flare.share = height;
+                const stretch: math.Matrix = .{ 1 + state.progress * flare_stretch, 0, 0, 0, height, 0, 0, 0, 1 };
+                flare.object.orientation = math.product(record.flare_turn, stretch);
+                show(fx, .{ .flare = true });
+            };
             if (!(state.progress > 1)) return;
             slot.motion = slot.motion_aside;
             object.throttle = 1;
@@ -559,6 +651,7 @@ pub fn inUpdate(ctx: aigeneric.Context, index: u16) void {
                 if (index == all.player) if (world.camera) |view| {
                     _ = view.setView(.cockpit, index, false, true, ctx.clock.viewTime());
                 };
+                freeEffect(world, state);
                 _ = aigeneric.pop(ctx, index);
                 events.jumpedIn(world, index);
                 return;
@@ -567,10 +660,40 @@ pub fn inUpdate(ctx: aigeneric.Context, index: u16) void {
             const side: i32 = if (@rem(n, 2) != 0) 1 else -1;
             object.roll_input = @as(f32, @floatFromInt(side * @divTrunc(n, 2))) * settle_input;
             object.pitch_input = @as(f32, @floatFromInt(@divTrunc(n, 2))) * settle_input;
+            show(effectOf(world, state), .{ .trails = true, .burst = true });
         },
         _ => {},
     }
 }
+
+/// Jump In's flashing step, which its placing runs on into in the same update: the flare grows to
+/// the ship's width as it flashes in (`flash_rate`); then the ship flies in by its motion, jumping
+/// no more. Its trails and its burst show throughout.
+fn flash(world: gameobj.World, slot: *create.Slot, dt: f32) void {
+    const object = &slot.object;
+    const state = &slot.state.jump;
+    const fx = effectOf(world, state);
+    if (fx) |record| if (record.flare) |*flare| flare.grow(state.progress);
+    show(fx, .{ .flare = true, .trails = true, .burst = true });
+    state.progress += dt * flash_rate;
+    if (state.progress > 1) {
+        state.progress = 0;
+        state.step = @intFromEnum(InStep.flying);
+        slot.motion_aside = slot.motion;
+        slot.motion = .jump_in;
+        object.flags.jumping = false;
+    }
+}
+
+/// How the flare stretches across and flattens as the ship flies in: `flare_stretch` times its
+/// width across for each of the flight's share (`0x004DC3D8`), gone flat at `flare_squash` of it
+/// (`0x004DC4C0`), and never quite nothing (`0x004DC568`).
+///
+/// **Improvement:** OpenReliant flattens it by the share over `flare_squash`, where the game
+/// multiplies by 3.3333333 (`0x004DC530`).
+const flare_stretch: f32 = 3;
+const flare_squash: f32 = 0.3;
+const flare_thinnest: f32 = 1e-6;
 
 /// The view the player's arrival is watched from, by the C runtime's `rand` (`random`): twice its
 /// share of the most `rand` gives, rounded (`sr_round`), picks one of three, the middle one half
