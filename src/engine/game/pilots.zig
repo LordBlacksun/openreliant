@@ -187,6 +187,10 @@ pub const Face = struct {
     /// The voice the pilot speaks in flying a friendly ship, by the pilot's number (`0x004538E0`);
     /// none for a pilot the game gives none, whose lines are then left out.
     allied_voice: ?AlliedVoice = null,
+    /// Whether the pilot answers the wingmen's commands from the fuller set of replies
+    /// (`0x004539A0`, whose table at `0x004539D0` marks Bandit, Diceman, Viper, Enriquez and
+    /// Hawkeye).
+    full_replies: bool = false,
 
     pub const heads = 4;
 

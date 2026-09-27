@@ -471,12 +471,12 @@ pub fn controlsFrame(controls: Controls) void {
     });
     // `mission_frame` runs the radio's queue after the controls, then its reports and its remarks;
     // the film's timer turns with the game's clock.
-    if (world.radio) |radio| if (world.hearing) |hearing| {
-        const on_air: videoreports.Context = .{ .sound = hearing.sound, .windows = &controls.display.windows, .all = all, .frame_start = clock.frame_start };
-        radio.runFilm(on_air, ticks);
-        radio.frame(on_air);
-        radio.stepReports(on_air, clock.game_ticks);
-    };
+    if (videoreports.onAir(world)) |on_air| {
+        const radio, const ctx = on_air;
+        radio.runFilm(ctx, ticks);
+        radio.frame(ctx);
+        radio.stepReports(ctx, clock.game_ticks);
+    }
     videoreports.remarksFrame(world);
     const cockpit_input = if (controls.cockpit) |shown| shown.inputFor(slot, view.view) else null;
     const subject = camera.Subject.of(slot);

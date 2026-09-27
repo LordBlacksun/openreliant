@@ -1872,12 +1872,23 @@ const Said = struct {
     }
 };
 const blind_fire_said: Said = .{ .on = .blind_fire_on, .off = .blind_fire_off };
+
+/// The wingmen's keys, and the command each gives (`frame_controls`, `0x0041453E`).
+const wingmen_keys = [_]struct { action: controls.Action, command: videoreports.wingmen.Command }{
+    .{ .action = .attack_my_target, .command = .attack_my_target },
+    .{ .action = .back_off, .command = .back_off },
+    .{ .action = .help_me, .command = .help_me },
+};
 const spectral_shields_said: Said = .{ .on = .spectral_shields_on, .off = .spectral_shields_off };
 const cloak_said: Said = .{ .on = .cloak_on, .off = .cloak_off };
 
 /// The keys `frame_controls` reads after the targeting's, in its order, each with the display's
 /// sound (`hud.Beep`): most with `done`, a device turning on or off with `on` or `off`.
 ///
+/// - ATTACK MY TARGET, BACK OFF and HELP ME, outside a multiplayer game, while the player's
+///   target is a hostile ship that can be aimed at (`videoreports.wingmen.hostileTarget`), give
+///   their command to a wingman the game picks (`videoreports.wingmen.give`), with no sound of the
+///   display's.
 /// - PERMISSION TO LAND, outside a multiplayer mission, asks the carrier to clear the player's
 ///   ship to land (`videoreports.permissionToLand`), with no sound of the display's.
 /// - TOGGLE BLINDFIRE flips blind fire on a ship that carries it, and Betty says which, with no
@@ -1913,7 +1924,8 @@ const cloak_said: Said = .{ .on = .cloak_on, .off = .cloak_off };
 /// **Fix:** the game sounds a power key every frame it is held, a new sound each frame, which
 /// OpenReliant's frame rates make a din; OpenReliant sounds it as it is pressed.
 ///
-/// Not yet ported: the radio's menu COMMS WINDOW starts; and the orders to the wingmen.
+/// Not yet ported: the radio's menu COMMS WINDOW starts; and that the wingmen's keys go unheard in
+/// the front end's simulator (`0x0057E044`) and where the game's mode (`0x00524FE4`) is not 0.
 pub fn frameKeys(keys: FrameKeys) void {
     const display = keys.display;
     const player = keys.player;
@@ -1923,6 +1935,12 @@ pub fn frameKeys(keys: FrameKeys) void {
     const object = &slot.object;
     const windows = &display.windows;
     const groups = slot.groupCount();
+    for (wingmen_keys) |key| {
+        if (!devices.active(key.action, true) or multiplayer) continue;
+        const world = keys.world orelse continue;
+        if (videoreports.wingmen.hostileTarget(world.objects) == null) continue;
+        videoreports.wingmen.give(world, key.command, .picked);
+    }
     if (devices.active(.permission_to_land, true) and !multiplayer) {
         if (keys.world) |world| videoreports.permissionToLand(world, keys.game_ticks);
     }

@@ -4,10 +4,10 @@
 //! remarks lies, from `0x00456050` to `0x00456F00`.
 //!
 //! The reports (`Report`) wait their time and are then said as lines: PERMISSION TO LAND's answer
-//! queues one. The remarks (`Remarks`) are the lines the game has the pilots say by itself: the
-//! reminders to land and to jump, the warning of a missile, and the words on a kill, a ship lost, a
-//! pilot ejecting, a hit on the player and a launch. Not ported: the reports the wingmen's keys and
-//! the radio's menu queue ([#99](https://github.com/vdmkenny/openreliant/issues/99)).
+//! and the wingmen's replies to their commands (`wingmen`) queue them. The remarks (`Remarks`) are
+//! the lines the game has the pilots say by itself: the reminders to land and to jump, the warning
+//! of a missile, and the words on a kill, a ship lost, a pilot ejecting, a hit on the player and a
+//! launch. Not ported: the radio's menu ([#99](https://github.com/vdmkenny/openreliant/issues/99)).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -26,6 +26,12 @@ const Windows = @import("hud/windows.zig").Windows;
 const input = @import("../input.zig");
 const mss = @import("../mss.zig");
 const vm = @import("../vm.zig");
+
+pub const wingmen = @import("videoreports/wingmen.zig");
+
+test {
+    _ = wingmen;
+}
 
 /// How long PERMISSION TO LAND goes unheard once heard, in the timer's ticks (`0x00453FC2`).
 pub const permission_every: u32 = 500;
@@ -260,6 +266,33 @@ pub fn mooseSays(world: gameobj.World, speech: []const u8, mode: Mode, expiry: i
     pilotSays(world, moose(world.objects), .talking, speech, mode, .looping, expiry);
 }
 
+/// A report of the wingman in slot `ship` to the player, said `report_delay` ticks after the
+/// game's tick: one of `lines` in the pilot's voice (`shipLine`), with the film of its face
+/// talking, as the wingmen's commands answer (`0x00454DA9`). None where the radio's reports are all
+/// taken; the line is picked as the report is made, even where nothing is heard.
+///
+/// **Fix:** the game copies the line of a pilot with no voice there from nowhere, and stops;
+/// OpenReliant makes no report.
+pub fn reportShip(world: gameobj.World, ship: u16, lines: []const []const u8) void {
+    const radio = world.radio orelse {
+        _ = pick(world, lines);
+        return;
+    };
+    const place = radio.freeReport() orelse return;
+    const suffix = pick(world, lines);
+    const all = world.objects;
+    var buffer: [ship_line_size]u8 = undefined;
+    const speech = shipLine(&buffer, all, ship, suffix) orelse return;
+    var film: [film_path_size]u8 = undefined;
+    radio.reports[place] = .{
+        .object = ship,
+        .about = all.player,
+        .due = world.clock.game_ticks + report_delay,
+        .film = .of(filmPath(&film, pilots.faceOf(all.slots[ship].object.pilot), .talking)),
+        .speech = .of(speech),
+    };
+}
+
 /// The room the game gives a ship's line's name (`0x00529CC0`, up to `0x00529D40`).
 const ship_line_size = 0x80;
 
@@ -419,9 +452,9 @@ const rescuer_place = 5;
 const rescue_lines = [_][]const u8{ "res_001.ut", "res_002.ut", "res_003.ut" };
 
 /// `radio_rescue` (`0x00456B10`), each frame: `rescue_wait` ticks after a wingman's pilot ejects
-/// (`wingmanEjected`), the wingman in the last place of the player's wing (`rescuer_place`) says the
-/// rescue's words, unless the radio is busy, the pilot's pod is exploding, or the script has the
-/// remarks unsaid.
+/// (`wingmanEjected`), the wingman in the last place of the player's wing (`rescuer_place`) says
+/// the rescue's words, unless the radio is busy, the pilot's pod is exploding, or the script has
+/// the remarks unsaid.
 ///
 /// **Fix:** the game reads before its objects where the wing has no ship in that place;
 /// OpenReliant says nothing.
@@ -552,10 +585,10 @@ const reliant_launch_lines = [_][]const u8{ "relbdg_001.ut", "relbdg_002.ut", "r
 const yamato_launch_lines = [_][]const u8{ "yambdg_001.ut", "yambdg_002.ut", "yambdg_003.ut", "yambdg_004.ut", "yambdg_005.ut" };
 const training_launch_line = "trnlch_001.ut";
 
-/// `radio_launch_line` (`0x00456E50`), as the player's ship's launch from the ship in slot `carrier`
-/// goes (`launch.update`), while the script lets the remarks be said and the radio is free: the
-/// flight instructor speaks in a training mission, and in any other the bridge officer of the
-/// carrier, a Reliant or a Yamato. A launch from anything else goes unremarked.
+/// `radio_launch_line` (`0x00456E50`), as the player's ship's launch from the ship in slot
+/// `carrier` goes (`launch.update`), while the script lets the remarks be said and the radio is
+/// free: the flight instructor speaks in a training mission, and in any other the bridge officer
+/// of the carrier, a Reliant or a Yamato. A launch from anything else goes unremarked.
 pub fn launchLine(world: gameobj.World, carrier: u16) void {
     if (world.player.remarks.generic_comms_disabled) return;
     const all = world.objects;
@@ -605,13 +638,14 @@ const report_text_size = 50;
 pub const Report = struct {
     /// Whose it is, as a line's (`Line.object`).
     object: i32,
-    /// **Unknown.** Whom it concerns (`+0x08`): PERMISSION TO LAND puts the player's ship there,
-    /// and nothing reads it.
+    /// **Unknown.** Whom it concerns (`+0x08`): PERMISSION TO LAND and the wingmen's replies put
+    /// the player's ship there, and nothing reads it.
     about: i32 = nobody,
     /// **Unknown.** What kind of report it is (`+0x0C`): only one of `said_report` is said.
     kind: u16 = said_report,
-    /// The string that names a pilot of the pilots' table who says it (`+0x10`).
-    name: u16,
+    /// The string that names a pilot of the pilots' table who says it (`+0x10`); a ship's report
+    /// is named by its pilot's face instead.
+    name: ?u16 = null,
     /// The timer's tick past which it is said (`+0x14`).
     due: u32,
     film: Text(report_text_size),
@@ -695,7 +729,7 @@ fn Text(comptime size: usize) type {
             return kept;
         }
 
-        fn slice(kept: *const @This()) []const u8 {
+        pub fn slice(kept: *const @This()) []const u8 {
             return kept.bytes[0..kept.len];
         }
     };
@@ -1291,82 +1325,90 @@ test permissionToLand {
     try std.testing.expectEqual(0, slot.object.order_count);
 }
 
-/// A world heard through a radio, for the remarks' tests, in mission 1: the player's ship, a
-/// fighter of the player's wing flown by Bandit, and an enemy fighter whose pilot speaks in the
-/// Russian voice.
-const TestRadio = struct {
-    tmp: std.testing.TmpDir,
-    mission: gameobj.testing.Mission,
-    mixer: mss.Mixer,
-    sound: hog_snd.Sound,
-    radio: Radio,
-    variables: vm.Variables,
-    place: @import("camera.zig").Place,
-    wingman: u16,
-    enemy: u16,
+/// What the tests of the radio's users share.
+pub const testing = struct {
+    /// A world heard through a radio, in mission 1: the player's ship, a fighter of the player's
+    /// wing flown by Bandit, and an enemy fighter whose pilot speaks in the Russian voice.
+    pub const Heard = struct {
+        tmp: std.testing.TmpDir,
+        mission: gameobj.testing.Mission,
+        mixer: mss.Mixer,
+        sound: hog_snd.Sound,
+        radio: Radio,
+        variables: vm.Variables,
+        place: @import("camera.zig").Place,
+        wingman: u16,
+        enemy: u16,
 
-    /// Bandit, the pilot of the wingman and of the enemy, whose voice is the Russian one.
-    const bandit = 0;
+        /// Bandit, the pilot of the wingman and of the enemy, whose voice is the Russian one.
+        pub const bandit = 0;
 
-    fn init(radio_test: *TestRadio) !void {
-        const gpa = std.testing.allocator;
-        const io = std.testing.io;
-        radio_test.tmp = std.testing.tmpDir(.{});
-        errdefer radio_test.tmp.cleanup();
-        const silence = try cbox.testFile(gpa, 4410, 200);
-        defer gpa.free(silence);
-        try hog.testing.write(gpa, io, radio_test.tmp.dir, "speech.hog", &.{.{ .name = "PLCK_001", .data = silence }});
-        try hudmovie.testing.write(gpa, io, radio_test.tmp.dir, "pilots.hog", &.{.{ .name = "static.fm8", .frames = 1, .colour = 0x80 }});
-        const mission = &radio_test.mission;
-        try mission.init(gpa);
-        errdefer mission.deinit();
-        mission.objects.mission_number = 1;
-        mission.tables.combat[@intFromEnum(gameobj.Type.predator)].class = .fighter;
-        _ = try mission.add(.predator, @splat(0));
-        radio_test.wingman = try mission.add(.predator, .{ 0, 0, 1000 });
-        radio_test.enemy = try mission.add(.predator, .{ 0, 0, 2000 });
-        for ([_]u16{ radio_test.wingman, radio_test.enemy }) |ship| mission.slot(ship).object.pilot = bandit;
-        mission.slot(radio_test.wingman).object.wing = .player;
-        mission.slot(radio_test.enemy).object.side = .hostile;
-        radio_test.mixer = .init(22050);
-        radio_test.sound.init(radio_test.mixer.driver(), 2, null);
-        radio_test.radio = .openAt(gpa, io, radio_test.tmp.dir, "speech.hog", "pilots.hog");
-        radio_test.variables = .{};
-        radio_test.place = .{};
-    }
-
-    fn deinit(radio_test: *TestRadio) void {
-        radio_test.radio.deinit(&radio_test.sound);
-        radio_test.sound.shutdown();
-        radio_test.mission.deinit();
-        radio_test.tmp.cleanup();
-    }
-
-    fn world(radio_test: *TestRadio) gameobj.World {
-        var seen = radio_test.mission.world();
-        seen.radio = &radio_test.radio;
-        seen.hearing = .{ .sound = &radio_test.sound, .camera = &radio_test.place, .clock = &radio_test.mission.clock };
-        seen.variables = &radio_test.variables;
-        return seen;
-    }
-
-    /// The line `back` places behind the next to be said.
-    fn queued(radio_test: *const TestRadio, back: usize) *const Queued {
-        return &radio_test.radio.queue[(radio_test.radio.read + back) % queue_size];
-    }
-
-    /// Whether the line `back` places behind the next is `speaker`'s, and one of `lines`, as it
-    /// starts: the suffix a ship's pilot's voice ends.
-    fn expectLine(radio_test: *const TestRadio, back: usize, speaker: i32, lines: []const []const u8) !void {
-        const line = radio_test.queued(back);
-        try std.testing.expectEqual(speaker, line.object);
-        const speech = line.speech.slice();
-        for (lines) |suffix| {
-            if (std.mem.endsWith(u8, speech, suffix)) return;
+        pub fn init(heard: *Heard) !void {
+            const gpa = std.testing.allocator;
+            const io = std.testing.io;
+            heard.tmp = std.testing.tmpDir(.{});
+            errdefer heard.tmp.cleanup();
+            const silence = try cbox.testFile(gpa, 4410, 200);
+            defer gpa.free(silence);
+            // A line of Moose's, and the pilot's own asking the wingmen.
+            try hog.testing.write(gpa, io, heard.tmp.dir, "speech.hog", &.{
+                .{ .name = "PLCK_001", .data = silence },
+                .{ .name = "MPHUD_001", .data = silence },
+                .{ .name = "MPHUD_002", .data = silence },
+                .{ .name = "MPHUD_003", .data = silence },
+            });
+            try hudmovie.testing.write(gpa, io, heard.tmp.dir, "pilots.hog", &.{.{ .name = "static.fm8", .frames = 1, .colour = 0x80 }});
+            const mission = &heard.mission;
+            try mission.init(gpa);
+            errdefer mission.deinit();
+            mission.objects.mission_number = 1;
+            mission.tables.combat[@intFromEnum(gameobj.Type.predator)].class = .fighter;
+            _ = try mission.add(.predator, @splat(0));
+            heard.wingman = try mission.add(.predator, .{ 0, 0, 1000 });
+            heard.enemy = try mission.add(.predator, .{ 0, 0, 2000 });
+            for ([_]u16{ heard.wingman, heard.enemy }) |ship| mission.slot(ship).object.pilot = bandit;
+            mission.slot(heard.wingman).object.wing = .player;
+            mission.slot(heard.enemy).object.side = .hostile;
+            heard.mixer = .init(22050);
+            heard.sound.init(heard.mixer.driver(), 2, null);
+            heard.radio = .openAt(gpa, io, heard.tmp.dir, "speech.hog", "pilots.hog");
+            heard.variables = .{};
+            heard.place = .{};
         }
-        std.debug.print("{s} is none of the lines\n", .{speech});
-        return error.TestUnexpectedResult;
-    }
+
+        pub fn deinit(heard: *Heard) void {
+            heard.radio.deinit(&heard.sound);
+            heard.sound.shutdown();
+            heard.mission.deinit();
+            heard.tmp.cleanup();
+        }
+
+        pub fn world(heard: *Heard) gameobj.World {
+            var seen = heard.mission.world();
+            seen.radio = &heard.radio;
+            seen.hearing = .{ .sound = &heard.sound, .camera = &heard.place, .clock = &heard.mission.clock };
+            seen.variables = &heard.variables;
+            return seen;
+        }
+
+        /// The line `back` places behind the next to be said.
+        pub fn queued(heard: *const Heard, back: usize) *const Queued {
+            return &heard.radio.queue[(heard.radio.read + back) % queue_size];
+        }
+
+        /// Whether the line `back` places behind the next is `speaker`'s, and one of `lines`, as it
+        /// starts: the suffix a ship's pilot's voice ends.
+        pub fn expectLine(heard: *const Heard, back: usize, speaker: i32, lines: []const []const u8) !void {
+            const line = heard.queued(back);
+            try std.testing.expectEqual(speaker, line.object);
+            const speech = line.speech.slice();
+            for (lines) |suffix| {
+                if (std.mem.endsWith(u8, speech, suffix)) return;
+            }
+            std.debug.print("{s} is none of the lines\n", .{speech});
+            return error.TestUnexpectedResult;
+        }
+    };
 };
 
 test shipLine {
@@ -1399,24 +1441,24 @@ test shipLine {
 }
 
 test "the missile warning and the landing reminder" {
-    var radio_test: TestRadio = undefined;
-    try radio_test.init();
-    defer radio_test.deinit();
-    const world = radio_test.world();
-    const clock = &radio_test.mission.clock;
-    const radio = &radio_test.radio;
+    var heard: testing.Heard = undefined;
+    try heard.init();
+    defer heard.deinit();
+    const world = heard.world();
+    const clock = &heard.mission.clock;
+    const radio = &heard.radio;
     const moose_line = pilot_base + volunteers_moose;
 
     // A missile homing on the player's ship has Moose warn the pilot, at most once a while, and
     // never once the pilot has ejected.
-    const player = radio_test.mission.slot(0);
+    const player = heard.mission.slot(0);
     player.object.missile_homing = 1;
     clock.frame_start = 10;
     remarksFrame(world);
     try std.testing.expectEqual(1, radio.count);
-    try radio_test.expectLine(0, moose_line, &missile_warnings);
-    try std.testing.expectEqual(10 + missile_expiry, radio_test.queued(0).expiry.?);
-    radio.reset(&radio_test.sound);
+    try heard.expectLine(0, moose_line, &missile_warnings);
+    try std.testing.expectEqual(10 + missile_expiry, heard.queued(0).expiry.?);
+    radio.reset(&heard.sound);
     clock.frame_start = 10 + missile_wait;
     remarksFrame(world);
     try std.testing.expectEqual(0, radio.count);
@@ -1428,33 +1470,33 @@ test "the missile warning and the landing reminder" {
 
     // Once the ship is cleared to land, Moose reminds the pilot to ask, a while on and a while
     // after; unless the script has the remarks unsaid.
-    radio_test.variables.landing_cleared = 1;
+    heard.variables.landing_cleared = 1;
     clock.frame_start = 100;
     remarksFrame(world);
-    try std.testing.expect(radio_test.mission.player.remarks.landing_reminded);
+    try std.testing.expect(heard.mission.player.remarks.landing_reminded);
     try std.testing.expectEqual(0, radio.count);
     clock.frame_start = 100 + landing_wait + 1;
     remarksFrame(world);
     try std.testing.expectEqual(1, radio.count);
-    try radio_test.expectLine(0, moose_line, &landing_reminders);
-    radio_test.mission.player.remarks.generic_comms_disabled = true;
+    try heard.expectLine(0, moose_line, &landing_reminders);
+    heard.mission.player.remarks.generic_comms_disabled = true;
     clock.frame_start += landing_wait + 1;
     remarksFrame(world);
     try std.testing.expectEqual(1, radio.count);
-    try std.testing.expectEqual(clock.frame_start + landing_wait, radio_test.mission.player.remarks.landing_next);
+    try std.testing.expectEqual(clock.frame_start + landing_wait, heard.mission.player.remarks.landing_next);
     // Cleared no more, the reminder is over.
-    radio_test.variables.landing_cleared = 0;
+    heard.variables.landing_cleared = 0;
     remarksFrame(world);
-    try std.testing.expect(!radio_test.mission.player.remarks.landing_reminded);
+    try std.testing.expect(!heard.mission.player.remarks.landing_reminded);
 
     // In training, the flight instructor reminds the pilot once, whatever the script has unsaid.
-    radio.reset(&radio_test.sound);
-    radio_test.mission.objects.mission_number = create.training_missions[0];
-    radio_test.variables.landing_cleared = 1;
+    radio.reset(&heard.sound);
+    heard.mission.objects.mission_number = create.training_missions[0];
+    heard.variables.landing_cleared = 1;
     remarksFrame(world);
     try std.testing.expectEqual(1, radio.count);
-    try std.testing.expectEqual(instructor, radio_test.queued(0).object);
-    try std.testing.expectEqualStrings(training_landing_reminder, radio_test.queued(0).speech.slice());
+    try std.testing.expectEqual(instructor, heard.queued(0).object);
+    try std.testing.expectEqualStrings(training_landing_reminder, heard.queued(0).speech.slice());
     clock.frame_start += 2 * landing_wait;
     remarksFrame(world);
     try std.testing.expectEqual(1, radio.count);
@@ -1462,34 +1504,34 @@ test "the missile warning and the landing reminder" {
 
 test "the jump reminder calls the pilot to jump, then jumps" {
     const gpa = std.testing.allocator;
-    var radio_test: TestRadio = undefined;
-    try radio_test.init();
-    defer radio_test.deinit();
+    var heard: testing.Heard = undefined;
+    try heard.init();
+    defer heard.deinit();
     var fixture: vm.machine.testing.Fixture = undefined;
     try fixture.init(gpa, &.{}, .{});
     defer fixture.deinit();
     var events: @import("mission/events.zig").Events = .init(gpa, &fixture.machine);
     defer events.deinit();
-    var world = radio_test.world();
+    var world = heard.world();
     world.events = &events;
     world.variables = &fixture.machine.variables;
-    const clock = &radio_test.mission.clock;
-    const radio = &radio_test.radio;
+    const clock = &heard.mission.clock;
+    const radio = &heard.radio;
     const moose_line = pilot_base + volunteers_moose;
-    const remarks = &radio_test.mission.player.remarks;
+    const remarks = &heard.mission.player.remarks;
 
     // A jump ready, Moose says so, and calls the pilot to jump four times, a while apart.
     fixture.machine.variables.ready.jump = .newly;
     remarksFrame(world);
-    try radio_test.expectLine(0, moose_line, &jump_lines);
+    try heard.expectLine(0, moose_line, &jump_lines);
     for (jump_call_lines, 0..) |lines, call| {
-        radio.reset(&radio_test.sound);
+        radio.reset(&heard.sound);
         clock.game_ticks = @intCast(jump_wait * (call + 1) - 1);
         remarksFrame(world);
         try std.testing.expectEqual(0, radio.count);
         clock.game_ticks += 1;
         remarksFrame(world);
-        try radio_test.expectLine(0, moose_line, &lines);
+        try heard.expectLine(0, moose_line, &lines);
     }
     // A moment after the last, the player's ship jumps, which ends the reminder.
     clock.game_ticks += jump_last_wait - 1;
@@ -1501,81 +1543,81 @@ test "the jump reminder calls the pilot to jump, then jumps" {
     try std.testing.expect(!remarks.jump_reminded);
 
     // A warp's words are a warp's; and in training, the flight instructor's, and no call follows.
-    radio.reset(&radio_test.sound);
+    radio.reset(&heard.sound);
     fixture.machine.variables.ready.warp = .newly;
     remarksFrame(world);
-    try radio_test.expectLine(0, moose_line, &warp_lines);
-    radio.reset(&radio_test.sound);
+    try heard.expectLine(0, moose_line, &warp_lines);
+    radio.reset(&heard.sound);
     remarks.jump_reminded = false;
-    radio_test.mission.objects.mission_number = create.training_missions[0];
+    heard.mission.objects.mission_number = create.training_missions[0];
     remarksFrame(world);
-    try std.testing.expectEqualStrings(training_jump_line, radio_test.queued(0).speech.slice());
+    try std.testing.expectEqualStrings(training_jump_line, heard.queued(0).speech.slice());
     clock.game_ticks += 10 * jump_wait;
     remarksFrame(world);
     try std.testing.expectEqual(1, radio.count);
 }
 
 test "a kill, a loss, an ejection, a taunt and a launch have their words" {
-    var radio_test: TestRadio = undefined;
-    try radio_test.init();
-    defer radio_test.deinit();
-    const world = radio_test.world();
-    const clock = &radio_test.mission.clock;
-    const radio = &radio_test.radio;
-    const sound = &radio_test.sound;
+    var heard: testing.Heard = undefined;
+    try heard.init();
+    defer heard.deinit();
+    const world = heard.world();
+    const clock = &heard.mission.clock;
+    const radio = &heard.radio;
+    const sound = &heard.sound;
     const moose_line = pilot_base + volunteers_moose;
-    const remarks = &radio_test.mission.player.remarks;
-    const enemy = radio_test.enemy;
-    const wingman = radio_test.wingman;
+    const remarks = &heard.mission.player.remarks;
+    const enemy = heard.enemy;
+    const wingman = heard.wingman;
 
     // A fighter's kill: its pilot's last words, in its voice, and Moose's; then none for a while.
     clock.game_ticks = 1000;
     killRemark(world, enemy);
     try std.testing.expectEqual(2, radio.count);
-    try radio_test.expectLine(0, enemy, &last_words);
-    try std.testing.expect(std.mem.startsWith(u8, radio_test.queued(0).speech.slice(), "rusdth_00"));
-    try std.testing.expectEqual(hudmovie.Flags.once, radio_test.queued(0).flags);
-    try radio_test.expectLine(1, moose_line, &fighter_kill_lines);
+    try heard.expectLine(0, enemy, &last_words);
+    try std.testing.expect(std.mem.startsWith(u8, heard.queued(0).speech.slice(), "rusdth_00"));
+    try std.testing.expectEqual(hudmovie.Flags.once, heard.queued(0).flags);
+    try heard.expectLine(1, moose_line, &fighter_kill_lines);
     radio.reset(sound);
     clock.game_ticks += kill_wait;
     killRemark(world, enemy);
     try std.testing.expectEqual(0, radio.count);
     // A torpedo's has Moose's words alone; a pilot's pod has Moose's at any time.
-    radio_test.mission.tables.combat[@intFromEnum(gameobj.Type.predator)].class = .torpedo;
+    heard.mission.tables.combat[@intFromEnum(gameobj.Type.predator)].class = .torpedo;
     clock.game_ticks += 1;
     killRemark(world, enemy);
-    try radio_test.expectLine(0, moose_line, &torpedo_kill_lines);
+    try heard.expectLine(0, moose_line, &torpedo_kill_lines);
     radio.reset(sound);
-    radio_test.mission.slot(enemy).object.flags.ejected = true;
+    heard.mission.slot(enemy).object.flags.ejected = true;
     killRemark(world, enemy);
-    try radio_test.expectLine(0, moose_line, &pod_kill_lines);
-    radio_test.mission.slot(enemy).object.flags.ejected = false;
+    try heard.expectLine(0, moose_line, &pod_kill_lines);
+    heard.mission.slot(enemy).object.flags.ejected = false;
 
     // A wingman lost: its pilot's last words, and Moose's.
     radio.reset(sound);
     shipLost(world, wingman);
-    try std.testing.expectEqualStrings("bandth_001.ut", radio_test.queued(0).speech.slice());
-    try radio_test.expectLine(1, moose_line, &lost_lines);
+    try std.testing.expectEqualStrings("bandth_001.ut", heard.queued(0).speech.slice());
+    try heard.expectLine(1, moose_line, &lost_lines);
 
     // A wingman's pilot ejecting says so, and a while later the wingman in the wing's last place
     // says the rescue's words; there being none, nothing is said.
     radio.reset(sound);
     clock.frame_start = 100;
     wingmanEjected(world, wingman);
-    try std.testing.expectEqualStrings("banejt_001.ut", radio_test.queued(0).speech.slice());
+    try std.testing.expectEqualStrings("banejt_001.ut", heard.queued(0).speech.slice());
     radio.reset(sound);
     clock.frame_start = 100 + rescue_wait;
     remarksFrame(world);
     try std.testing.expectEqual(wingman, remarks.ejected.?);
-    radio_test.mission.objects.wing[rescuer_place] = wingman;
+    heard.mission.objects.wing[rescuer_place] = wingman;
     clock.frame_start += 1;
     remarksFrame(world);
     try std.testing.expectEqual(null, remarks.ejected);
-    try radio_test.expectLine(0, pilot_base + TestRadio.bandit, &rescue_lines);
-    try std.testing.expect(std.mem.startsWith(u8, radio_test.queued(0).speech.slice(), "banres_00"));
+    try heard.expectLine(0, pilot_base + testing.Heard.bandit, &rescue_lines);
+    try std.testing.expect(std.mem.startsWith(u8, heard.queued(0).speech.slice(), "banres_00"));
     radio.reset(sound);
     wingmanEjected(world, wingman);
-    radio_test.mission.objects.wing[rescuer_place] = null;
+    heard.mission.objects.wing[rescuer_place] = null;
     radio.reset(sound);
     clock.frame_start += rescue_wait + 1;
     remarksFrame(world);
@@ -1585,8 +1627,8 @@ test "a kill, a loss, an ejection, a taunt and a launch have their words" {
     // An enemy's hit taunts the pilot, at most once a while, and never once the script has the
     // taunts unsaid.
     enemyTaunt(world, enemy);
-    try radio_test.expectLine(0, enemy, &taunts);
-    try std.testing.expect(std.mem.startsWith(u8, radio_test.queued(0).speech.slice(), "rustnt_0"));
+    try heard.expectLine(0, enemy, &taunts);
+    try std.testing.expect(std.mem.startsWith(u8, heard.queued(0).speech.slice(), "rustnt_0"));
     radio.reset(sound);
     clock.frame_start += taunt_wait;
     enemyTaunt(world, enemy);
@@ -1598,9 +1640,9 @@ test "a kill, a loss, an ejection, a taunt and a launch have their words" {
     try std.testing.expectEqual(clock.frame_start + taunt_wait, remarks.taunt_next);
 
     // A launch from the Reliant has its bridge officer's words; from anything else, none.
-    const reliant = try radio_test.mission.add(.reliant, .{ 0, 0, 5000 });
+    const reliant = try heard.mission.add(.reliant, .{ 0, 0, 5000 });
     launchLine(world, reliant);
-    try radio_test.expectLine(0, reliant_bridge, &reliant_launch_lines);
+    try heard.expectLine(0, reliant_bridge, &reliant_launch_lines);
     radio.reset(sound);
     launchLine(world, enemy);
     try std.testing.expectEqual(0, radio.count);
