@@ -1137,6 +1137,7 @@ pub fn draw(state: *State, resources: *Resources, frame: Frame) (spr.Error || Al
         .power = .{ .ball = resources.ball, .object = live, .hit_shake = frame.hit_shake, .random = frame.random },
         .target_display = .{ .state = state, .all = frame.all },
         .objectives = .{ .objectives = &state.objectives },
+        .comms = .{ .menu = &frame.player.menu, .font = &resources.target_fonts.new },
         .wing_status = .{ .all = frame.all },
     };
     const pen: windows.Pen = .{ .art = art, .font = &resources.font, .strings = frame.strings, .gpa = frame.gpa, .target = frame.target, .colour = colour, .shake = shake };
@@ -2472,12 +2473,18 @@ pub const Keys = struct {
 /// components that is not friendly, TARGET UNDER RETICULE with nothing there to aim at. SMART
 /// TARGET sounds `on` or `off`, MISSILE WINDOW `done`.
 ///
-/// Not yet ported: the radio's menu while its window is open, and what the game does while
-/// `0x00529FB8` is set, which leaves out every key after the search under the reticle.
+/// Between the search under the reticle and the keys, while the radio's window is open, the
+/// radio's menu runs (`videoreports.menu.Menu.run`).
+///
+/// Not yet ported: what the game does while a multiplayer game's chat line is typed
+/// (`0x00529FB8`), which leaves out every key after the radio's menu.
 pub fn targetKeys(state: *State, keys: Keys) void {
     const all = keys.all;
     const devices = keys.devices;
     state.under_reticle = if (keys.sight) |sight| underReticle(all, sight, keys.scale) else null;
+    if (state.windows.status.get(.comms).phase == .open) if (keys.world) |world| {
+        keys.player.menu.run(.{ .world = world, .clock = world.clock, .devices = devices });
+    };
 
     if (devices.active(.target_torpedo, true)) {
         if (ai.playerControlEntry(all)) |entry| {

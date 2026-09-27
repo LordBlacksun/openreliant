@@ -476,6 +476,14 @@ pub fn readyToJump(world: gameobj.World, warp: bool) void {
     events.post(player, .{ .condition = if (warp) .player_ready_to_warp else .player_ready_to_jump });
 }
 
+/// REQUEST BACKUP brought the mission's backup (`comms_request_backup`, `0x004559D6`): the
+/// player's ship has its PlayerWantsBackup, with no values, for its own triggers.
+pub fn wantsBackup(world: gameobj.World) void {
+    const events = world.events orelse return;
+    const player = events.shipOf(world.objects.player) orelse return;
+    events.post(player, .{ .condition = .player_wants_backup });
+}
+
 /// A mission for the tests: a script with its events, and a world of objects that stand for its
 /// ships, one a slot, whose events the world posts.
 const TestMission = struct {
@@ -684,4 +692,33 @@ test "the watches look for ships close by, while their triggers are armed" {
     mission.events.flush();
     try std.testing.expectEqual(1, mission.fixture.global(0));
     try std.testing.expectEqual(4, mission.fixture.global(1));
+}
+
+test "REQUEST BACKUP brings the mission's backup once" {
+    const gpa = std.testing.allocator;
+    const code = try triggers.testing.counting(gpa, 0);
+    defer gpa.free(code);
+    const parts = [_]vm.machine.testing.Part{.{ .code = code }};
+    var mission: TestMission = undefined;
+    try mission.init(&parts, .{
+        .globals = &.{0},
+        .ships = &testShips(1),
+        .objects = &.{triggers.testing.object(.ship, 0, 1)},
+        .triggers = &.{triggers.testing.trigger(&parts, 0, .player_wants_backup, .always)},
+    }, &.{@splat(0)});
+    defer mission.deinit();
+    const videoreports = @import("../videoreports.zig");
+    var world = mission.world();
+    world.variables = &mission.fixture.machine.variables;
+
+    // With no backup to send, the request brings none.
+    videoreports.requestBackup(world);
+    try std.testing.expectEqual(0, mission.events.count);
+    // With backup to send, the first request brings it, and the next none.
+    mission.fixture.machine.variables.backup_available = 1;
+    videoreports.requestBackup(world);
+    videoreports.requestBackup(world);
+    mission.events.flush();
+    try std.testing.expectEqual(1, mission.fixture.global(0));
+    try std.testing.expect(mission.game.player.remarks.backup_called);
 }

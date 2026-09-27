@@ -1021,6 +1021,8 @@ pub const Player = struct {
     remarks: videoreports.Remarks = .{},
     /// What Moose's warnings of the player's hits on friends keep, which a mission's start clears.
     friendly_fire: @import("game/friendly_fire.zig").Warnings = .{},
+    /// The radio's menu, which the display's window 11 shows.
+    menu: videoreports.menu.Menu = .{},
     /// The mission's odds of how the pilot fares after ejecting.
     rescue_odds: @import("game/aieject.zig").RescueOdds = .{},
     /// The pilot's kills over the whole campaign.
@@ -1895,7 +1897,8 @@ const cloak_said: Said = .{ .on = .cloak_on, .off = .cloak_off };
 ///   ship to land (`videoreports.permissionToLand`), with no sound of the display's.
 /// - TOGGLE BLINDFIRE flips blind fire on a ship that carries it, and Betty says which, with no
 ///   sound of the display's.
-/// - COMMS WINDOW opens the radio's menu, window 11, held, and closes it once it is open.
+/// - COMMS WINDOW opens the radio's menu, window 11, held, and starts the menu from its top
+///   (`videoreports.menu.Menu.start`), and closes it once it is open.
 /// - WING STATUS WINDOW closes the objectives, then opens the wing status window or, up already,
 ///   closes it; its locked form holds the window open as it opens it, without a sound of its own.
 /// - GUNNERY WINDOW opens the gunnery window and turns to the ship's next group of guns, or out of
@@ -1926,8 +1929,8 @@ const cloak_said: Said = .{ .on = .cloak_on, .off = .cloak_off };
 /// **Fix:** the game sounds a power key every frame it is held, a new sound each frame, which
 /// OpenReliant's frame rates make a din; OpenReliant sounds it as it is pressed.
 ///
-/// Not yet ported: the radio's menu COMMS WINDOW starts; and that the wingmen's keys go unheard in
-/// the front end's simulator (`0x0057E044`) and where the game's mode (`0x00524FE4`) is not 0.
+/// Not yet ported: that the wingmen's keys go unheard in the front end's simulator (`0x0057E044`)
+/// and where the game's mode (`0x00524FE4`) is not 0.
 pub fn frameKeys(keys: FrameKeys) void {
     const display = keys.display;
     const player = keys.player;
@@ -1954,8 +1957,9 @@ pub fn frameKeys(keys: FrameKeys) void {
         hud.beep(keys.world, .done);
         const comms = windows.status.getPtr(.comms);
         switch (comms.phase) {
-            .shut => if (windows.open(.comms, multiplayer)) {
-                comms.held = true;
+            .shut => {
+                if (windows.open(.comms, multiplayer)) comms.held = true;
+                if (keys.world) |world| player.menu.start(.{ .world = world, .clock = world.clock, .devices = devices });
             },
             .open => {
                 comms.held = false;

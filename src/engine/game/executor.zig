@@ -574,12 +574,10 @@ fn instrument(argument: u32) ?hud.windows.Window {
 }
 
 /// `cmd_OpenInstrument` (`0x0045D9D0`, command `0x40`): the display's window the argument numbers
-/// opens (`hud.windows.Windows.open`) and is held open until the script closes it. Opening the
-/// objectives, window 10, closes the wing status window where it is up. **Unknown:** the byte after
-/// the window's hold (`+0x25`), which the command clears.
-///
-/// Not ported: for the radio's menu, window 11, the menu started afresh (`0x00529530`,
-/// `comms_menu_run`, [#99](https://github.com/vdmkenny/openreliant/issues/99)).
+/// opens (`hud.windows.Windows.open`) and is held open until the script closes it. The radio's
+/// menu, window 11, starts from its top (`videoreports.menu.Menu.start`), and opening the
+/// objectives, window 10, closes the wing status window where it is up. **Unknown:** the byte
+/// after the window's hold (`+0x25`), which the command clears.
 ///
 /// **Fix:** the game opens a window past its fifteen from past its table; OpenReliant opens none.
 fn openInstrument(call: Call) u32 {
@@ -589,6 +587,7 @@ fn openInstrument(call: Call) u32 {
     const windows = &display.windows;
     _ = windows.open(window, false);
     windows.status.getPtr(window).held = true;
+    if (window == .comms) game.world.player.menu.start(game);
     if (window == .objectives and windows.up(.wing_status)) windows.close(.wing_status);
     return 1;
 }
