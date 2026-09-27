@@ -21,15 +21,15 @@ OpenReliant is an independent, non-commercial open-source project. It is not aff
 
 ## Current Status
 
-OpenReliant is currently in active early development. It features a playable sandbox environment:
+OpenReliant plays the campaign's first mission from start to finish, as the original plays it. You launch from the Reliant, meet the convoy and fight off the Coalition's ambush, then land back aboard. The mission's script runs its triggers and orders, and its objectives show on the display. The pilots speak on the radio with their faces, the music follows the fight, and your wingmen answer the radio menu and the F keys. The sandbox, mission 0, is built through the same mission code and remains for testing.
 
-- **Flight & Combat**: Fly any ship from the game using mouse/keyboard, flight sticks, HOTAS, or gamepads. The authentic flight model, throttle, afterburners, and 8 camera modes (including 3D cockpits) are implemented.
-- **AI Dogfighting**: Encounter a hostile Coalition fighter wing executing authentic combat maneuvers (pursuit, evasion, loops, and strafing runs).
-- **Collision & Damage**: Collision physics and damage models are active. Collisions deplete shields and armor, which progressively reduce flight speed and weapon recharge rates. Ships break up with explosion effects, debris, and shockwaves upon destruction.
-- **Weapons & Power Management**: Laser weapons fire authentically based on ship stats and draw energy from the power distribution grid.
-- **HUD & Cockpit Displays**: The targeting reticle, radar, shield/armor status indicators, and tactical toggles (ECM, spectral shields, blind fire) are functional.
-- **Positional 3D Audio**: Dynamic sound effects, engine audio, directional flybys, and game music are mixed with 3D spatial positioning, environmental reverb, and headphone HRTF support.
-- **In Development**: Missiles, campaign missions, and voice dialogue are currently in progress. See the [milestones](../../milestones) for the development roadmap.
+- **Flight & Combat**: Fly any ship from the game using mouse/keyboard, flight sticks, HOTAS, or gamepads, with the authentic flight model, throttle, afterburners, and 8 camera modes (including 3D cockpits).
+- **AI**: Coalition fighters fight with the original's maneuvers, capital ships' turrets track and fire, and wingmen take your orders.
+- **Weapons & Damage**: Guns, missiles and torpedoes fire from ship stats and the power grid. Shields, armor and components wear down, and ships break up in explosions, debris and shockwaves.
+- **Missions**: Every mission file, the game's own or a custom one, loads as the original loads it, and the script commands mission 1 uses run as the original runs them. The later missions' remaining commands are in progress.
+- **HUD & Cockpit Displays**: The targeting reticle, radar, status indicators, the objectives, wing status, gunnery, damage and power windows, and the radio's face and menu all work.
+- **Positional 3D Audio**: Sound effects, engine audio, directional flybys, speech and music are mixed with 3D spatial positioning, environmental reverb, and headphone HRTF support.
+- **In Development**: The front end (menus, briefings, loadout), the rest of the campaign's missions, and multiplayer. See the [milestones](../../milestones) for the development roadmap.
 
 ---
 
@@ -70,11 +70,19 @@ Insert StarLancer Disc 1 into your CD drive (or prepare `.bin`/`.iso` images) an
 *(On Windows, use `.\openreliant.exe`.)*
 
 ### 3. Launch
+Start the campaign's first mission:
+
+```bash
+./openreliant StarLancer --mission 1
+```
+
+Or the sandbox, mission 0, where you can fly any ship against Coalition wings:
+
 ```bash
 ./openreliant StarLancer
 ```
 
-Press **Continue** (or **Escape**) in the options menu to start flying. Press **F2** / **F3** to switch ships, **F4** to spawn another fighter wing, and number keys **1-8** to change camera views.
+The game starts in the pause menu: choose **Continue** (or press **Escape**) to start flying. Number keys **1-8** change camera views, and **C** opens the radio menu, whose number keys call your wingmen and the base. In the sandbox, **F2** / **F3** restart it in another ship and **F4** brings in another enemy wing.
 
 For complete setup instructions, see the [Installation Guide](docs/guide/installation.md).
 
@@ -91,9 +99,9 @@ zig build -Doptimize=ReleaseFast
 # Run tests
 zig build test
 
-# Install and play
+# Install and play mission 1
 zig-out/bin/openreliant install StarLancer
-zig-out/bin/openreliant StarLancer
+zig-out/bin/openreliant StarLancer --mission 1
 ```
 
 ---
