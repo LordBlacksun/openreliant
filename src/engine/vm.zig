@@ -184,7 +184,12 @@ pub const Variables = extern struct {
     _unknown_11: [3]u32 = @splat(0),
     /// `mission_success`: how the script rates the mission.
     mission_success: Outcome = .failure,
-    _unknown_15: [23]u32 = @splat(0),
+    /// `script_players`: how many players fly the mission, which the game gives the script as the
+    /// mission starts (`script_set_players`, `0x004124D0`): 1 outside a multiplayer game. The
+    /// scripts test it for the enemies a multiplayer game adds, and for which of a part's endings
+    /// runs: mission 1's ambush ends only for the count it was flown with.
+    players: u32 = 0,
+    _unknown_16: [22]u32 = @splat(0),
     /// Room for every number a byte names. In the game these are the globals after the block,
     /// which no shipped mission touches.
     beyond: [218]u32 = @splat(0),
@@ -214,6 +219,7 @@ pub const Variables = extern struct {
         assert(@offsetOf(Variables, "mission_over") == 0x0052A414 - 0x0052A3F0);
         assert(@offsetOf(Variables, "landing_cleared") == 0x0052A418 - 0x0052A3F0);
         assert(@offsetOf(Variables, "mission_success") == 0x0052A428 - 0x0052A3F0);
+        assert(@offsetOf(Variables, "players") == 0x0052A42C - 0x0052A3F0);
         assert(@sizeOf(Variables) == 256 * @sizeOf(u32));
     }
 };
@@ -224,11 +230,13 @@ test Variables {
     variables.slot(9).* = 1;
     variables.slot(10).* = 1;
     variables.slot(14).* = 3;
+    variables.slot(15).* = 2;
     variables.slot(255).* = 7;
     try std.testing.expectEqual(.newly, variables.ready.jump);
     try std.testing.expectEqual(1, variables.mission_over);
     try std.testing.expectEqual(1, variables.landing_cleared);
     try std.testing.expectEqual(.success, variables.mission_success);
+    try std.testing.expectEqual(2, variables.players);
     try std.testing.expectEqual(7, variables.beyond[217]);
 }
 
