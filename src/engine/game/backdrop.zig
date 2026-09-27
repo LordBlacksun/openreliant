@@ -1,13 +1,14 @@
 //! The space backdrop: the star fields, the dust, the sun and its flares, and the lights every
 //! mission starts with. `backdrop_create` (`0x004A4E70`) builds them once, `backdrop_place`
 //! (`0x004A5A00`) aims them from a mission's markers and `backdrop_frame` (`0x004A5CD0`) adds them
-//! to the scene each frame. The binary does not name the file; its code lies between
-//! `srofiles.cpp`'s and `timer.cpp`'s. [`nebula.zig`](nebula.zig) has the sky dome and the nebula.
+//! to the scene each frame, then turns the planets that have an atmosphere
+//! ([`create/atmosphere.zig`](create/atmosphere.zig)). The binary does not name the file; its code
+//! lies between `srofiles.cpp`'s and `timer.cpp`'s. [`nebula.zig`](nebula.zig) has the sky dome
+//! and the nebula.
 //!
 //! OpenReliant builds the hardware renderers' backdrop. **Unknown:** what sets bit 2 of
 //! `sr + 0x38`, with which `backdrop_create` has the star fields blend by `add_alpha` instead of
-//! adding; OpenReliant leaves it clear. Not yet ported: `backdrop_place`, which needs the mission's
-//! markers, and the objects `backdrop_frame` turns and makes glow at the end.
+//! adding; OpenReliant leaves it clear.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -22,7 +23,9 @@ const srlight = @import("../surrender/surrenderlib/srlight.zig");
 const srstars = @import("../surrender/surrenderlib/srstars.zig");
 const srtexture = @import("../surrender/surrenderlib/srtexture.zig");
 const camera = @import("camera.zig");
+const Objects = @import("create.zig").Objects;
 const matmanager = @import("matmanager.zig");
+const nebula = @import("nebula.zig");
 const xtrabits = @import("xtrabits.zig");
 const Vector = math.Vector;
 
@@ -252,7 +255,8 @@ pub const Backdrop = struct {
     /// take as well (`create.atmosphere`). **Fix:** with the sun square to the view, the game
     /// leaves it unset for them; OpenReliant keeps the last.
     flare_brightness: f32 = 0,
-    /// Toward the sun, `sun_distance` long (`sun_direction`, `0x00595BE0`).
+    /// Toward the sun (`sun_direction`, `0x00595BE0`): `sun_distance` long as built and as a sun
+    /// marker aims it, a unit long once `place` finds none.
     sun_direction: Vector,
     sun: [sun_sprite_count]srapiext.SpriteSet,
     /// Each sun set's one sprite.
@@ -372,6 +376,48 @@ pub const Backdrop = struct {
     /// ship jumps in.
     pub fn shortenDust(backdrop: *Backdrop, shortened: bool) void {
         backdrop.dust.shortened = shortened;
+    }
+
+    /// `backdrop_place` (`0x004A5A00`), as the script asks (`UpdateEnvironmentFXState`): the sun's
+    /// direction back to `sun_direction`, then among the first objects, as many as the more of
+    /// the mission's ships (`ship_count`) and the objects in use, each sun marker aims the sun
+    /// (`aimSun`) and each nebula marker the nebula (`aimNebula`), each by how its frame is
+    /// turned, so that the last of each kind wins. Without a sun marker the direction stays a unit
+    /// long, and the sun's sprites, the key lights and the dome keep what the last sun marker
+    /// gave them; without a nebula marker the fill lights and the nebula keep theirs.
+    pub fn place(backdrop: *Backdrop, sky: *nebula.Sky, all: *const Objects, ship_count: usize) void {
+        backdrop.sun_direction = sun_direction;
+        const count = @min(@max(ship_count, all.count), all.slots.len);
+        for (all.slots[0..count]) |*slot| switch (slot.object.type) {
+            .sun_marker => backdrop.aimSun(sky, slot.drawn.orientation),
+            .nebula_marker => backdrop.aimNebula(sky, slot.drawn.orientation),
+            else => {},
+        };
+    }
+
+    /// A sun marker turned by `orientation` aims the sun (`backdrop_place`): the sun lies along
+    /// the marker's backward axis, the key lights shine from there, and the sun's sprites stand
+    /// `sun_distance` off along it. The sky's dome takes the marker's orientation reversed, turned
+    /// back by the way `sun_direction` looks (`mat3_look_at`).
+    fn aimSun(backdrop: *Backdrop, sky: *nebula.Sky, orientation: math.Matrix) void {
+        const reversed = math.product(math.scaling(@splat(-1)), orientation);
+        const toward = math.forward(reversed);
+        backdrop.lights.getPtr(.key_01).kind = .{ .directional = toward };
+        backdrop.lights.getPtr(.key_08).kind = .{ .directional = toward };
+        sky.dome.orientation = math.product(reversed, math.transpose(math.lookAt(sun_direction)));
+        backdrop.sun_direction = math.transform(reversed, .{ 0, 0, sun_distance });
+        for ([_]SunLayer{ .sunlayer1, .sunlayer3, .sunlayer2 }) |layer| {
+            backdrop.sun[layer.sprite()].sprites[0].offset = backdrop.sun_direction;
+        }
+    }
+
+    /// A nebula marker turned by `orientation` aims the nebula (`backdrop_place`): the fill lights
+    /// shine along its forward axis, and the nebula's patch shown takes its orientation.
+    fn aimNebula(backdrop: *Backdrop, sky: *nebula.Sky, orientation: math.Matrix) void {
+        const along = math.forward(orientation);
+        backdrop.lights.getPtr(.fill_02).kind = .{ .directional = along };
+        backdrop.lights.getPtr(.fill_10).kind = .{ .directional = along };
+        sky.patches[sky.shown].orientation = orientation;
     }
 
     /// Makes every star field take this frame as its last, so a cut draws no streaks
@@ -602,4 +648,61 @@ test "Backdrop.frame" {
     scene.clear();
     try backdrop.frame(gpa, &scene, &context, .cockpit, .open);
     try std.testing.expectEqual(0, scene.layers.get(.overlay).items.len);
+}
+
+test "Backdrop.place" {
+    const gpa = std.testing.allocator;
+    const textures = try srtexture.testing.Textures.init(gpa, testing.names);
+    defer textures.deinit(gpa);
+    const rgb = try gpa.alloc(u8, star_map_size * star_map_size * 3);
+    defer gpa.free(rgb);
+    @memset(rgb, 0);
+    var rand: libcmt.Rand = .{};
+    const backdrop = try Backdrop.create(gpa, &textures.table, .{ .width = star_map_size, .height = star_map_size, .rgb = rgb }, &rand, 100, .original);
+    defer backdrop.destroy(gpa);
+    const sky = try nebula.Sky.create(gpa, &textures.table, .{ .width = nebula.dome_image_size, .height = nebula.dome_image_size, .rgb = rgb[0 .. nebula.dome_image_size * nebula.dome_image_size * 3] });
+    defer sky.destroy(gpa);
+    const all = try Objects.create(gpa, &rand);
+    defer all.destroy();
+
+    // With no markers the sun's direction goes back to its unit, and the rest stays.
+    const built = backdrop.sun[SunLayer.sunlayer1.sprite()].sprites[0].offset;
+    backdrop.place(sky, all, 0);
+    try std.testing.expectEqual(sun_direction, backdrop.sun_direction);
+    try std.testing.expectEqual(built, backdrop.sun[SunLayer.sunlayer1.sprite()].sprites[0].offset);
+    try std.testing.expectEqual(math.identity, sky.dome.orientation);
+
+    // A sun marker facing +X puts the sun at -X; a nebula marker facing +Y aims the nebula up the
+    // screen's Y. The markers lie among the mission's ships, past the objects in use.
+    const facing_x = math.lookAt(.{ 1, 0, 0 });
+    const facing_y = math.fromAxes(.{ 1, 0, 0 }, .{ 0, 0, -1 }, .{ 0, 1, 0 });
+    all.slots[1].object.type = .sun_marker;
+    all.slots[1].drawn.orientation = facing_x;
+    all.slots[2].object.type = .nebula_marker;
+    all.slots[2].drawn.orientation = facing_y;
+    backdrop.place(sky, all, 3);
+    const sun: [3]f32 = .{ -sun_distance, 0, 0 };
+    const placed: [3]f32 = backdrop.sun_direction;
+    for (sun, placed) |expected, found| try std.testing.expectApproxEqAbs(expected, found, 1e-3);
+    for ([_]SunLayer{ .sunlayer1, .sunlayer2, .sunlayer3 }) |layer| {
+        try std.testing.expectEqual(backdrop.sun_direction, backdrop.sun[layer.sprite()].sprites[0].offset);
+    }
+    for ([_]LightRole{ .key_01, .key_08 }) |role| {
+        const toward = backdrop.lights.get(role).kind.directional;
+        try std.testing.expectApproxEqAbs(-1, toward[0], 1e-6);
+    }
+    for ([_]LightRole{ .fill_02, .fill_10 }) |role| {
+        try std.testing.expectEqual(@as(Vector, .{ 0, 1, 0 }), backdrop.lights.get(role).kind.directional);
+    }
+    // The dome takes the sun marker reversed, turned back by the way the default sun looks.
+    const reversed = math.product(math.scaling(@splat(-1)), facing_x);
+    try std.testing.expectEqual(math.product(reversed, math.transpose(math.lookAt(sun_direction))), sky.dome.orientation);
+    // The patch shown takes the nebula marker's orientation; the other keeps its own.
+    try std.testing.expectEqual(facing_y, sky.patches[sky.shown].orientation);
+    try std.testing.expectEqual(nebula.patch_orientation, sky.patches[1 - sky.shown].orientation);
+    // An object past both counts is not read.
+    all.slots[5].object.type = .sun_marker;
+    all.slots[5].drawn.orientation = math.identity;
+    backdrop.place(sky, all, 3);
+    try std.testing.expectApproxEqAbs(-sun_distance, backdrop.sun_direction[0], 1e-3);
 }

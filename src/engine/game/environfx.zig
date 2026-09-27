@@ -36,7 +36,9 @@ const log = std.log.scoped(.environfx);
 pub const Environment = struct {
     sky: *nebula.Sky,
     textures: *srtexture.Table,
-    lights: *backdrop.Lights,
+    /// The backdrop, whose fill lights take the nebula's colour and which the markers aim
+    /// (`backdrop.Backdrop.place`).
+    space: *backdrop.Backdrop,
     /// `nebula_requested` (`0x0058A6B8`): the nebula `SetEnvironmentFXNebula` asks for, the
     /// first until one does. A mission's start leaves it as the one before asked.
     requested: u32 = nebula.default_nebula,
@@ -49,7 +51,7 @@ pub const Environment = struct {
     /// past the seventh; OpenReliant logs it, and keeps the nebula it shows.
     pub fn update(environment: *Environment) void {
         if (environment.sky.nebula == environment.requested) return;
-        environment.sky.select(environment.textures, environment.requested, environment.lights) catch |err| {
+        environment.sky.select(environment.textures, environment.requested, &environment.space.lights) catch |err| {
             log.warn("nebula {d} is left out: {s}", .{ environment.requested, @errorName(err) });
         };
     }

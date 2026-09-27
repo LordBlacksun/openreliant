@@ -133,6 +133,13 @@ pub const Mission = struct {
         return @constCast(try mission.file.ships());
     }
 
+    /// How many ships the mission places (`mission_ships_count`, `0x00529504`): none where the
+    /// file's ships cannot be read.
+    pub fn shipCount(mission: Mission) usize {
+        const all = mission.ships() catch return 0;
+        return all.len;
+    }
+
     pub fn flightGroups(mission: Mission) dte.Error![]align(1) dte.FlightGroup {
         return @constCast(try mission.file.flightGroups());
     }
