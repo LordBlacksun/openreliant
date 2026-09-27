@@ -160,5 +160,5 @@ Cloaking posts the ship's Cloaked event first, and uncloaking a ship with a cloa
 ([Script VM](script-vm.md#events)).
 
 Not ported: the mission's `Cloak_ship`
-([#36](https://github.com/vdmkenny/openreliant/issues/36)); the Kamov's craft; and the multiplayer
+([#281](https://github.com/vdmkenny/openreliant/issues/281)); the Kamov's craft; and the multiplayer
 game's cloak ([#55](https://github.com/vdmkenny/openreliant/issues/55)).

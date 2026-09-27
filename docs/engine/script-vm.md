@@ -430,8 +430,8 @@ the space's `SetEnvironmentFXNebula` and `UpdateEnvironmentFXState`, `Multiplaye
 `SnapToPoint`, `IsShipThisPlayer`, `SetFlybackMarker`, `ResetFlybackMarker` and `MatchSpeed`. They
 act on it through the world the mission's start and its frame give the machine, which the game
 reaches through its globals. A command not ported yet does nothing and gives 1, which lets the
-thread run on, and is logged the first time it runs ([#36](https://github.com/vdmkenny/openreliant/issues/36),
-[#281](https://github.com/vdmkenny/openreliant/issues/281)).
+thread run on, and is logged the first time it runs
+([#281](https://github.com/vdmkenny/openreliant/issues/281)).
 
 [`vm/triggers.zig`](../../src/engine/vm/triggers.zig) matches the events to the triggers, raises
 them on the groups with the conditions' handlers, and holds `SetTriggerState` and

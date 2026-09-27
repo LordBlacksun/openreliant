@@ -180,8 +180,7 @@ pub const Variables = extern struct {
     /// `backup_available` (3): whether the carrier sends backup when the pilot asks for it. The
     /// radio's REQUEST BACKUP (`0x004558D0`) raises the mission's PlayerWantsBackup event for the
     /// first request while it is set, and the carrier refuses otherwise. The scripts set it as
-    /// backup can come and clear it as it can no longer. **Not ported:** the request
-    /// ([#99](https://github.com/vdmkenny/openreliant/issues/99)).
+    /// backup can come and clear it as it can no longer (`videoreports.requestBackup`).
     backup_available: u32 = 0,
     /// `player_missiles_left` (4): the missile display's counts together.
     player_missiles_left: u32 = 0,
