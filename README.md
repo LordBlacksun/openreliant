@@ -21,15 +21,14 @@ OpenReliant is an independent, non-commercial open-source project. It is not aff
 
 ## Current Status
 
-OpenReliant is in active development: the campaign's first mission is fully playable, while the front end and the rest of the campaign are still to come. Mission 1 plays from start to finish as the original plays it: you launch from the Reliant, meet the convoy and fight off the Coalition's ambush, then land back aboard. The mission's script runs its triggers and orders, and its objectives show on the display. The pilots speak on the radio with their faces, the music follows the fight, and your wingmen answer the radio menu and the F keys. The sandbox, mission 0, is built through the same mission code and remains for testing.
+OpenReliant is in active development. The first campaign mission is playable from start to finish.
 
-- **Flight & Combat**: Fly any ship from the game using mouse/keyboard, flight sticks, HOTAS, or gamepads, with the authentic flight model, throttle, afterburners, and 8 camera modes (including 3D cockpits).
-- **AI**: Coalition fighters fight with the original's maneuvers, capital ships' turrets track and fire, and wingmen take your orders.
-- **Weapons & Damage**: Guns, missiles and torpedoes fire from ship stats and the power grid. Shields, armor and components wear down, and ships break up in explosions, debris and shockwaves.
-- **Missions**: Every mission file, the game's own or a custom one, loads as the original loads it, and the script commands mission 1 uses run as the original runs them. The later missions' remaining commands are in progress.
-- **HUD & Cockpit Displays**: The targeting reticle, radar, status indicators, the objectives, wing status, gunnery, damage and power windows, and the radio's face and menu all work.
-- **Positional 3D Audio**: Sound effects, engine audio, directional flybys, speech and music are mixed with 3D spatial positioning, environmental reverb, and headphone HRTF support.
-- **In Development**: The front end (menus, briefings, loadout), the rest of the campaign's missions, and multiplayer. See the [milestones](../../milestones) for the development roadmap.
+- **Flight & Combat**: All ships, with the original flight model, weapons, damage, AI and cockpit displays, and 8 camera views including 3D cockpits.
+- **Missions**: Retail and custom mission files load. The script of mission 1 runs in full, and the commands used by later missions are in progress.
+- **Controls**: Mouse and keyboard, flight sticks, HOTAS and gamepads, with force feedback played as rumble.
+- **Graphics**: Per-pixel shading with gamma-corrected lighting, and real-time shadows. Rendering runs at native resolution in 32-bit colour, with bloom, anti-aliasing, smooth motion at high frame rates, and more detailed explosions, shields and planets. `--original` restores the original graphics and sound.
+- **Audio**: 3D positional sound with reverb and headphone HRTF.
+- **In Development**: The front end (menus, briefings, loadout), the remaining campaign missions, and multiplayer. See the [milestones](../../milestones) for the roadmap.
 
 ---
 
@@ -70,7 +69,7 @@ Insert StarLancer Disc 1 into your CD drive (or prepare `.bin`/`.iso` images) an
 *(On Windows, use `.\openreliant.exe`.)*
 
 ### 3. Launch
-Start the campaign's first mission:
+Start the first campaign mission:
 
 ```bash
 ./openreliant StarLancer --mission 1

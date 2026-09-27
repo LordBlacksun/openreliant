@@ -65,7 +65,7 @@ Please also open an issue on GitHub stating which release you have and the size 
 
 ### 4. Launch the game
 
-Run the executable with the installed folder, and the mission to play: 1 for the campaign's first.
+Run the executable with the installed folder and a mission number, such as 1 for the first campaign mission:
 
 ```bash
 ./openreliant StarLancer --mission 1
@@ -76,7 +76,7 @@ Without `--mission`, it starts mission 0, OpenReliant's sandbox. The game starts
 - Escape reopens the pause menu at any time. In the pause menu, LEAVE MISSION quits, and RESTART restarts the mission.
 - When the mission ends, as you land, die or the mission is over, the pause menu opens: RESTART or CONTINUE flies it again.
 - Keys 1 to 8 switch camera views: 1 cockpit, 2 left, 3 right, 4 rear, 5 flyby, 6 target, 7 external, and 8 missile.
-- Press C for the radio menu, whose number keys call your wingmen and the base; F5 to F8 give the wingmen's commands and ask to land.
+- Press C for the radio menu, whose number keys call your wingmen and the base; F5 to F8 give orders to your wingmen and request landing.
 - In the sandbox, press F2 or F3 to start it again in the previous or next ship, and F4 to bring in another enemy wing.
 
 ## Building from source
