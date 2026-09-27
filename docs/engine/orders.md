@@ -388,8 +388,9 @@ mission: heard at most once in 500 of the timer's ticks (`0x0052987C`), it aims 
 the player launched from (`player_carrier`). In a training mission (30 to 35), the flight instructor
 clears the ship to land where the script's variable 10 (`landing_cleared`, `0x0052A418`) is set. In
 any other, unless the ship is landing already, the carrier refuses it, or clears it where variable
-10 is set. Mission 1's script sets it as the Reliant jumps in. A report on the radio goes with each,
-which OpenReliant has not ported yet ([#99](https://github.com/vdmkenny/openreliant/issues/99)).
+10 is set. Mission 1's script sets it as the Reliant jumps in. The pilot asks on the radio, and the
+answer comes as a report 300 ticks later ([Reports](radio.md#reports)); where the radio's reports
+are all taken, nothing answers and nothing lands.
 
 The init (`order_land_init`, `0x0040EAC0`) picks a style by the carrier's type, from a table of an
 init and an update each (`land_styles`, `0x004E1FE8`): the Reliant's (1) and the Yamato's (0). Any
