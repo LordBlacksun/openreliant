@@ -251,6 +251,21 @@ pub const NetworkFlags = packed struct(u32) {
 
 /// The wing a mission lists an object in, by its flight group (`mission.listPlayerWing`), which
 /// the object keeps (`GameObject.wing`).
+/// Whether a player's ship is to be sent home for its friendly fire (`GameObject.sent_home`,
+/// `+0x678`), which `friendly_fire.sendHome` reads.
+pub const SentHome = enum(i32) {
+    none = 0,
+    /// It destroyed a friend (`friendly_fire.friendDestroyed`).
+    friend_destroyed = 1,
+    /// In a multiplayer game, it destroyed a pilot's pod only a player could harm, which the
+    /// other players are told of; its carrier aborts the mission.
+    told = 2,
+    /// **Unknown:** as `told`, which a multiplayer game's code sets; the mission's ending is then
+    /// `main.Ending._unknown_7`.
+    _unknown_3 = 3,
+    _,
+};
+
 pub const Wing = enum(u16) {
     /// The player's: the wing status window shows its ships, and an AI pilot in it may eject.
     player = 0,
@@ -786,7 +801,8 @@ pub const GameObject = extern struct {
     /// Nonzero while blind fire aims the guns at the target: `hud_draw` sets it each frame it
     /// draws the reticle.
     blind_fire_aim: i32,
-    _unknown_678: i32,
+    /// Whether it is to be sent home for its friendly fire (`friendly_fire.sendHome`).
+    sent_home: SentHome,
     /// The frame (`Clock.frame_start`) it was last heard flying past the camera
     /// (`sound3d.engineUpdate`).
     flyby_at: i32,
@@ -961,10 +977,11 @@ pub const GameObject = extern struct {
         ecm: bool = false,
         /// Its spectral shields are on: `player_spectral_shields_set` (`0x00415430`).
         spectral_shields: bool = false,
-        /// **Unknown.** Set by `0x00474B40` as it sends a ship off, the player's into Friendly
-        /// Fire and others into Jump Out, and cleared by Friendly Fire. It takes no orders while
-        /// it is set.
-        _unknown_28: bool = false,
+        /// Sent off: set as a player's ship is sent home for its friendly fire, into Friendly Fire
+        /// (`friendly_fire.sendHome`), and again as that order ends and lands it; a multiplayer
+        /// game sends the other players' ships off into Jump Out. It takes no orders while it is
+        /// set.
+        sent_off: bool = false,
         /// `DisableListing`: "stop listing".
         unlisted: bool = false,
         _unknown_30: u2 = 0,
@@ -975,10 +992,10 @@ pub const GameObject = extern struct {
         pub const standing_in: Flags = .{ .no_collisions = true, .unpowered = true, .frozen = true, .stand_in = true };
 
         /// Whether the object is out of the action: exploding, its pilot ejected, or being sent
-        /// off (`_unknown_28`). It takes no orders then, and the AI passes over a player's ship
+        /// off (`sent_off`). It takes no orders then, and the AI passes over a player's ship
         /// that is.
         pub fn outOfAction(flags: Flags) bool {
-            return flags.exploding or flags.ejected or flags._unknown_28;
+            return flags.exploding or flags.ejected or flags.sent_off;
         }
 
         /// Whether `mission_frame`'s passes over the objects pass it over: a stand-in, or a
@@ -1116,7 +1133,7 @@ pub const GameObject = extern struct {
         assert(@offsetOf(GameObject, "smoke") == 0x65C);
         assert(@offsetOf(GameObject, "smoke_level") == 0x660);
         assert(@offsetOf(GameObject, "gun_condition") == 0x66C);
-        assert(@offsetOf(GameObject, "_unknown_678") == 0x678);
+        assert(@offsetOf(GameObject, "sent_home") == 0x678);
         assert(@offsetOf(GameObject, "set_aside") == 0x6AC);
         assert(@offsetOf(GameObject, "avoid_near") == 0x6B4);
         assert(@offsetOf(GameObject, "avoid_ahead") == 0x6E0);

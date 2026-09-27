@@ -790,7 +790,7 @@ pub fn createObject(all: *Objects, tables: *Stats, types: Types, wanted: ?u16, a
     object.sound_voice = .none;
     object.gun_turn = .first;
     object.blind_fire_aim = 0;
-    object._unknown_678 = 0;
+    object.sent_home = .none;
     object._unknown_710 = @splat(0);
 
     const stats_type = std.math.cast(u8, ship_type.number()) orelse {

@@ -287,9 +287,9 @@ fn soundClass(all: *const create.Objects, index: u16) sound3d.Class {
 /// At its end it is turned back as it was, powered and free to move, flies its own motion again,
 /// and draws as it did. The player's jump ends every object's jumping. A jump that names another
 /// object gives way to Jump In at it, of the matching number and the same place among its group;
-/// one that names none leaves the mission: the ship stops jumping, is disabled, but for a player's
-/// ship in the multiplayer game's way (`GameObject.Flags._unknown_28`), and is put far below where
-/// it went, its order done.
+/// one that names none leaves the mission: the ship stops jumping, is disabled, but for the
+/// player's ship sent off (`GameObject.Flags.sent_off`), and is put far below where it went, its
+/// order done.
 ///
 /// Not ported: the Boridin's breakaway letting go of its core's sprite as it charges.
 pub fn outUpdate(ctx: aigeneric.Context, index: u16) void {
@@ -416,7 +416,7 @@ fn end(ctx: aigeneric.Context, index: u16) void {
         return;
     };
     object.flags.jumping = false;
-    if (index != all.player or !object.flags._unknown_28) object.flags.disabled = true;
+    if (index != all.player or !object.flags.sent_off) object.flags.disabled = true;
     state.destination.y = gone_depth;
     objects.setPosition(object, &slot.drawn, gameobj.vector(state.destination));
     _ = aigeneric.pop(ctx, index);

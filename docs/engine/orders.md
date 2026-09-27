@@ -439,6 +439,45 @@ reads through a null pointer.
 Not ported: the Yamato's style, whose landing OpenReliant lets go of at once
 ([#349](https://github.com/vdmkenny/openreliant/issues/349)).
 
+### Friendly fire
+
+The player's hits on friends ([`friendly_fire.zig`](../../src/engine/game/friendly_fire.zig)):
+`object_damage` and `object_armor_damage` hand a blow of the player's ship on a friendly object, a
+shot's, a Screamer's or a collision's, to `friendly_fire_warning` (`0x00474C80`), the armour's only
+while the object is not exploding, as `component_damage` does a shot's or a Screamer's on a
+friend's component. The damage after the difficulty's scaling mounts (`0x00562CEC`), and once past
+800 (`0x004DC5EC`) and 3000 game ticks after the last (`0x00562CE8`), Moose warns the player on the
+radio, one of `ff_001` to `ff_004`, and the damage counts from nothing again. The count of warnings
+(`0x00562CF0`) would pick `ff_005` to `ff_008` for a second and `ff_009` to `ff_012` for a third,
+but the game takes a second back to the first, so those are never said. `mission_run` clears the
+three (`0x00474B20`).
+
+Destroying a friend sends the player home: armour below zero from such a blow, but a collision with
+a pilot's pod that anything could harm, or a friend's component destroyed by a shot or a Screamer,
+calls `player_friend_destroyed` (`0x00474E00`), which marks the player's ship (`+0x678`, 1), as
+the script's `FriendlyFire` (`0x57`) does. Each frame after the orders, `mission_frame`
+(`0x0049298C`) runs `friendly_fire_send_home` (`0x00474B40`) for a player's ship in the action
+and marked: while the mission goes on and the ship's current order has no priority, the mission's
+ending becomes 6 (7 where the mark is 3), and the ship takes Friendly Fire (117), aimed as its
+current order is, and is sent off (flag `0x10000000`).
+
+Friendly Fire keeps its stage (`+0x00`) and the frame's tick it ends at (`+0x04`):
+
+| Stage | What happens |
+|---|---|
+| 0 | Its init (`0x00474E60`) has Moose say one of `ff_013` to `ff_023`; the player flies on (`player_controls`) for 300 ticks |
+| 1 | For 700 ticks the ship is steered toward the carrier the player launched from (`ai_steer`, limit 1, no ease, no flags), the player's controls keeping 0.7 of the throttle and of each turn, the steering 0.3 of the turns |
+| 2 | The order ends and the ship, no longer sent off, takes Land on the carrier, which lands it at once ([Landing](#landing)), and Jump Out at itself before it where the carrier is farther than 1000000; it is sent off again. The game also clears the carrier's flag `0x20` |
+
+**Fix:** the game reads the carrier through a null pointer where the player launched from none;
+OpenReliant lets the ship fly on as the player has it, and then ends the order.
+
+Not ported: a multiplayer game's side of it
+([#55](https://github.com/vdmkenny/openreliant/issues/55)). There, destroying a pilot's pod only a
+player could harm marks the ship 2 and tells the others, whose carrier then aborts the mission
+(`abrt_001`, said by pilot 27 for the Reliant and 28 for any other); and another player's ship
+sent off jumps out.
+
 ### The Ripper
 
 The Ripper (type `0x1F`) carries cargo pods in the tractor beams of its four back pincers

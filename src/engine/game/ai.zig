@@ -976,7 +976,7 @@ pub const target_barred: GameObject.Flags = .{
     .cloaked = true,
     .disabled = true,
     .ejected = true,
-    ._unknown_28 = true,
+    .sent_off = true,
 };
 
 /// `order_target_valid` (`0x00401870`): whether an order's target can still be aimed at. The object

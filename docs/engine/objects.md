@@ -172,7 +172,7 @@ commands and their like set; the names in quotes are the developers' labels for 
 | `0x100000` | `no_avoidance` | `SetShipAvoidance` with "Disable Avoidance code": the avoidance code passes it over. |
 | `0x200000` | `jumping` | Set during the jump orders, and on what lies in the way of the player's formation as it jumps out until the player's jump ends ([Jumps](jump.md#jump-out)). It cannot fire, the avoidance code passes it over, and so do the frame's passes over the objects. |
 | `0x400000` | `attached` | Set while the Dock and Ripper orders hold it to another object; their ends clear it. |
-| `0x10000000` | | **Unknown.** Set by `0x00474B40` as it sends a ship off, the player's into Friendly Fire and others into Jump Out, and cleared by Friendly Fire. It takes no orders while it is set. |
+| `0x10000000` | `sent_off` | Set as the player's ship is sent home for its friendly fire, into Friendly Fire, and again as that order ends and lands it ([Friendly fire](orders.md#friendly-fire)); a multiplayer game sends the other players' ships off into Jump Out. It takes no orders while it is set. |
 | `0x20000000` | `unlisted` | `DisableListing`, "stop listing". |
 
 **Unknown:** the other bits.

@@ -17,6 +17,7 @@ const camera = @import("camera.zig");
 const create = @import("create.zig");
 const gameobj = @import("gameobj.zig");
 const follow = @import("ai/follow.zig");
+const friendly_fire = @import("friendly_fire.zig");
 const hud = @import("hud.zig");
 const hudmovie = @import("hudmovie.zig");
 const launch = @import("launch.zig");
@@ -108,6 +109,7 @@ const implementations = table: {
         .{ "StackDirectorCam", stackDirectorCam },
         .{ "StopDirectorCam", stopDirectorCam },
         .{ "WaitForDirectorCam", waitForDirectorCam },
+        .{ "FriendlyFire", friendlyFire },
     }) |pair| table[commandIndex(pair[0])] = pair[1];
     break :table table;
 };
@@ -492,6 +494,14 @@ fn halfwordSet(argument: u32) bool {
     return @as(u16, @truncate(argument)) != 0;
 }
 
+/// `cmd_FriendlyFire` (`0x00459F30`, command `0x57`): the player's ship is to be sent home as for
+/// destroying a friend (`friendly_fire.friendDestroyed`).
+fn friendlyFire(call: Call) u32 {
+    const game = call.machine.game orelse return 1;
+    friendly_fire.friendDestroyed(game.world);
+    return 1;
+}
+
 /// `cmd_DisableTaunts` (`0x00458F40`, command `0x27`): the enemy's taunts on the radio stop, or go
 /// on again (`videoreports.Remarks.taunts_disabled`).
 fn disableTaunts(call: Call) u32 {
@@ -845,8 +855,8 @@ fn setPrimaryTarget(call: Call) u32 {
 }
 
 /// `cmd_SnapToPoint` (`0x004596A0`, command `0x3E`): the ship the first argument names, unless it
-/// is exploding, ejected or out of a multiplayer game (`GameObject.Flags._unknown_28`), is put where
-/// the object the second names will stand next, turned as it will be, and stopped (`ai.stop`).
+/// is exploding, ejected or sent off (`GameObject.Flags.sent_off`), is put where the object the
+/// second names will stand next, turned as it will be, and stopped (`ai.stop`).
 ///
 /// Not ported: in a multiplayer game, the move told to the other players
 /// ([#55](https://github.com/vdmkenny/openreliant/issues/55)).
@@ -857,7 +867,7 @@ fn snapToPoint(call: Call) u32 {
     const ship = shipSlot(machine, all, call.args[0]) orelse return 1;
     const slot = &all.slots[ship];
     const flags = slot.object.flags;
-    if (flags.exploding or flags.ejected or flags._unknown_28) return 1;
+    if (flags.exploding or flags.ejected or flags.sent_off) return 1;
     const point = shipSlot(machine, all, call.args[1]) orelse return 1;
     const to = all.slots[point].object.root;
     objects.setPosition(&slot.object, &slot.drawn, gameobj.vector(to.next_position));

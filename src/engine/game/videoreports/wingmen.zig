@@ -210,16 +210,10 @@ fn standing(all: *const create.Objects, command: Command, index: u16, aim: Aim) 
     const current = slot.current() orelse return if (command == .back_off) .done else .free;
     const target = current.target;
     return switch (command) {
-        .attack_my_target => if (prioritised(current.order)) .busy else if (target.index == aim.target.index and target.component == aim.target.component) .done else .free,
+        .attack_my_target => if (aigeneric.prioritised(current.order)) .busy else if (target.index == aim.target.index and target.component == aim.target.component) .done else .free,
         .back_off => if (target.index == aim.target.index and current.order == .fight) .free else .done,
-        .help_me => if (prioritised(current.order)) .busy else if (current.order == .fight and std.mem.indexOfScalar(u16, aim.attackers, @bitCast(target.index)) != null) .done else .free,
+        .help_me => if (aigeneric.prioritised(current.order)) .busy else if (current.order == .fight and std.mem.indexOfScalar(u16, aim.attackers, @bitCast(target.index)) != null) .done else .free,
     };
-}
-
-/// Whether `order` has a priority, which nothing but a weightier order interrupts.
-fn prioritised(order: ai.orders.Order) bool {
-    const record = ai.orders.info(order) orelse return false;
-    return record.priority > 0;
 }
 
 /// The player's target where it is a hostile ship that can be aimed at (`ai.targetValid`), as the
