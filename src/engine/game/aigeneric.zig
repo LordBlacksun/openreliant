@@ -18,6 +18,7 @@ const ailand = @import("ailand.zig");
 const airipper = @import("airipper.zig");
 const follow = @import("ai/follow.zig");
 const camera = @import("camera.zig");
+const friendly_fire = @import("friendly_fire.zig");
 const create = @import("create.zig");
 const gameobj = @import("gameobj.zig");
 const guns = @import("guns.zig");
@@ -219,6 +220,7 @@ pub const State = extern union {
     ripper_drop: airipper.DropState,
     ripper_end_drop: airipper.EndDropState,
     ripper_attach: airipper.AttachState,
+    friendly_fire: friendly_fire.State,
     /// What every order that flies a ship by `motion_follow` holds first.
     follower: motion.Follower,
 
@@ -303,6 +305,13 @@ pub fn giveWay(ctx: Context, index: u16, order: ?Order) Error!bool {
     if (running.priority >= wanted.priority) return error.OrderConflict;
     runExit(ctx, index, running);
     return true;
+}
+
+/// Whether `order` has a priority (`ai.Record.priority`): once started, it gives way only to
+/// Explode, a one-shot order or an order of higher priority (`giveWay`).
+pub fn prioritised(order: Order) bool {
+    const info = orders.info(order) orelse return false;
+    return info.priority > 0;
 }
 
 /// `order_push` (`0x0040CC10`): pushes an order aimed at `target` on the object's stack, and
@@ -602,6 +611,7 @@ fn runInit(ctx: Context, index: u16, info: orders.Info) void {
         .make_ripper_drop_what_its_carrying => airipper.dropInit(ctx, index),
         .ripper_end_drop_object => airipper.endDropInit(ctx, index),
         .ripper_attach_cargo_pod_to_mammoth => airipper.attachInit(ctx, index),
+        .friendly_fire => friendly_fire.init(ctx, index),
         else => {},
     }
 }
@@ -648,6 +658,7 @@ fn runUpdate(ctx: Context, index: u16, info: orders.Info) void {
         .make_ripper_drop_what_its_carrying => airipper.drop(ctx, index),
         .ripper_end_drop_object => airipper.endDrop(ctx, index),
         .ripper_attach_cargo_pod_to_mammoth => airipper.attach(ctx, index),
+        .friendly_fire => friendly_fire.update(ctx, index),
         else => {},
     }
 }
@@ -679,6 +690,12 @@ pub fn playerControl(ctx: Context, index: u16) void {
 
 test {
     std.testing.refAllDecls(@This());
+}
+
+test prioritised {
+    try std.testing.expect(prioritised(.land));
+    try std.testing.expect(prioritised(.explode));
+    try std.testing.expect(!prioritised(.player_control));
 }
 
 test push {

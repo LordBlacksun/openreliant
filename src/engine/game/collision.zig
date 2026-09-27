@@ -23,6 +23,7 @@ const shield = @import("shield.zig");
 const hud = @import("hud.zig");
 const input = @import("../input.zig");
 const camera = @import("camera.zig");
+const friendly_fire = @import("friendly_fire.zig");
 const videoreports = @import("videoreports.zig");
 
 /// How far apart a collision sets two objects, as a share of each one's radius from the point
@@ -348,7 +349,7 @@ pub fn byDifficulty(world: gameobj.World, index: u16, kind: Kind, value: f32) f3
 /// damage then does. A shield that is already down adds its own deficit to what passes through, and
 /// an object in its last state (`Invulnerability._unknown_4`) keeps its shields. Damage of kinds 0,
 /// 1 and 5 counts toward what the object has taken lately, which is what sends a ship after its
-/// attacker.
+/// attacker. The player's blow on a friend mounts toward Moose's warning (`friendly_fire.warn`).
 ///
 /// With smart targeting on, a blow the player's ship deals, but by colliding, makes what it
 /// struck the player's target (`input.setPlayerTarget`). A blow the player's ship takes shakes it
@@ -361,6 +362,7 @@ pub fn damage(world: gameobj.World, index: u16, struck: Quadrant, value: f32, fa
     const object = &all.slots[index].object;
     const held = object.shields.at(struck);
     const scaled = scaledBlow(world, index, struck, value, attacker, kind, held.* >= 0) orelse return;
+    friendly_fire.warn(world, index, attacker, kind, scaled);
     const through = @max(value - held.*, 0);
     if (held.* >= 0 and object.invulnerable != ._unknown_4) held.* -= scaled;
     if (held.* < 0) armorDamage(world, index, struck, through * factor, attacker, kind);
@@ -422,18 +424,18 @@ fn smartTargeting(world: gameobj.World, attacker: u16, kind: Kind) ?*hud.State {
 /// target of its current order. A hit on that target brings up its form of the target display,
 /// and a hit on it or on the player's ship marks the quadrant struck for the ship status indicator
 /// to flash (`hud.State.target_hits`, `ship_hits`). A blow the player's ship takes shakes it and
-/// its controller (`feedback`), and the display (`hud.Interference.start`). Last, the object's
-/// ShotAt is posted (`shotAt`); a shot's on an object listing components, at once, and even while a
+/// its controller (`feedback`), and the display (`hud.Interference.start`). The player's blow on a
+/// friend not exploding mounts toward Moose's warning (`friendly_fire.warn`), and one that destroys
+/// it has the player sent home (`friendly_fire.friendDestroyed`). Last, the object's ShotAt is
+/// posted (`shotAt`); a shot's on an object listing components, at once, and even while a
 /// collision's test against a hull runs again.
-///
-/// Not ported: what the player's hits on a friend tell the mission, the complaints on the radio
-/// and being sent home ([#357](https://github.com/vdmkenny/openreliant/issues/357)).
 pub fn armorDamage(world: gameobj.World, index: u16, struck: Quadrant, value: f32, attacker: u16, kind: Kind) void {
     const all = world.objects;
     const slot = &all.slots[index];
     const object = &slot.object;
     const scaled = scaledBlow(world, index, struck, value, attacker, kind, false) orelse return;
     if (object.flags.exploding) return;
+    friendly_fire.warn(world, index, attacker, kind, scaled);
     if (kind == .bullet and object.flags.components) return events.shotAt(world, index, attacker, dte.Trigger.whole_object);
 
     const shielded = object.invulnerable.protects(attacker < all.players);
@@ -448,7 +450,10 @@ pub fn armorDamage(world: gameobj.World, index: u16, struck: Quadrant, value: f3
         if (index == all.player) if (world.hearing) |hearing| main.armorWarning(hearing, object, combat);
     }
     object.last_attacker = .of(attacker);
-    if (armor.* < 0) ai.objectDestroyed(.{ .world = world, .clock = world.clock }, index, true, taken > heavy_blow);
+    if (armor.* < 0) {
+        ai.objectDestroyed(.{ .world = world, .clock = world.clock }, index, true, taken > heavy_blow);
+        if (friendly_fire.destroyedFriend(world, index, attacker, kind)) friendly_fire.friendDestroyed(world);
+    }
     const current = &all.slots[all.player].orders[0].target;
     if (smartTargeting(world, attacker, kind) != null) current.index = @intCast(index);
     if (world.display) |display| {
@@ -529,7 +534,9 @@ const shielded_hit: f32 = 1000;
 /// scales it. A collision does none; guns, missiles and explosions do. Where the component belongs
 /// to an assembly, such as a turret and its barrels, the damage goes to the first part of it that
 /// still has armour, and a component whose armour runs out marks its model's root as destroyed,
-/// for `objects.loseComponents` to act on.
+/// for `objects.loseComponents` to act on. The player's hit on a friend not exploding mounts toward
+/// Moose's warning (`friendly_fire.warn`), and one that destroys its component has the player sent
+/// home (`friendly_fire.friendDestroyed`).
 ///
 /// With smart targeting on, the player's hit on a hostile ship makes the component struck, if it
 /// is one the ship lists, the player's target and subtarget, or else the ship alone, unless it is
@@ -569,6 +576,7 @@ fn wearComponent(world: gameobj.World, index: u16, struck_part: objects.PartRef,
     const model = struck_part.model;
     const component = struck_part.part();
     var share = byDifficulty(world, index, kind, value);
+    if (!object.flags.exploding) friendly_fire.warn(world, index, attacker, kind, share);
 
     // The assembly's first part that still has armour takes the hit.
     var struck = component;
@@ -595,6 +603,7 @@ fn wearComponent(world: gameobj.World, index: u16, struck_part: objects.PartRef,
     object.last_attacker = .of(attacker);
     if (struck.armor < 0) {
         model.destroyed = true;
+        if (friendly_fire.destroyedFriend(world, index, attacker, kind)) friendly_fire.friendDestroyed(world);
     }
     const display = smartTargeting(world, attacker, kind) orelse return;
     if (object.side != .hostile) return;

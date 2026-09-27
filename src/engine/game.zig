@@ -28,6 +28,7 @@ pub const hud = @import("game/hud.zig");
 pub const hudmovie = @import("game/hudmovie.zig");
 pub const hudoptions = @import("game/hudoptions.zig");
 pub const executor = @import("game/executor.zig");
+pub const friendly_fire = @import("game/friendly_fire.zig");
 pub const gameflow = @import("game/gameflow.zig");
 pub const gameobj = @import("game/gameobj.zig");
 pub const guns = @import("game/guns.zig");

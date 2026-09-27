@@ -1019,6 +1019,8 @@ pub const Player = struct {
     /// What the radio's remarks keep, and what the mission's script has them leave unsaid, which a
     /// mission's start clears.
     remarks: videoreports.Remarks = .{},
+    /// What Moose's warnings of the player's hits on friends keep, which a mission's start clears.
+    friendly_fire: @import("game/friendly_fire.zig").Warnings = .{},
     /// The mission's odds of how the pilot fares after ejecting.
     rescue_odds: @import("game/aieject.zig").RescueOdds = .{},
     /// The pilot's kills over the whole campaign.

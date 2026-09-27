@@ -250,7 +250,7 @@ fn busy(world: gameobj.World) bool {
 }
 
 /// `Radio.sayPilot` on the world's radio, where it has one.
-fn pilotSays(world: gameobj.World, pilot: u16, head: pilots.Head, speech: []const u8, mode: Mode, flags: hudmovie.Flags, expiry: i32) void {
+pub fn pilotSays(world: gameobj.World, pilot: u16, head: pilots.Head, speech: []const u8, mode: Mode, flags: hudmovie.Flags, expiry: i32) void {
     const radio, const ctx = onAir(world) orelse return;
     radio.sayPilot(ctx, pilot, head, speech, mode, flags, expiry);
 }

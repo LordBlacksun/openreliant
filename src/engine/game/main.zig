@@ -34,6 +34,7 @@ const cloak = @import("cloak.zig");
 pub const lock = @import("main/lock.zig");
 const missiles = @import("missiles.zig");
 const explode = @import("explode.zig");
+const friendly_fire = @import("friendly_fire.zig");
 const particles = @import("particles.zig");
 const shield = @import("shield.zig");
 const erayfx = @import("erayfx.zig");
@@ -90,7 +91,7 @@ pub const Ending = enum(u8) {
     /// The player's ship sent home for destroying a friend (`0x00474B40`), which gives it Friendly
     /// Fire, order 117; its landing begins at once (`ailand`).
     friendly_fire = 6,
-    /// **Unknown:** as `friendly_fire`, where the ship's `_unknown_678` is 3, which a multiplayer
+    /// **Unknown:** as `friendly_fire`, where the ship's `sent_home` is 3, which a multiplayer
     /// game's code sets.
     _unknown_7 = 7,
     ejecting = 8,
@@ -512,8 +513,9 @@ pub fn controlsFrame(controls: Controls) void {
 /// `mission_frame` (`0x004924B0`), as far as the objects go: the player's ship pointed to the
 /// flyback marker it has strayed from (`input.nextNavPoint`), then the player's ship uncloaked where
 /// the display ran the cloak's charge dry last frame (`hud.State.uncloakSpent`), then every
-/// object's orders, which fly the ships and read the player's controls, then the frames they are
-/// drawn at, then the missiles (`missiles.frame`) and the shots in flight (`guns.bulletsFrame`),
+/// object's orders, which fly the ships and read the player's controls, then the player's ship sent
+/// home where it destroyed a friend (`friendly_fire.sendHome`), then the frames they are drawn at,
+/// then the missiles (`missiles.frame`) and the shots in flight (`guns.bulletsFrame`),
 /// then the sparks (`sparks.Sparks.frame`) and the particles (`particles.Pool.frame`,
 /// `smoke.Pools.frame`, `guns.effects.Pools.frame`), which `particles_frame` runs together, the
 /// damaged ships' smoke (`smoke.frame`), the explosions (`explode.Explosions.frame`), the
@@ -546,6 +548,7 @@ pub fn missionFrame(orders: aigeneric.Context, timing: objects.Timing, loaded: ?
     if (orders.world.display) |display| display.uncloakSpent(orders.world);
     if (orders.world.jump_effects) |effects| effects.beginFrame();
     aigeneric.ordersUpdate(orders);
+    friendly_fire.sendHome(orders);
     frameObjects(orders.world.objects, timing, orders.clock.frame_start);
     missiles.frame(orders.world, timing.fraction);
     guns.bulletsFrame(orders.world, orders.clock, timing.fraction);
@@ -1475,8 +1478,9 @@ const camera_marker_at: math.Vector = .{ 0, 0, -8000 };
 ///
 /// The loading readies the display's objectives and the launch's caption for the mission, drops the
 /// flyback markers, and empties the radio's queue, its reports and its remarks, the script's
-/// switches among them (`hud_init`, `radio_reset`), empties the effects' pools and the missiles in
-/// flight, puts a stand-in in every object's slot (`create.Objects.reset`), loads the Turret Flak's
+/// switches among them (`hud_init`, `radio_reset`), and Moose's warnings of the player's hits on
+/// friends (`mission_run`, `0x00474B20`), empties the effects' pools and the missiles in flight,
+/// puts a stand-in in every object's slot (`create.Objects.reset`), loads the Turret Flak's
 /// shell and the debris (`guns_load_shell`, `explosions_init`), and clears the mark of the player's
 /// ship jumping in (`jump_init`). Then the start:
 /// 1. ends the 3D sounds, has the mission play with everything shown, no ship the player launched
@@ -1527,6 +1531,7 @@ pub fn startMission(gpa: Allocator, start: Start, image: []u8, number: u16) !*Lo
     if (world.escort_marker) |marker| marker.reset();
     if (world.radio) |radio| radio.reset(if (world.hearing) |hearing| hearing.sound else null);
     world.player.remarks = .{};
+    world.player.friendly_fire = .{};
     if (world.flash) |lit| lit.* = .{};
     start.display.interference = .{};
     start.display.caption = .{};
