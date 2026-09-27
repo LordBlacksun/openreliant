@@ -1,13 +1,15 @@
 //! `C:\lancer\game\pilots.cpp`: pilots. `stats_load_pilots` (`0x0049CAE0`) fills `pilot_stats` from
 //! `pilotstats.bin`, [`formats/stats.zig`](../../formats/stats.zig), and `object_set_pilot`
-//! (`0x0049CCE0`) gives an object its pilot. **Unverified:** the two lie between `particles.cpp`'s
-//! code and this file's.
+//! (`0x0049CCE0`) gives an object its pilot, whose face the radio's window shows as it speaks
+//! (`Face`). **Unverified:** the two lie between `particles.cpp`'s code and this file's.
 
 const std = @import("std");
 const assert = std.debug.assert;
 
 const stats = @import("../../formats/stats.zig");
-const GameObject = @import("gameobj.zig").GameObject;
+const Pointer = @import("../../engine.zig").Pointer;
+const gameobj = @import("gameobj.zig");
+const GameObject = gameobj.GameObject;
 
 /// One pilot of `pilot_stats`. The loader fills every slot with defaults, then applies the
 /// records: each tier field sets a group of these, in `formats/stats.zig`'s preset tables. The
@@ -155,8 +157,78 @@ test Table {
 }
 
 /// `object_set_pilot` (`0x0049CCE0`): gives the object pilot `pilot`, a record of `pilot_stats`.
-/// The game points the object at the record and at the pilot's entry of a table at `0x005048D8`
-/// as well (`GameObject.pilot_stats`, `pilot_record`); OpenReliant looks the pilot up by number.
+/// The game points the object at the record and at the pilot's face as well
+/// (`GameObject.pilot_stats`, `pilot_record`); OpenReliant looks both up by number (`faceOf`).
 pub fn setPilot(object: *GameObject, pilot: i32) void {
     object.pilot = pilot;
+}
+
+/// How a pilot's face moves as it says a line, which of its face's films plays (`radio_say_pilot`,
+/// `radio_say_ship`).
+pub const Head = enum(u32) {
+    talking = 0,
+    laughing = 1,
+    /// The 45th's own pilot, the film every pilot has in this place.
+    squadron = 2,
+    dying = 3,
+    _,
+};
+
+/// A pilot's face (`pilot_faces`, `0x005048D8`): the string that names the pilot, which the radio's
+/// window shows over its face, its side, and a film of its face for each way it moves (`Head`),
+/// each the member `pilots\<film>.fm8` of `pilots.hog`
+/// ([face films](../../../docs/formats/fm8.md)).
+pub const Face = struct {
+    name: u16,
+    side: gameobj.Side(u16),
+    films: [heads][]const u8,
+
+    pub const heads = 4;
+
+    /// Its film for `head`, or null for a head past the four, which the game reads beside them.
+    pub fn film(face: *const Face, head: Head) ?[]const u8 {
+        const index = @intFromEnum(head);
+        return if (index < heads) face.films[index] else null;
+    }
+
+    /// The record as the payload lays it out, 24 bytes. **Unknown:** the halfwords at `+0x02`, 0x53
+    /// in every record, and at `+0x06`, 5 in most, 4 or 0 in a few.
+    pub const Record = extern struct {
+        name: u16,
+        _unknown_02: u16,
+        side: gameobj.Side(u16),
+        _unknown_06: u16,
+        films: [heads]Pointer(u8),
+
+        comptime {
+            assert(@offsetOf(Record, "side") == 0x04);
+            assert(@offsetOf(Record, "films") == 0x08);
+            assert(@sizeOf(Record) == 0x18);
+        }
+    };
+};
+
+/// Every pilot's face, by the pilot's number, one for each pilot `Table` holds
+/// ([`pilots/faces.zig`](pilots/faces.zig), generated from the payload).
+pub const faces = @import("pilots/faces.zig").faces;
+
+comptime {
+    assert(faces.len == Table.count);
+}
+
+/// The face of pilot `pilot`, or null for a number past the table, which the game reads beside it.
+pub fn faceOf(pilot: i32) ?*const Face {
+    if (pilot < 0 or pilot >= faces.len) return null;
+    return &faces[@intCast(pilot)];
+}
+
+test faceOf {
+    // The first pilot of the table is the 45th Tigers' wing leader Bandit, with a film for each way
+    // the face moves; a pilot past the table has none.
+    const bandit = faceOf(0).?;
+    try std.testing.expectEqual(.friendly, bandit.side);
+    try std.testing.expectEqualStrings("45TigersWL_Bandit_L", bandit.film(.laughing).?);
+    try std.testing.expectEqual(null, bandit.film(@enumFromInt(4)));
+    try std.testing.expectEqual(null, faceOf(Table.count));
+    try std.testing.expectEqual(null, faceOf(-1));
 }

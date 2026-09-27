@@ -50,6 +50,7 @@ const libcmt = @import("../libcmt.zig");
 const collision = @import("collision.zig");
 const sound3d = @import("sound3d.zig");
 const main = @import("main.zig");
+const videoreports = @import("videoreports.zig");
 const Clock = main.Clock;
 const Vector = math.Vector;
 
@@ -60,6 +61,7 @@ pub const gunnery = @import("hud/gunnery.zig");
 pub const missile_display = @import("hud/missile_display.zig");
 const missile_lock = @import("main/lock.zig");
 pub const power = @import("hud/power.zig");
+pub const radio = @import("hud/radio.zig");
 pub const target_display = @import("hud/target_display.zig");
 pub const wing_status = @import("hud/wing_status.zig");
 
@@ -70,6 +72,7 @@ test {
     _ = missile_display;
     _ = windows;
     _ = power;
+    _ = radio;
     _ = target_display;
     _ = wing_status;
 }
@@ -956,15 +959,19 @@ pub const Frame = struct {
     /// where nothing is heard.
     view: camera.View = .cockpit,
     sound: ?*hog_snd.Sound = null,
+    /// The radio, whose window shows the speaker's face; none where nothing is heard.
+    radio: ?*videoreports.Radio = null,
 };
 
 /// `hud_draw` (`0x004843B0`): the display for a frame, in its order. First it takes the player's
 /// target, plays or ends the missile lock's tone (`missile_lock.Lock.sound`) and runs the devices'
 /// charges, in every view. In the view ahead from the cockpit it
-/// then draws the jump prompt, the target, the eject marker, the scanner and the status lights;
-/// in the others the view's name. Then, in the view ahead, the instruments: the readouts, the
-/// ship status indicator, the targeting cluster, the radar, the reticle and the clock. Last, in
-/// every view, the windows move on, and in the view ahead are drawn.
+/// then draws the jump prompt, the target, the eject marker, the scanner and the status lights.
+/// In every view a line said waits for the radio's window (`videoreports.Radio.waitForWindow`);
+/// in the views but the one ahead the view's name follows. Then, in the view ahead, the
+/// instruments: the readouts, the ship status indicator, the targeting cluster, the radar, the
+/// reticle and the clock. Last, in every view, the windows move on, and in the view ahead are
+/// drawn.
 pub fn draw(state: *State, resources: *Resources, frame: Frame) (spr.Error || Allocator.Error)!void {
     const slot = &frame.all.slots[frame.all.player];
     const live = &slot.object;
@@ -982,10 +989,11 @@ pub fn draw(state: *State, resources: *Resources, frame: Frame) (spr.Error || Al
     var lead: Cursor = .none;
     var lock_lit = false;
     const shake = state.interference.shake(frame.hit_shake, frame.random);
+    const speaker = if (frame.radio) |on_air| on_air.speakingShip(&state.windows, frame.all) else null;
     if (ahead) {
         try state.drawJumpPrompt(frame.ready, art, frame.gpa, frame.target, frame.screen, frame_duration, colour, scale);
         if (frame.sight) |sight| {
-            const scene: TargetScene = .{ .sight = sight, .all = frame.all, .mode = frame.mode };
+            const scene: TargetScene = .{ .sight = sight, .all = frame.all, .mode = frame.mode, .speaker = speaker };
             lead = try drawTarget(state, art, &resources.target_fonts, frame.gpa, frame.target, scene, frame.edge_line, colour, scale);
         }
         try state.drawEjectMarker(art, frame.gpa, frame.target, frame.screen, frame_duration, colour, scale);
@@ -995,9 +1003,11 @@ pub fn draw(state: *State, resources: *Resources, frame: Frame) (spr.Error || Al
         lock_lit = lit.enemy_lock;
     }
     if (frame.sound) |sound| state.warnOfLock(sound, lock_lit, live.missile_homing != 0);
+    if (frame.radio) |on_air| on_air.waitForWindow(frame.sound, frame_duration);
     try drawViewName(&resources.font, frame.gpa, frame.target, frame.screen, frame.last_view, frame.strings.*, colour, scale);
-    if (ahead) try state.drawInstruments(resources, frame, lead, colour, scale);
+    if (ahead) try state.drawInstruments(resources, frame, lead, speaker, colour, scale);
     const contents: windows.Contents = .{
+        .radio = if (frame.radio) |on_air| .{ .radio = on_air, .sound = frame.sound, .hit_shake = frame.hit_shake, .random = frame.random } else null,
         .gunnery = .{ .slot = slot, .wire_frame = state.wire_frame },
         .damage = .{ .object = live },
         .missiles = .{ .ring = &state.missiles },
@@ -2014,8 +2024,9 @@ pub const State = struct {
         try drawShape(art, gpa, target, scanner_shape + state.scannerFrame(game_ticks), at, colour, scale);
     }
 
-    /// What `hud_draw` draws only in the view ahead from the cockpit, after the view's name.
-    fn drawInstruments(state: *State, resources: *Resources, frame: Frame, lead: Cursor, colour: [4]f32, scale: f32) (spr.Error || Allocator.Error)!void {
+    /// What `hud_draw` draws only in the view ahead from the cockpit, after the view's name, with
+    /// the ship whose line the radio's window names, where it shows (`speaker`).
+    fn drawInstruments(state: *State, resources: *Resources, frame: Frame, lead: Cursor, speaker: ?u16, colour: [4]f32, scale: f32) (spr.Error || Allocator.Error)!void {
         const frame_duration = frame.clock.frame_duration;
         const shake = state.interference.shake(frame.hit_shake, frame.random);
         const slot = &frame.all.slots[frame.all.player];
@@ -2042,7 +2053,7 @@ pub const State = struct {
             .full_charge = combat.gun_energy,
             .nova = if (novaShown(slot)) live.nova_charge else null,
         }, colour, scale, shake);
-        try drawRadar(art, frame.gpa, frame.target, frame.screen, state, frame.all, colour, scale, shake);
+        try drawRadar(art, frame.gpa, frame.target, frame.screen, state, frame.all, speaker, colour, scale, shake);
         stepRadarZoom(state, frame.clock.game_ticks);
         const aims = try drawReticle(state, art, frame.gpa, frame.target, frame.screen, frame.mode, lead, blindFire(state, slot), frame_duration, colour, scale, shake);
         live.blind_fire_aim = @intFromBool(aims);
@@ -3321,6 +3332,9 @@ pub const TargetScene = struct {
     sight: Sight,
     all: *const create.Objects,
     mode: camera.CockpitMode,
+    /// The ship whose line the radio's window names, where it shows
+    /// (`videoreports.Radio.speakingShip`).
+    speaker: ?u16 = null,
 };
 
 /// **Improvement.** Where the line starts that places the marker for a target out of sight on the
@@ -3346,7 +3360,8 @@ pub fn Sided(comptime T: type) type {
 /// The shapes of the target's brackets, the first of four for the corners: top left, top right,
 /// bottom left and bottom right.
 pub const brackets_shape: Sided(u16) = .{ .hostile = 0x126, .other = 0x122 };
-/// The least the brackets stand apart either way, in the display's own pixels (`0x004DC624`).
+/// The least the brackets, and the corners the radio marks a ship with, stand apart either way, in
+/// the display's own pixels (`0x004DC624`).
 pub const least_brackets: f32 = 15;
 /// Where the range stands from the bottom right bracket, ending there (`0x004DC620`).
 pub const range_offset: [2]i32 = .{ 10, 9 };
@@ -3427,8 +3442,10 @@ pub fn pointerDirection(ship: math.Place, at: Vector) [2]f32 {
 /// same arrow its way in `nav_colour`, whether the nav point is in sight or not, or in the chase
 /// view turns its pointer in the scene (`State.chase_nav_roll`).
 ///
-/// Not yet ported: the corners it marks on the object the radio's window names (`0x0048B0F0`);
-/// the players' names over their ships in a multiplayer game.
+/// Before all of it, the corners it marks on the ship whose line the radio's window names
+/// (`drawCommsMarker`).
+///
+/// Not yet ported: the players' names over their ships in a multiplayer game.
 pub fn drawTarget(
     state: *State,
     art: *Art,
@@ -3444,6 +3461,7 @@ pub fn drawTarget(
     state.chase_nav_roll = null;
     const all = scene.all;
     const sight = scene.sight;
+    if (scene.speaker) |ship| try drawCommsMarker(art, gpa, target, sight, all, ship, colour, scale);
     const ship = &all.slots[all.player];
     if (ship.object.nav_point.index()) |nav| if (nav < all.slots.len) {
         const way = pointerDirection(ship.drawn, all.slots[nav].drawn.position);
@@ -3472,27 +3490,14 @@ pub fn drawTarget(
     if (!(seen[2] > 0)) return .none;
 
     // The node's box, the component's for a subtarget, as the camera sees it.
-    const box = if (part) |found| partBox(found) else [2]Vector{ gameobj.vector(struck.object.bounds_min), gameobj.vector(struck.object.bounds_max) };
-    var low: Point = @splat(box_seed);
-    var high: Point = @splat(-box_seed);
-    for (0..8) |n| {
-        const on: Point = sight.projection.project(sight.view(node.point(math.Corner.of(n).in(box))));
-        low = @min(low, on);
-        high = @max(high, on);
-    }
-    high = @max(high, low + @as(Point, @splat(least_brackets * scale)));
+    const box = if (part) |found| partBox(found) else objectBox(&struck.object);
+    const low, const high = screenBox(sight, node, box, scale);
 
     // The brackets dim as a missile's lock builds, and go at a tenth.
     const brightness = @min(@as(f32, @floatFromInt(state.lock.count)) * lock_dimming, 1);
     if (brightness > least_bright) {
         const dim: [4]f32 = .{ colour[0] * brightness, colour[1] * brightness, colour[2] * brightness, colour[3] };
-        const first = brackets_shape.of(hostile);
-        const ends = [2]Point{ low, high };
-        for (0..4) |n| {
-            const corner: math.Corner = .of(n);
-            const at: [2]i32 = .{ round(ends[corner.x][0]), round(ends[corner.y][1]) };
-            try drawShape(art, gpa, target, first + n, at, dim, scale);
-        }
+        try drawCorners(art, gpa, target, brackets_shape.of(hostile), .{ low, high }, dim, scale);
     }
     // The range goes by the box's far corner, which a box reaching behind the camera throws
     // beyond the screen's reach, and the range with it.
@@ -3512,6 +3517,51 @@ pub fn drawTarget(
         drawLine(target, whole(line[0]), whole(line[1]), art.paletteColour(line_colour.hostile), scale);
     }
     return cursor;
+}
+
+/// The shapes `hud_comms_marker` marks the corners of a ship with, the first of four as the
+/// brackets' (`0x0048B46E`).
+pub const comms_corners: u16 = 0x12A;
+
+/// `hud_comms_marker` (`0x0048B0F0`), which `hud_target` runs first: where the middle of `ship`,
+/// whose line the radio's window names, is on the screen in front of the camera, a shape from
+/// `comms_corners` at each corner of its box as the camera sees it, in the display's colour.
+fn drawCommsMarker(art: *Art, gpa: Allocator, target: device.Device, sight: Sight, all: *const create.Objects, ship: u16, colour: [4]f32, scale: f32) (spr.Error || Allocator.Error)!void {
+    const slot = &all.slots[ship];
+    const seen = sight.view(slot.drawn.position);
+    if (!(seen[2] > 0)) return;
+    const at = sight.pixel(seen) orelse return;
+    if (!sight.onScreen(at)) return;
+    try drawCorners(art, gpa, target, comms_corners, screenBox(sight, slot.drawn, objectBox(&slot.object), scale), colour, scale);
+}
+
+/// An object's box, in its own frame.
+fn objectBox(object: *const gameobj.GameObject) [2]Vector {
+    return .{ gameobj.vector(object.bounds_min), gameobj.vector(object.bounds_max) };
+}
+
+/// Where `box`, in the frame of `node`, falls on the screen as the camera sees it: the least and
+/// the most of its corners across and down, the most at least `least_brackets` past the least
+/// either way.
+fn screenBox(sight: Sight, node: math.Place, box: [2]Vector, scale: f32) [2]Point {
+    var low: Point = @splat(box_seed);
+    var high: Point = @splat(-box_seed);
+    for (0..8) |n| {
+        const on: Point = sight.projection.project(sight.view(node.point(math.Corner.of(n).in(box))));
+        low = @min(low, on);
+        high = @max(high, on);
+    }
+    return .{ low, @max(high, low + @as(Point, @splat(least_brackets * scale))) };
+}
+
+/// Four shapes from `first` at the corners of `ends`, the least and the most of a box on the
+/// screen: at the top left, the top right, the bottom left and the bottom right.
+fn drawCorners(art: *Art, gpa: Allocator, target: device.Device, first: usize, ends: [2]Point, colour: [4]f32, scale: f32) (spr.Error || Allocator.Error)!void {
+    for (0..4) |n| {
+        const corner: math.Corner = .of(n);
+        const at: [2]i32 = .{ round(ends[corner.x][0]), round(ends[corner.y][1]) };
+        try drawShape(art, gpa, target, first + n, at, colour, scale);
+    }
 }
 
 /// The box of the mesh a part draws at its level: none, at its origin, for a part with no mesh,
@@ -3628,9 +3678,7 @@ fn drawOffScreen(
 
 /// The radar (`hud_radar`, `0x00488BD0`): its rings, the shape `hud_init` starts on and the
 /// range key steps through, stand from a point placed half of the way across, at the foot of the
-/// screen, 1 right and 51 up, with a contact for each object in range (`Contacts`). Not yet
-/// ported: the contact for the object the radio's window names (line `0xFD`, shape `0xE6`,
-/// [#99](https://github.com/vdmkenny/openreliant/issues/99)).
+/// screen, 1 right and 51 up, with a contact for each object in range (`Contacts`).
 pub const Radar = struct {
     pub const offset: [2]i32 = .{ 1, -51 };
     pub const across: f32 = 0.5;
@@ -3661,17 +3709,20 @@ pub const Radar = struct {
     pub const spread: Vector = .{ 66, 30, 43 };
 
     /// What the radar shows an object as: its line's palette entry and the shape at its dot, for
-    /// the player's target (`0xFF`, `0x130`), a hostile ship (`0x26`, `0xE5`) and the rest
-    /// (`0x62`, `0xE4`); or, for the display's nav point, a cross of four pixels.
+    /// the player's target (`0xFF`, `0x130`), the ship whose line the radio's window names
+    /// (`0xFD`, `0xE6`), a hostile ship (`0x26`, `0xE5`) and the rest (`0x62`, `0xE4`); or, for the
+    /// display's nav point, a cross of four pixels.
     pub const Look = enum {
         other,
         hostile,
+        speaker,
         target,
         nav_point,
 
         pub fn line(look: Look) u8 {
             return switch (look) {
                 .target => 0xFF,
+                .speaker => 0xFD,
                 .hostile => 0x26,
                 .other, .nav_point => 0x62,
             };
@@ -3680,6 +3731,7 @@ pub const Radar = struct {
         pub fn shape(look: Look) u16 {
             return switch (look) {
                 .target => 0x130,
+                .speaker => 0xE6,
                 .hostile => 0xE5,
                 .other, .nav_point => 0xE4,
             };
@@ -3709,17 +3761,21 @@ pub const Radar = struct {
 
     /// The objects `hud_radar` shows, in their slots' order: the display's nav point, and every
     /// object but the display's own ship that is targetable and neither exploding, disabled,
-    /// ejected nor a cloaked hostile; each within the range's reach of the display's ship.
+    /// ejected nor a cloaked hostile; each within the range's reach of the display's ship. The
+    /// player's target shows as the target before the ship whose line the radio's window names
+    /// (`speaker`) shows as that.
     pub const Contacts = struct {
         all: *const create.Objects,
         reach: f32,
         /// The range's scale times `spread`, which `hud_radar` works out once.
         factors: Vector,
+        /// The ship whose line the radio's window names (`videoreports.Radio.speakingShip`).
+        speaker: ?usize,
         at: usize = 0,
 
-        pub fn of(all: *const create.Objects, range: u2) Contacts {
+        pub fn of(all: *const create.Objects, range: u2, speaker: ?u16) Contacts {
             const chosen = ranges[range];
-            return .{ .all = all, .reach = chosen.reach, .factors = @as(Vector, @splat(chosen.per_unit)) * spread };
+            return .{ .all = all, .reach = chosen.reach, .factors = @as(Vector, @splat(chosen.per_unit)) * spread, .speaker = if (speaker) |ship| ship else null };
         }
 
         pub fn next(it: *Contacts) ?Contact {
@@ -3740,6 +3796,8 @@ pub const Radar = struct {
                     .nav_point
                 else if (index == own.orders[0].target.index)
                     .target
+                else if (index == it.speaker)
+                    .speaker
                 else if (slot.object.side == .hostile)
                     .hostile
                 else
@@ -3802,14 +3860,16 @@ pub fn drawRadar(
     screen: [2]u32,
     state: *const State,
     all: *const create.Objects,
+    speaker: ?u16,
     colour: [4]f32,
     scale: f32,
     shake: ?Shake,
 ) (spr.Error || Allocator.Error)!void {
     const point = place(screen, Radar.offset, Radar.across, Radar.down, scale);
-    try drawContacts(art, gpa, target, screen, point, all, state.radar_range, .below, colour, scale);
+    const range = state.radar_range;
+    try drawContacts(art, gpa, target, screen, point, .of(all, range, speaker), .below, colour, scale);
     try drawShapeWith(art, gpa, target, state.radar_rings, scaled(point, Radar.rings_offset, scale), colour, scale, .{ .shake = shake });
-    try drawContacts(art, gpa, target, screen, point, all, state.radar_range, .above, colour, scale);
+    try drawContacts(art, gpa, target, screen, point, .of(all, range, speaker), .above, colour, scale);
 }
 
 /// The contacts on one side of the rings' plane (`Radar.Contact.plane`): each line a pixel right
@@ -3821,14 +3881,13 @@ fn drawContacts(
     target: device.Device,
     screen: [2]u32,
     point: [2]i32,
-    all: *const create.Objects,
-    range: u2,
+    contacts_in_range: Radar.Contacts,
     plane: Radar.Plane,
     colour: [4]f32,
     scale: f32,
 ) (spr.Error || Allocator.Error)!void {
     const bottom = @as(i32, @intCast(screen[1])) - 2;
-    var contacts: Radar.Contacts = .of(all, range);
+    var contacts = contacts_in_range;
     while (contacts.next()) |contact| {
         if (contact.plane() != plane) continue;
         var dot = scaled(point, contact.at, scale);
@@ -4010,7 +4069,7 @@ test "the radar's contacts" {
     for ([_]u16{ target, hostile, friend, 4 }) |index| mission.slot(index).object.flags.targetable = true;
     mission.slot(player).orders[0].target = .{ .kind = .ship, .index = @intCast(target), .component = -1 };
 
-    var contacts: Radar.Contacts = .of(all, 2);
+    var contacts: Radar.Contacts = .of(all, 2, null);
     const ahead = contacts.next().?;
     try std.testing.expectEqual(Radar.Look.target, ahead.look);
     // Ahead is up the screen: 99000 over 330000 of 43 pixels, lowered by its height, 1 below.
@@ -4025,15 +4084,22 @@ test "the radar's contacts" {
     try std.testing.expectEqual(9, behind.at[1]);
     try std.testing.expectEqual(null, contacts.next());
 
+    // The ship whose line the radio's window names shows as that, unless it is the target.
+    contacts = .of(all, 2, hostile);
+    try std.testing.expectEqual(Radar.Look.target, contacts.next().?.look);
+    try std.testing.expectEqual(Radar.Look.speaker, contacts.next().?.look);
+    contacts = .of(all, 2, target);
+    try std.testing.expectEqual(Radar.Look.target, contacts.next().?.look);
+
     // The closest range reaches less far, past the target, and draws closer at its own scale.
-    contacts = .of(all, 0);
+    contacts = .of(all, 0, null);
     try std.testing.expectEqual(Radar.Contact{ .at = .{ 15, -4 }, .height = -4, .look = .hostile }, contacts.next().?);
     try std.testing.expectEqual(Radar.Look.other, contacts.next().?.look);
     try std.testing.expectEqual(null, contacts.next());
     // A cloaked hostile, or anything exploding, is not shown.
     mission.slot(target).object.flags.cloaked = true;
     mission.slot(friend).object.flags.exploding = true;
-    contacts = .of(all, 2);
+    contacts = .of(all, 2, null);
     try std.testing.expectEqual(Radar.Look.hostile, contacts.next().?.look);
     try std.testing.expectEqual(null, contacts.next());
 }

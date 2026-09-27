@@ -316,11 +316,15 @@ component the subtarget, where the ship lists it, or else the ship the target
 ### Drawing it
 
 `hud_target` (`0x00489C70`), which `hud_draw` runs in view 0 between the jump prompt and the eject
-marker, first points to the player's nav point, where `nav_point_next` has found one it strays
-from ([The flyback markers](#the-flyback-markers)): the arrow below, the nav point's way, in
-palette entry `0x2F` (`0x1F` on the software renderer), wherever the nav point stands, or in the
-chase mode its pointer in the scene. Then it draws the target. Where its node (`ai_target_node`:
-the component's for a subtarget) stands off the screen or behind the camera:
+marker, first runs `hud_comms_marker` (`0x0048B0F0`): while the radio's window is open or opening,
+shapes `0x12A` to `0x12D` at the corners of the box of the ship whose line it is, unless the ship is
+cloaked, where its middle is on the screen in front of the camera, in the brackets' order and at
+least as far apart ([The radio](radio.md#the-window)). Then it points to the player's nav point,
+where `nav_point_next` has found one it strays from ([The flyback markers](#the-flyback-markers)):
+the arrow below, the nav point's way, in palette entry `0x2F` (`0x1F` on the software renderer),
+wherever the nav point stands, or in the chase mode its pointer in the scene. Then it draws the
+target. Where its node (`ai_target_node`: the component's for a subtarget) stands off the screen or
+behind the camera:
 
 - an arrow from the middle of the screen, pointing the way to the node in the player's ship's
   frame (`hud_pointer_direction`, `0x00489BC0`): three lines, the tip 32 from the middle and the
@@ -364,9 +368,8 @@ that starts the line as far down the screen as its middle is across, so the mark
 on the side edges than the target lies, and the more the wider the window. OpenReliant starts the
 line at the arrow's tip. `--original` starts it where the game does.
 
-Not ported: the corners `hud_comms_marker` (`0x0048B0F0`) marks on the object the radio's window
-names; the players' names over their ships in a multiplayer game;
-and what `hud_target_keys` does while the radio's window is open, or while `0x00529FB8` is set,
+Not ported: the players' names over their ships in a multiplayer game;
+and what `hud_target_keys` does while the radio's menu is open, or while `0x00529FB8` is set,
 which leaves out every key after the search under the reticle. The keys' sounds are in
 [The display's sounds](#the-displays-sounds).
 
@@ -467,10 +470,15 @@ dot, and a line of pixels a pixel right of it to the rings' plane:
 | Contact | Line | Shape |
 | --- | --- | --- |
 | the target of the player's current order | `0xFF` | `0x130` |
-| the object the radio's window names, while it is open | `0xFD` | `0xE6` |
+| the ship whose line the radio's window names, while it is open or opening, unless cloaked | `0xFD` | `0xE6` |
 | a hostile object | `0x26` | `0xE5` |
 | any other | `0x62` | `0xE4` |
 | the nav point | a cross of four pixels round the dot, in the palette's nearest white | |
+
+A target whose line the radio's window names shows as the target. **Fix:** the radar takes a
+pilot's line's object, `0xFFFF` and the pilot's number, less `0xFFFF` for a slot, and marks
+whatever ship lies in the slot of the pilot's number; OpenReliant marks only a ship whose line it
+is.
 
 It draws the contacts level with the plane or below it first, then the rings, `hud_radar_rings`
 (`0x0057BC50`), one of shapes `0x161` to `0x16B` with the wedge of the view ahead, `0x42` left and
@@ -498,9 +506,6 @@ ticks.
 
 In the cockpit's view the radar stands on a dark backing, which `mission_frame` draws with the
 cockpit's model rather than `hud_radar` ([`rendering.md`](rendering.md#the-cockpit)).
-
-OpenReliant draws the rings, the contacts and changes the range. Not yet ported: the radio's
-object, which the radio's window names.
 
 ## The status lights
 
@@ -680,7 +685,7 @@ hold (`+0x25`), which both clear.
 
 | Window | Place | Stays | Shows |
 | --- | --- | --- | --- |
-| 0 | top, left | 400 | **Unverified:** the face of whoever speaks on the radio, from the mission's films, with a caption; it closes when the film ends |
+| 0 | top, left | 400 | the radio's: the face of whoever speaks, under their name, while they speak ([The radio](radio.md#the-window)) |
 | 1 | foot, left | 1200 | the gunnery display |
 | 2 | top, middle | 200 | the missile display |
 | 3 | foot, `0.7` across | 2000 | the target display's small form |

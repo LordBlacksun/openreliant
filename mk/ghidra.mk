@@ -232,6 +232,16 @@ speech-tables: ## Re-derive the speech codec's tables, its coefficients' levels 
 	$(ROOT)/zig-out/bin/tablegen speech $(PAYLOAD) $(SPEECH_TABLES)
 	$(ZIG) fmt $(SPEECH_TABLES)
 
+FACE_TABLES := $(ROOT)/src/engine/game/pilots/faces.zig
+
+.PHONY: face-tables
+face-tables: ## Re-derive the pilots' faces, the string naming each pilot, its side and its films, from the payload executable
+	@test -f $(PAYLOAD) || { echo "missing $(PAYLOAD), the game executable with its code readable" >&2; exit 1; }
+	$(ZIG) build tablegen
+	mkdir -p $(dir $(FACE_TABLES))
+	$(ROOT)/zig-out/bin/tablegen faces $(PAYLOAD) $(FACE_TABLES)
+	$(ZIG) fmt $(FACE_TABLES)
+
 VIEW_TABLES := $(ROOT)/src/engine/game/camera/views.zig
 
 .PHONY: view-tables

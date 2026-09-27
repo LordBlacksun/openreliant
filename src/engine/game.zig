@@ -25,6 +25,7 @@ pub const environfx = @import("game/environfx.zig");
 pub const erayfx = @import("game/erayfx.zig");
 pub const explode = @import("game/explode.zig");
 pub const hud = @import("game/hud.zig");
+pub const hudmovie = @import("game/hudmovie.zig");
 pub const hudoptions = @import("game/hudoptions.zig");
 pub const executor = @import("game/executor.zig");
 pub const gameflow = @import("game/gameflow.zig");

@@ -660,7 +660,8 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
     defer if (output) |open| open.destroy();
     const sound = try arena.create(game.hog_snd.Sound);
     sound.init(if (output) |open| open.driver() else null, sound_voices, .{ .gpa = gpa, .io = io, .dir = directory });
-    // The radio's lines, from the game's speech archive, said through the sound's speech sample.
+    // The radio's lines, from the game's speech archive, said through the sound's speech sample,
+    // and the films of the speakers' faces.
     var radio: game.videoreports.Radio = .open(gpa, io, directory);
     defer radio.deinit(sound);
     radio.style = options.speech;
@@ -751,6 +752,7 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
         .clock = &clock,
         .player = &player,
         .view = &view,
+        .radio = &radio,
         .random = &rand,
         .strings = &strings,
         .pause_menu = &pause_menu,
@@ -1138,6 +1140,8 @@ const Display = struct {
     player: *const engine.input.Player,
     /// The camera, whose shake shakes the power ball too.
     view: *const camera.Camera,
+    /// The radio, whose window shows the speaker's face.
+    radio: *game.videoreports.Radio,
     /// The C runtime's `rand`, which the camera and the display both draw from.
     random: *engine.libcmt.Rand,
     /// The display's own state, `hud.cpp`'s globals.
@@ -1192,6 +1196,7 @@ const Display = struct {
             .hit_shake = display.view.hit_shake,
             .view = display.view.view,
             .sound = display.settings.sound,
+            .radio = display.radio,
             .random = display.random,
             .ready = if (display.play.loaded) |loaded| &loaded.script.variables.ready else &display.idle,
             .edge_line = display.edge_line,
