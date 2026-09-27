@@ -14,6 +14,7 @@ const aiexplode = @import("aiexplode.zig");
 const aifight = @import("aifight.zig");
 const aiorders = @import("aiorders.zig");
 const aidock = @import("aidock.zig");
+const ailand = @import("ailand.zig");
 const airipper = @import("airipper.zig");
 const follow = @import("ai/follow.zig");
 const camera = @import("camera.zig");
@@ -180,6 +181,7 @@ pub const State = extern union {
     jump: jump.State,
     follow: follow.State,
     dock: aidock.State,
+    land: ailand.State,
     ripper_grab: airipper.GrabState,
     ripper_drop: airipper.DropState,
     ripper_end_drop: airipper.EndDropState,
@@ -508,6 +510,7 @@ fn runInit(ctx: Context, index: u16, info: orders.Info) void {
         .ship_follow_curve => follow.init(ctx, index),
         .ship_follow_curve_backwards => follow.backwardsInit(ctx, index),
         .dock => aidock.init(ctx, index),
+        .land => ailand.init(ctx, index),
         .ripper_grabs_target_object => airipper.grabInit(ctx, index),
         .make_ripper_drop_what_its_carrying => airipper.dropInit(ctx, index),
         .ripper_end_drop_object => airipper.endDropInit(ctx, index),
@@ -550,6 +553,7 @@ fn runUpdate(ctx: Context, index: u16, info: orders.Info) void {
         .ship_follow_curve => follow.update(ctx, index),
         .ship_follow_curve_backwards => follow.backwardsUpdate(ctx, index),
         .dock => aidock.update(ctx, index),
+        .land => ailand.update(ctx, index),
         .ripper_grabs_target_object => airipper.grab(ctx, index),
         .make_ripper_drop_what_its_carrying => airipper.drop(ctx, index),
         .ripper_end_drop_object => airipper.endDrop(ctx, index),

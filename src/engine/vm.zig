@@ -175,9 +175,16 @@ pub const Variables = extern struct {
     /// `player_missiles_left`: the missile display's counts together.
     player_missiles_left: u32 = 0,
     _unknown_5: [4]u32 = @splat(0),
-    /// `mission_over`: set once the camera has watched the mission's end long enough.
+    /// `mission_over`: set once the camera has watched the mission's end long enough, or once the
+    /// player's ship has landed.
     mission_over: u32 = 0,
-    _unknown_10: [28]u32 = @splat(0),
+    /// `landing_cleared`: whether PERMISSION TO LAND is granted, and the player's ship lands
+    /// (`videoreports.permissionToLand`). Mission 1's script sets it as the Reliant jumps in.
+    landing_cleared: u32 = 0,
+    _unknown_11: [3]u32 = @splat(0),
+    /// `mission_success`: how the script rates the mission.
+    mission_success: Outcome = .failure,
+    _unknown_15: [23]u32 = @splat(0),
     /// Room for every number a byte names. In the game these are the globals after the block,
     /// which no shipped mission touches.
     beyond: [218]u32 = @splat(0),
@@ -187,9 +194,26 @@ pub const Variables = extern struct {
         return &@as(*[256]u32, @ptrCast(variables))[index];
     }
 
+    /// How the script rates the mission, as the game's debug line names each rating: the carrier's
+    /// clearance to land picks its line by it, and a rating past the named ones is "incorrectly
+    /// defined".
+    pub const Outcome = enum(i32) {
+        /// "Total Failure (kick out)".
+        total_failure = -1,
+        failure = 0,
+        partial_failure = 1,
+        partial_success = 2,
+        success = 3,
+        /// "Success + Bonus".
+        success_bonus = 4,
+        _,
+    };
+
     comptime {
         assert(@offsetOf(Variables, "player_missiles_left") == 0x0052A400 - 0x0052A3F0);
         assert(@offsetOf(Variables, "mission_over") == 0x0052A414 - 0x0052A3F0);
+        assert(@offsetOf(Variables, "landing_cleared") == 0x0052A418 - 0x0052A3F0);
+        assert(@offsetOf(Variables, "mission_success") == 0x0052A428 - 0x0052A3F0);
         assert(@sizeOf(Variables) == 256 * @sizeOf(u32));
     }
 };
@@ -198,9 +222,13 @@ test Variables {
     var variables: Variables = .{};
     variables.slot(0).* = 1;
     variables.slot(9).* = 1;
+    variables.slot(10).* = 1;
+    variables.slot(14).* = 3;
     variables.slot(255).* = 7;
     try std.testing.expectEqual(.newly, variables.ready.jump);
     try std.testing.expectEqual(1, variables.mission_over);
+    try std.testing.expectEqual(1, variables.landing_cleared);
+    try std.testing.expectEqual(.success, variables.mission_success);
     try std.testing.expectEqual(7, variables.beyond[217]);
 }
 

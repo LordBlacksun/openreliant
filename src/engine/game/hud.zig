@@ -1169,10 +1169,11 @@ pub fn instrumented(last_view: camera.View) bool {
 pub const view_name_down: i32 = 10;
 
 /// Whether `hud_draw` names `last_view` at the top of the screen: every view but the one ahead
-/// from the cockpit, and but the fly-by and the two views after it (`0x24` to `0x26`).
+/// from the cockpit, and but the fly-by and the two views after it (`0x24` to `0x26`), the
+/// Yamato's landing's second and the Reliant's landing's from aside.
 pub fn namesView(last_view: camera.View) bool {
     return switch (last_view) {
-        .cockpit, .flyby, ._unknown_37, ._unknown_38 => false,
+        .cockpit, .flyby, ._unknown_37, .landing_aside => false,
         else => true,
     };
 }
@@ -1426,7 +1427,8 @@ test namesView {
     try std.testing.expect(namesView(.external));
     try std.testing.expect(namesView(.chase));
     try std.testing.expect(!namesView(.flyby));
-    try std.testing.expect(!namesView(._unknown_38));
+    try std.testing.expect(!namesView(.landing_aside));
+    try std.testing.expect(namesView(.landing_tube));
     try std.testing.expect(namesView(@enumFromInt(0x27)));
 }
 

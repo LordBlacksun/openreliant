@@ -11,6 +11,7 @@ pub const aieject = @import("game/aieject.zig");
 pub const aiexplode = @import("game/aiexplode.zig");
 pub const aifight = @import("game/aifight.zig");
 pub const aigeneric = @import("game/aigeneric.zig");
+pub const ailand = @import("game/ailand.zig");
 pub const aiorders = @import("game/aiorders.zig");
 pub const backdrop = @import("game/backdrop.zig");
 pub const bigfile = @import("game/bigfile.zig");
@@ -50,6 +51,7 @@ pub const sparks = @import("game/sparks.zig");
 pub const srofiles = @import("game/srofiles.zig");
 pub const table = @import("game/table.zig");
 pub const tractor = @import("game/tractor.zig");
+pub const videoreports = @import("game/videoreports.zig");
 pub const winmain = @import("game/winmain.zig");
 pub const xtrabits = @import("game/xtrabits.zig");
 

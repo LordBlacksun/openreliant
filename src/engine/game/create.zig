@@ -519,7 +519,8 @@ pub const Objects = struct {
     /// OpenReliant's mission 0. A few of the game's rules single a mission out by it:
     /// `create_object` and `mission_ship_create` give the player's wing the `t_` twins of the
     /// player's ships from `twins_from_mission` on, the turrets launch their missiles sooner in
-    /// mission 28, and the launch's caption and the objectives go by it.
+    /// mission 28, the launch's caption and the objectives go by it, and the training missions
+    /// (`training`) have rules of their own.
     mission_number: u16 = 0,
     /// `mission25_second_part` (`0x00587CDC`): whether mission 25's first part is won and its
     /// second is played, before which the player flies a Kamov.
@@ -604,6 +605,13 @@ pub const Objects = struct {
     ///
     /// Not ported: a multiplayer game, where every slot takes `asked`, and the rule of
     /// `0x00524FE4` by which a type 13 becomes a Reliant.
+    /// Whether the mission is one of the training missions (`training_missions`), in which the
+    /// flight instructor clears the player's ship to land and `SetInvulnerability` reaches the
+    /// players' ships too.
+    pub fn training(all: *const Objects) bool {
+        return all.mission_number >= training_missions[0] and all.mission_number <= training_missions[1];
+    }
+
     pub fn slotType(all: *const Objects, index: u16, asked: gameobj.Type) gameobj.Type {
         if (index >= all.players or index >= all.loadout_ships.len) return asked;
         if (all.mission_number == kamov_mission and !all.mission25_second_part) return .kamov;
@@ -646,6 +654,10 @@ pub const max_loadouts = 8;
 /// `mission_ship_create`).
 pub const twins_from_mission = 14;
 pub const kamov_mission = 25;
+
+/// The training missions, the first and the last (immediates in `cmd_SetInvulnerability_ship` and
+/// `permission_to_land`).
+pub const training_missions = [2]u16{ 30, 35 };
 
 /// What goes wrong in `create_object`, which stops the game with a fatal error for either.
 pub const Error = error{

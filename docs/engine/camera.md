@@ -152,6 +152,22 @@ OpenReliant's camera keeps its own place for them, as for the flyby and target v
 **Improvement:** with smooth motion, view `0x17` pulls away by the share of a tick the frame is
 drawn past its tick as well, as [the ejection's views](#the-ejections-views) do.
 
+## The landing's views
+
+The Reliant's [landing](orders.md#landing) picks one of two views at random, held and forced, with
+the landing ship as the object. `camera_frame` places the camera each frame off the middle of the
+launch tube the ship lands in, which the landing keeps, turned as the carrier is:
+
+- View `0x23`: 500 to the tube's right and 500 behind it, level with it (`0x00460A17`), looking at
+  the player's ship (`camera_ease_to_player`, all the way). The tube lies within the carrier's
+  hull, so the view looks out through its opening upper door.
+- View `0x26`: 3500 to the tube's left, 1000 above it and 3000 behind (`0x00460AB9`), looking at
+  the view's object.
+
+The display names view `0x23`, but not `0x26`. **Improvement:** from within the tube, the sound is
+heard as in a hangar ([Sound](../port/sound.md)). The Yamato's landing picks views `0x0E` and `0x25`,
+which OpenReliant has not ported ([#349](https://github.com/vdmkenny/openreliant/issues/349)).
+
 ## The director's view
 
 View 13 shows the shots a mission's script stacks for [the director's camera](director.md), which

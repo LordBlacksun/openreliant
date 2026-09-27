@@ -355,21 +355,16 @@ fn setInvulnerability(call: Call) u32 {
     return 1;
 }
 
-/// The missions in which `SetInvulnerability` reaches the players' ships too.
-const invulnerable_players = [2]u16{ 30, 35 };
-
 /// `cmd_SetInvulnerability_ship` (`0x00458BE0`): the ship takes the invulnerability the command's
 /// second argument gives, or where the first names one of its components (`push_component`), that
 /// component does, which its damage does not read yet. Only a ship past the players' slots is
-/// reached, save in missions 30 to 35 (`invulnerable_players`).
+/// reached, save in the training missions (`create.Objects.training`).
 ///
 /// Not ported: the game's mode `0x00524FE4` 1, in which the players' ships are reached too.
 fn setInvulnerabilityShip(call: Call, ship: u16) void {
     const machine = call.machine;
     const all = machine.game.?.world.objects;
-    const mission_number = all.mission_number;
-    const players_reached = mission_number >= invulnerable_players[0] and mission_number <= invulnerable_players[1];
-    if (ship < all.players and !players_reached) return;
+    if (ship < all.players and !all.training()) return;
     const object = &all.slots[ship].object;
     const value = call.args[0];
     if (machine.argumentComponent(call.thread, 0)) |component| {

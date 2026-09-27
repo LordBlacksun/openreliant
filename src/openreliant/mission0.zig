@@ -14,8 +14,10 @@
 //! the rocks tumble slowly (Random Spin Slow), and plays the launch's music. It starts the wing's
 //! launch and waits until the wing is out (`WaitForJumpOrLaunch`), as mission 1 does, the capital
 //! ships holding their fire meanwhile (`DisableGuns`). Then the Reliant and the Badanov fly on at a
-//! tenth of their speed, free to fire, the Sabres fight the player and each wingman a Sabre, and
-//! the mission's music follows the launch's. The Sabres' pilot is record 42 of
+//! tenth of their speed, free to fire, the Sabres fight the player and each wingman a Sabre, the
+//! mission's music follows the launch's, and the player may land: the script clears it
+//! (`vm.Variables.landing_cleared`), as mission 1's does once the Reliant jumps in, so that
+//! PERMISSION TO LAND lands the player's ship on the Reliant, which ends the mission. The Sabres' pilot is record 42 of
 //! `pilotstats.bin`, one of its weakest, where the game gives a Sabre the sharp pilot of record 66,
 //! so the player's missiles mostly get past their countermeasures.
 
@@ -301,7 +303,7 @@ comptime {
 /// The start part: every flight group made, the ejected pilot's odds each as likely, the rocks
 /// tumbling, the capital ships' guns held, the launch's music, and the wing's launch. Once the wing
 /// is out, the capital ships fly at a crawl, their guns free, the Sabres fight the player and each
-/// wingman a Sabre, and the mission's music plays.
+/// wingman a Sabre, the mission's music plays, and the landing is cleared.
 fn script(gpa: Allocator) ![]u8 {
     var routine: Routine = .init(gpa);
     defer routine.deinit();
@@ -328,10 +330,16 @@ fn script(gpa: Allocator) ![]u8 {
     try setAI(&routine, .{ .group = .sabres }, .fight, player);
     for (wingmen, 0..) |wingman, n| try setAI(&routine, .{ .ship = wingman }, .fight, first_sabre + n % wing_size);
     try playMusic(&routine, mission_music);
+    try routine.op(.select_array, &.{landing_cleared});
+    try routine.pushConstant(1);
+    try routine.op(.assign, &.{});
     try routine.op(.push_byte, &.{1});
     try routine.op(.@"return", &.{});
     return routine.finish();
 }
+
+/// The game's variable that clears the player's ship to land (`vm.Variables.landing_cleared`).
+const landing_cleared: u8 = @intCast(@offsetOf(openreliant.engine.vm.Variables, "landing_cleared") / @sizeOf(u32));
 
 /// `PlayMusic` of the piece `piece`, once the music playing has faded out.
 fn playMusic(routine: *Routine, piece: []const u8) !void {

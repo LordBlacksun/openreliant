@@ -25,6 +25,7 @@ const backdrop = @import("backdrop.zig");
 const camera = @import("camera.zig");
 const ai = @import("ai.zig");
 const aigeneric = @import("aigeneric.zig");
+const ailand = @import("ailand.zig");
 const create = @import("create.zig");
 const gameobj = @import("gameobj.zig");
 const guns = @import("guns.zig");
@@ -83,6 +84,12 @@ pub const Ending = enum(u8) {
     rescued = 2,
     /// The ejected pilot picked up by the enemy (type `0x46`).
     captured = 3,
+    /// The player's ship sent home for destroying a friend (`0x00474B40`), which gives it Friendly
+    /// Fire, order 117; its landing begins at once (`ailand`).
+    friendly_fire = 6,
+    /// **Unknown:** as `friendly_fire`, where the ship's `_unknown_678` is 3, which a multiplayer
+    /// game's code sets.
+    _unknown_7 = 7,
     ejecting = 8,
     _,
 };
@@ -93,21 +100,24 @@ pub const Showing = enum(u8) {
     /// A launch's cutaway (`launch.reliant`), which leaves out the ship the player launches from
     /// (`input.Player.carrier`), its bay seen from within.
     launch = 2,
-    /// **Unknown:** what it shows. The landing orders set it (`0x0040EF55`, `0x0040F9A7`), and
-    /// `mission_frame` passes over the mission's events and `0x0045A570` while it is so.
-    _unknown_3 = 3,
+    /// A landing's cutaway, which the landing orders set (`0x0040EF55`, `0x0040F9A7`): the
+    /// Reliant's disables every object but the ship and its carrier (`ailand`). `mission_frame`
+    /// passes over the mission's events and `0x0045A570` while it is so.
+    landing = 3,
     /// The end of the player's ejection (`aieject.pickUp`): only the pilot's pod and the ship in
     /// the cutaway slot, which picks it up or shoots it down. The pod bursts at once when it is
     /// destroyed, with neither the camera's watch nor the pilot counted killed on the way.
     ejection = 4,
     _,
 
-    /// **Improvement:** what surrounds the camera as the scene shows it, for the reverb: a
-    /// hangar while a launch's cutaway shows the bay from within, and space otherwise.
-    pub fn surroundings(showing: Showing) mss.Surroundings {
+    /// **Improvement:** what surrounds the camera as the scene shows it in `view`, for the reverb:
+    /// a hangar while a launch's cutaway shows the bay from within, or the landing's is seen from
+    /// within the launch tube the ship lands in (`camera.View.landing_tube`), and space otherwise.
+    pub fn surroundings(showing: Showing, view: camera.View) mss.Surroundings {
         return switch (showing) {
             .launch => .hangar,
-            .everything, ._unknown_3, .ejection, _ => .space,
+            .landing => if (view == .landing_tube) .hangar else .space,
+            .everything, .ejection, _ => .space,
         };
     }
 };
@@ -477,6 +487,7 @@ pub fn controlsFrame(controls: Controls) void {
         .random = controls.random,
         .forces = controls.forces,
         .dropping = launch.dropping(all, all.player),
+        .landing = ailand.seen(all, view.object orelse all.player),
         .showing = &world.player.showing,
         .game = world,
     })) |next| {
@@ -485,7 +496,7 @@ pub fn controlsFrame(controls: Controls) void {
     slot.object.flags.hidden = view.inside(all.player);
     if (world.hearing) |hearing| {
         hearing.sound.timerTick(clock.game_ticks);
-        hearing.sound.surround(world.player.showing.surroundings());
+        hearing.sound.surround(world.player.showing.surroundings(view.view));
         if (hearing.sound.stdsmp) |bank| hearing.sound.frame(bank, hearing.scene(world));
     }
     devices.joystick.rumble(controls.forces.motors(clock.frame_start));
@@ -519,7 +530,7 @@ pub fn missionFrame(orders: aigeneric.Context, timing: objects.Timing, loaded: ?
         const variables = &playing.script.variables;
         if (over) variables.mission_over = 1;
         if (variables.mission_over != 0) return true;
-        if (orders.clock.frame_duration != 0 and player.ending == .playing and player.showing != ._unknown_3) {
+        if (orders.clock.frame_duration != 0 and player.ending == .playing and player.showing != .landing) {
             playing.tickClock(orders.clock.game_ticks);
             playing.flush(orders);
             playing.process(orders);
@@ -910,9 +921,11 @@ test "the objects are framed and drawn, save those left out" {
     try std.testing.expectEqual(2, scene.layers.get(.world).items.len);
 }
 
-test "the camera is in a hangar while a launch shows the bay from within" {
-    try std.testing.expectEqual(.hangar, Showing.launch.surroundings());
-    for ([_]Showing{ .everything, ._unknown_3, .ejection }) |showing| try std.testing.expectEqual(.space, showing.surroundings());
+test "the camera is in a hangar while a launch shows the bay, or a landing the tube, from within" {
+    try std.testing.expectEqual(.hangar, Showing.launch.surroundings(.launch_aside));
+    try std.testing.expectEqual(.hangar, Showing.landing.surroundings(.landing_tube));
+    try std.testing.expectEqual(.space, Showing.landing.surroundings(.landing_aside));
+    for ([_]Showing{ .everything, .ejection }) |showing| try std.testing.expectEqual(.space, showing.surroundings(.cockpit));
 }
 
 test "a launching ship keeps with the node it rides, though that is framed after it" {

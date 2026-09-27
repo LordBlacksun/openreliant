@@ -76,6 +76,12 @@ pub const View = enum(u8) {
     /// The third: from beside and below the carrier, which the view shows whole, looking at the
     /// ship as it drops out.
     launch_aside = 0x22,
+    /// The first of the two views the Reliant's landing picks from at random (`ailand`): from
+    /// beside the launch tube the ship lands in, within the carrier's hull, looking at the
+    /// player's ship as it comes in through the tube's upper door and sinks.
+    landing_tube = 0x23,
+    /// The second: from above the carrier, aside and behind the tube, watching the ship.
+    landing_aside = 0x26,
     /// The player's Jump Out ([jumps](../../../docs/engine/jump.md)): from out along each of the
     /// ship's axes where it began, watching it go.
     jump_out = 0x27,
@@ -115,10 +121,10 @@ pub const View = enum(u8) {
     watch_marker = 0x1B,
     /// From a point the player flies past.
     flyby = 0x24,
-    /// **Unknown:** two views after the fly-by that share its name, which `hud_draw` leaves unnamed
-    /// with it.
+    /// **Unknown:** what it shows. The second of the two views the Yamato's landing picks from
+    /// (`0x0040EBC0`), which OpenReliant has not ported
+    /// ([#349](https://github.com/vdmkenny/openreliant/issues/349)).
     _unknown_37 = 0x25,
-    _unknown_38 = 0x26,
     /// **Unknown:** in which the player's own ship is heard flying past no more than from the
     /// cockpit (`sound3d_engine_update`).
     _unknown_15 = 0x0F,
@@ -325,6 +331,8 @@ pub const World = struct {
     /// Whether the player's ship has begun to drop out of its carrier's bay, which the bay view
     /// tilts down after (`launch.dropping`).
     dropping: bool = false,
+    /// What the landing's views stand by, while the view's object lands (`ailand.seen`).
+    landing: ?Landing = null,
     /// What the mission's scene shows, which the view aside shows whole each frame; null where
     /// there is no scene.
     showing: ?*@import("main.zig").Showing = null,
@@ -333,6 +341,13 @@ pub const World = struct {
     /// The game's world, through which the director's view flies along the mission's curves; null
     /// where no game runs, as in a test.
     game: ?gameobj.World = null,
+};
+
+/// What the landing's views stand by: the middle of the carrier's launch tube the ship lands in,
+/// which the landing keeps (`ailand.State.tube`), and how the carrier is turned.
+pub const Landing = struct {
+    tube: Vector,
+    carrier: Matrix,
 };
 
 /// The camera: the state `camera_set_view` and `camera_frame` keep in globals, and Surrender's
@@ -633,6 +648,14 @@ pub const Camera = struct {
             .launch_aside => {
                 if (world.showing) |showing| showing.* = .everything;
                 camera.place = lookingAt(camera.place.position, world.player.position);
+            },
+            // The landing's views stand off the tube's middle each frame, turned as the carrier
+            // is, looking at the player's ship and at the view's object.
+            .landing_tube => if (world.landing) |landing| {
+                camera.place = lookingAt(landing.tube + math.transform(landing.carrier, landing_tube_offset), world.player.position);
+            },
+            .landing_aside => if (world.landing) |landing| {
+                camera.place = lookingAt(landing.tube + math.transform(landing.carrier, landing_aside_offset), world.object.position);
             },
             .jump_out => camera.place = lookingAt(camera.place.position, world.object.position),
             .jump_in_close => {
@@ -1133,6 +1156,14 @@ const aside_offset: Vector = .{ -1700, 6000, 0 };
 const bay_pitch: f32 = std.math.degreesToRadians(-54.0);
 const bay_tilt: f32 = 0.0007;
 
+// --- The landing --------------------------------------------------------------------------------
+
+/// Where the landing's views stand, in the carrier's frame from the middle of the tube the ship
+/// lands in (`camera_frame`): the tube view 500 to its right and 500 behind (`0x00460A17`), and
+/// the view aside 3500 to its left, 1000 above and 3000 behind (`0x00460AB9`).
+const landing_tube_offset: Vector = .{ 500, 0, -500 };
+const landing_aside_offset: Vector = .{ -3500, -1000, -3000 };
+
 // --- The jumps ----------------------------------------------------------------------------------
 
 /// How far out along each of its ship's axes Jump Out's view stands (`camera_set_view`,
@@ -1326,6 +1357,21 @@ test "Camera.setLaunch" {
     // The view aside stands to the ship's left and below it.
     try std.testing.expect(camera.setLaunch(.launch_aside, 0, 30, ship, ship, true));
     try expectVector(.{ 0, 6000, 2700 }, camera.place.position);
+}
+
+test "the landing's views stand off the carrier's tube, watching the ship" {
+    var camera: Camera = .{};
+    const ship: Subject = .{ .position = .{ 0, -3000, 5000 }, .orientation = math.identity };
+    const landing: Landing = .{ .tube = .{ 0, 0, 1000 }, .carrier = math.rotation(.y, std.math.pi) };
+    try std.testing.expect(camera.setView(.landing_tube, 0, true, true, 10));
+    _ = camera.frame(.{ .object = ship, .player = ship, .ticks = 1, .now = 10, .landing = landing });
+    // Turned with the carrier, half a turn round: 500 to the left of the tube and 500 ahead.
+    try expectVector(.{ -500, 0, 1500 }, camera.place.position);
+    try expectVector(math.normalize(ship.position - camera.place.position), math.forward(camera.place.orientation));
+    try std.testing.expect(camera.setView(.landing_aside, 0, true, true, 20));
+    _ = camera.frame(.{ .object = ship, .player = ship, .ticks = 1, .now = 20, .landing = landing });
+    try expectVector(.{ 3500, -1000, 4000 }, camera.place.position);
+    try expectVector(math.normalize(ship.position - camera.place.position), math.forward(camera.place.orientation));
 }
 
 test "the launch's views follow the ship" {
