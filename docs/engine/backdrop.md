@@ -138,7 +138,15 @@ models stand as far off their origins.
 **Fix:** OpenReliant stands the ring round the sphere's middle, the middle of the first part's
 finest mesh as the planet is turned, and turns the planet about it, so that it stays where it
 stands; the ring keeps the game's radii, so that it starts at the rim, as the game's sizes mean it
-to. **Improvement:** the ring is made of 96 quads, round at any size; `--original` makes it of 20.
+to.
+
+**Improvement:** the atmosphere is a haze (`atmosphere.Style.haze`). The ring is made of 96 quads,
+round at any size, and is there at all times: each of its vertices is as solid as the flares are
+bright, or as `atmosphere.hazeAt` has it where that is more, 0.15 on the side away from the sun and
+0.6 on the side toward it, and between them as the cosine goes. The planet's terminator is softer,
+the sun reaching a little way round into its night side, where each pixel is lit
+([Renderer](../port/renderer.md#improvements)). `--original` makes the ring of 20 quads, only as
+solid as the flares are bright, and keeps the terminator hard.
 
 **Fix:** a fifth atmosphere would write past the table; OpenReliant makes none. With the sun square
 to the view, the game leaves the flares' brightness unset for the rings; OpenReliant keeps the last.

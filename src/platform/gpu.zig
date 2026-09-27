@@ -112,14 +112,20 @@ const Vertex = extern struct {
 };
 
 /// A draw's shading as the shader reads it from each vertex, one word: the shadows its pixels take
-/// in the low byte, and whether its texture is magnified smoothly in the next bit.
+/// in the low byte, whether its texture is magnified smoothly in the next bit, and whether the key
+/// lights reach past its terminator in the one after.
 const Shading = packed struct(u32) {
     receives: device.Receives,
     magnify: srtexture.Image.Magnify,
-    _unused: u23 = 0,
+    soft_terminator: bool,
+    _unused: u22 = 0,
 
     fn of(state: device.State) Shading {
-        return .{ .receives = state.receives, .magnify = if (state.texture) |image| image.magnify else .sharp };
+        return .{
+            .receives = state.receives,
+            .magnify = if (state.texture) |image| image.magnify else .sharp,
+            .soft_terminator = state.soft_terminator,
+        };
     }
 };
 
@@ -1150,6 +1156,9 @@ test Shading {
     try std.testing.expectEqual(0x102, smooth);
     const plain: u32 = @bitCast(Shading.of(.{ .texture = null, .depth = undefined, .blend = null, .receives = .world }));
     try std.testing.expectEqual(0x001, plain);
+    // A planet's soft terminator in the bit after.
+    const planet: u32 = @bitCast(Shading.of(.{ .texture = null, .depth = undefined, .blend = null, .receives = .world, .soft_terminator = true }));
+    try std.testing.expectEqual(0x201, planet);
 }
 
 test appendList {

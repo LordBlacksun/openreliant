@@ -127,6 +127,9 @@ pub const State = struct {
     /// OpenReliant's: the shadows the draw's lit pixels are looked up in, for a device that draws
     /// them.
     receives: Receives = .nothing,
+    /// OpenReliant's: the key lights reach a little way past the terminator of what it draws
+    /// (`srapiext.MeshObject.soft_terminator`), where the device lights each pixel.
+    soft_terminator: bool = false,
 };
 
 /// Which shadows a draw's pixels take, which the layer sets: none, the world's cascades, or the

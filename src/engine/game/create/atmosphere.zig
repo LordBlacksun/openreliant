@@ -28,25 +28,40 @@ pub const capacity = 4;
 pub const texture_name = "atmos";
 
 /// The quads of the band an atmosphere is made of (`0x0046796B`), and as many as OpenReliant makes
-/// it of for a round ring (`Detail.round`).
+/// a haze's of, round at any size (`Style.haze`).
 pub const segments = 20;
 pub const round_segments = 96;
 
-/// How finely the atmospheres' rings are made.
-pub const Detail = enum {
-    /// **Improvement:** of `round_segments` quads, round at any size, where the game's show their
-    /// sides at high resolutions.
-    round,
-    /// Of `segments` quads, as the game makes them.
+/// How the atmospheres are drawn.
+pub const Style = enum {
+    /// **Improvement:** as a haze. Each ring is made of `round_segments` quads, where the game's
+    /// show their sides at high resolutions. It is there at all times, faint on the planet's night
+    /// side and brighter toward its sunlit side (`hazeAt`), and as solid as the game's where the
+    /// lens flares are brighter. The planet's terminator is softened, the sun reaching a little way
+    /// round into its night side (`srapiext.MeshObject.soft_terminator`).
+    haze,
+    /// As the game draws them: of `segments` quads, there only as the lens flares are.
     original,
 
-    fn quads(detail: Detail) u16 {
-        return switch (detail) {
-            .round => round_segments,
+    fn quads(style: Style) u16 {
+        return switch (style) {
+            .haze => round_segments,
             .original => segments,
         };
     }
 };
+
+/// How solid a haze is on its planet's night side, and on its sunlit side (`Style.haze`).
+pub const haze_night: f32 = 0.15;
+pub const haze_day: f32 = 0.6;
+
+/// How solid a haze is at a point of its ring that lies `out` from the planet's middle, the sun
+/// `toward` it: `haze_day` on the side that faces the sun, `haze_night` on the side away from it,
+/// and between them as the cosine goes.
+pub fn hazeAt(out: Vector, toward: Vector) f32 {
+    const lit = 0.5 + 0.5 * math.dot(math.normalize(out), toward);
+    return math.lerp(haze_night, haze_day, lit);
+}
 
 /// Where an atmosphere's inner edge stands, as a share of the planet's radius (`0x00467A05`).
 pub const inner_edge: f32 = 0.85;
@@ -118,6 +133,21 @@ pub const Ring = struct {
         return ring;
     }
 
+    /// Sets how solid it is, its object turned as it is drawn: as the lens flares are bright,
+    /// `brightness`, and for a haze at least as `hazeAt` has it at each vertex, the sun `toward` it.
+    fn fade(ring: *Ring, style: Style, brightness: f32, toward: Vector) void {
+        const quads = ring.mesh.positions.len / 2;
+        const colours = ring.colours[0 .. 2 * quads];
+        for (ring.mesh.positions[0..quads], colours[0..quads], colours[quads..]) |at, *inner, *outer| {
+            const alpha = switch (style) {
+                .haze => @max(brightness, hazeAt(math.transform(ring.object.orientation, at), toward)),
+                .original => brightness,
+            };
+            inner[3] = alpha;
+            outer[3] = alpha;
+        }
+    }
+
     pub fn destroy(ring: *Ring, gpa: Allocator) void {
         ring.mesh.deinit(gpa);
         gpa.destroy(ring);
@@ -128,8 +158,8 @@ pub const Ring = struct {
 pub const Atmospheres = struct {
     gpa: Allocator,
     image: *srtexture.Image,
-    /// How finely their rings are made.
-    detail: Detail = .round,
+    /// How they are drawn.
+    style: Style = .haze,
     entries: [capacity]Entry = undefined,
     count: usize = 0,
     /// The frame the planets last turned at (`0x00595BC0`).
@@ -169,7 +199,7 @@ pub const Atmospheres = struct {
 
     /// The part of `create_object` for a planet, once the object in slot `index` is made: a
     /// planet of a type that has an atmosphere (`Look.of`) gets one, as wide as its model's first
-    /// part, turning at `spin`.
+    /// part, turning at `spin`. A haze softens the planet's terminator.
     ///
     /// **Fix:** the game counts on at most `capacity` of them, and a fifth would write past its
     /// table; OpenReliant makes no more, and says so.
@@ -183,7 +213,7 @@ pub const Atmospheres = struct {
             return;
         }
         const part = &model.parts[0].object;
-        const ring = Ring.create(atmospheres.gpa, atmospheres.image, part.radius, look, atmospheres.detail.quads()) catch |err| {
+        const ring = Ring.create(atmospheres.gpa, atmospheres.image, part.radius, look, atmospheres.style.quads()) catch |err| {
             log.warn("the atmosphere of object {d} is left out: {s}", .{ index, @errorName(err) });
             return;
         };
@@ -191,22 +221,26 @@ pub const Atmospheres = struct {
         const middle = (bounds[0] + bounds[1]) * @as(Vector, @splat(0.5));
         atmospheres.entries[atmospheres.count] = .{ .ring = ring, .spin = spin, .planet = index, .middle = middle };
         atmospheres.count += 1;
+        if (atmospheres.style == .haze) {
+            for (model.parts) |*each| each.object.soft_terminator = true;
+        }
     }
 
     /// `backdrop_frame`'s (`0x004A5CD0`) last work, at frame `now`: each planet with an atmosphere
     /// turns about its own Y by its spin for each tick since the last frame, drawn so at once.
     /// Where the renderer is the hardware's, `hardware`, and the planet is not disabled, its
     /// atmosphere stands where the planet does, turned to face the camera at `camera`, as solid as
-    /// the lens flares' `brightness` (`backdrop.flareBrightness`), and goes on the background
-    /// layer.
+    /// the lens flares' `brightness` (`backdrop.flareBrightness`), or a haze as `Ring.fade` has it
+    /// with the sun along `sun`, and goes on the background layer.
     ///
     /// **Fix:** the planets' models stand their spheres off their origins, about a sixth of their
     /// radius along Z, and the game stands the ring round the planet's position and turns the
     /// planet about it, so that the ring stands off to one side and the sphere swings round;
     /// OpenReliant turns the planet about its sphere's middle, and stands the ring there.
-    pub fn frame(atmospheres: *Atmospheres, gpa: Allocator, scene: *srcore.Scene, all: *create.Objects, camera: Vector, hardware: bool, brightness: f32, now: i32) Allocator.Error!void {
+    pub fn frame(atmospheres: *Atmospheres, gpa: Allocator, scene: *srcore.Scene, all: *create.Objects, camera: Vector, sun: Vector, hardware: bool, brightness: f32, now: i32) Allocator.Error!void {
         const ticks: f32 = @floatFromInt(now - atmospheres.turned_at);
         defer atmospheres.turned_at = now;
+        const toward = math.normalize(sun);
         for (atmospheres.entries[0..atmospheres.count]) |entry| {
             const planet = &all.slots[entry.planet];
             const sphere = entry.sphereAt(planet.drawn);
@@ -217,7 +251,7 @@ pub const Atmospheres = struct {
             const object = &entry.ring.object;
             object.position = sphere;
             object.orientation = math.lookAt(camera - object.position);
-            for (entry.ring.colours[0..entry.ring.mesh.positions.len]) |*colour| colour[3] = brightness;
+            entry.ring.fade(atmospheres.style, brightness, toward);
             try xtrabits.sceneAdd(gpa, scene, .{ .mesh = object }, .background);
         }
     }
@@ -240,6 +274,14 @@ pub const Atmospheres = struct {
         }
     }
 };
+
+test hazeAt {
+    const sun: Vector = .{ 1, 0, 0 };
+    try std.testing.expectApproxEqAbs(haze_day, hazeAt(.{ 5, 0, 0 }, sun), 1e-6);
+    try std.testing.expectApproxEqAbs(haze_night, hazeAt(.{ -5, 0, 0 }, sun), 1e-6);
+    // At the terminator, halfway between.
+    try std.testing.expectApproxEqAbs((haze_night + haze_day) / 2, hazeAt(.{ 0, 3, 0 }, sun), 1e-6);
+}
 
 test Look {
     try std.testing.expectEqual(0.95, Look.of(.neptune_lo).?.outer_edge);
@@ -286,7 +328,7 @@ test Atmospheres {
     try model.init(gpa);
     defer model.deinit(gpa);
     var image: srtexture.Image = .{ .levels = &.{} };
-    var atmospheres: Atmospheres = .{ .gpa = gpa, .image = &image, .detail = .original };
+    var atmospheres: Atmospheres = .{ .gpa = gpa, .image = &image, .style = .original };
     defer atmospheres.deinit();
     const all = mission.objects;
     var planets: [capacity + 1]u16 = undefined;
@@ -307,22 +349,24 @@ test Atmospheres {
     var scene: srcore.Scene = .{};
     defer scene.deinit(gpa);
     const before = all.slots[planets[0]].drawn.orientation;
-    try atmospheres.frame(gpa, &scene, all, .{ 0, 0, -5000 }, true, 0.5, 100);
+    try atmospheres.frame(gpa, &scene, all, .{ 0, 0, -5000 }, .{ 1, 0, 0 }, true, 0.5, 100);
     const turned = math.turned(before, .y, 100 * spin);
     for (turned, all.slots[planets[0]].drawn.orientation) |want, got| try std.testing.expectApproxEqAbs(want, got, 1e-5);
     try std.testing.expectEqual(capacity, scene.layers.get(.background).items.len);
     const ring = atmospheres.entries[0].ring;
     try std.testing.expectEqual(all.slots[planets[0]].drawn.position, ring.object.position);
     try std.testing.expect(math.dot(math.forward(ring.object.orientation), math.normalize(@as(Vector, .{ 0, 0, -5000 }) - ring.object.position)) > 0.9999);
-    try std.testing.expectEqual(0.5, ring.colours[0][3]);
+    for (ring.colours[0 .. 2 * segments]) |colour| try std.testing.expectEqual(0.5, colour[3]);
+    // As the game draws them, the planet's terminator stays hard.
+    for (all.slots[planets[0]].model.?.parts) |part| try std.testing.expect(!part.object.soft_terminator);
 
     // The software renderer draws none, nor a disabled planet's; they turn all the same.
     scene.clear();
     all.slots[planets[1]].object.flags.disabled = true;
-    try atmospheres.frame(gpa, &scene, all, @splat(0), true, 0.5, 110);
+    try atmospheres.frame(gpa, &scene, all, @splat(0), .{ 1, 0, 0 }, true, 0.5, 110);
     try std.testing.expectEqual(capacity - 1, scene.layers.get(.background).items.len);
     scene.clear();
-    try atmospheres.frame(gpa, &scene, all, @splat(0), false, 0.5, 120);
+    try atmospheres.frame(gpa, &scene, all, @splat(0), .{ 1, 0, 0 }, false, 0.5, 120);
     try std.testing.expectEqual(0, scene.layers.get(.background).items.len);
 
     // Destroyed, a planet's own atmosphere goes; the others stay.
@@ -356,10 +400,51 @@ test "an atmosphere round a planet's sphere, turning in place" {
     // Turning, the planet keeps its sphere where it stands, and the ring stands round it.
     var scene: srcore.Scene = .{};
     defer scene.deinit(gpa);
-    try atmospheres.frame(gpa, &scene, all, .{ 0, 0, -5000 }, true, 0.5, 1000);
+    try atmospheres.frame(gpa, &scene, all, .{ 0, 0, -5000 }, .{ 1, 0, 0 }, true, 0.5, 1000);
     const now = atmospheres.entries[0].sphereAt(all.slots[planet].drawn);
     try std.testing.expectApproxEqAbs(0, math.distance(sphere, now), 1e-2);
     try std.testing.expect(math.distance(all.slots[planet].drawn.position, .{ 1000, 0, 0 }) > 1);
     const ring_at = atmospheres.entries[0].ring.object.position;
     try std.testing.expectApproxEqAbs(0, math.distance(sphere, ring_at), 1e-2);
+}
+
+test "a haze, brighter toward the sun" {
+    const gpa = std.testing.allocator;
+    var mission: gameobj.testing.Mission = undefined;
+    try mission.init(gpa);
+    defer mission.deinit();
+    var model: create.testing.Model = undefined;
+    try model.init(gpa);
+    defer model.deinit(gpa);
+    var image: srtexture.Image = .{ .levels = &.{} };
+    var atmospheres: Atmospheres = .{ .gpa = gpa, .image = &image };
+    defer atmospheres.deinit();
+    const all = mission.objects;
+    const planet = try create.createObject(all, &mission.tables, model.types(), null, .predator, 0, @splat(0), &mission.random);
+    all.slots[planet].object.type = .jupiter_hi;
+    all.slots[planet].model.?.parts[0].object.radius = 1000;
+    atmospheres.made(all, planet);
+    // The planet's terminator softened.
+    for (all.slots[planet].model.?.parts) |part| try std.testing.expect(part.object.soft_terminator);
+
+    // Seen with the sun square to the view, the ring is as solid as a haze's day on the side
+    // toward the sun, and as its night on the side away, its outer circle as its inner.
+    var scene: srcore.Scene = .{};
+    defer scene.deinit(gpa);
+    const sphere = atmospheres.entries[0].sphereAt(all.slots[planet].drawn);
+    try atmospheres.frame(gpa, &scene, all, sphere + Vector{ 0, 0, -5000 }, .{ 3, 0, 0 }, true, 0, 0);
+    const colours = &atmospheres.entries[0].ring.colours;
+    var least: f32 = 1;
+    var most: f32 = 0;
+    for (colours[0..round_segments], colours[round_segments..]) |inner, outer| {
+        least = @min(least, inner[3]);
+        most = @max(most, inner[3]);
+        try std.testing.expectEqual(inner[3], outer[3]);
+    }
+    try std.testing.expectApproxEqAbs(haze_day, most, 1e-3);
+    try std.testing.expectApproxEqAbs(haze_night, least, 1e-3);
+
+    // The lens flares brighter than a haze's day make it all as solid as they are bright.
+    try atmospheres.frame(gpa, &scene, all, sphere + Vector{ 0, 0, -5000 }, .{ 3, 0, 0 }, true, 0.9, 0);
+    for (colours[0 .. 2 * round_segments]) |colour| try std.testing.expectEqual(0.9, colour[3]);
 }

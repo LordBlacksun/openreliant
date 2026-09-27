@@ -313,8 +313,8 @@ pub const Frame = struct {
     tractors: ?*tractor.Tractors = null,
     /// The Rippers' beams, which go into the world's layer after the objects.
     rippers: ?*airipper.Rippers = null,
-    /// The planets' atmospheres, which go into the background layer after the backdrop, as bright
-    /// as its lens flares, their planets turning.
+    /// The planets' atmospheres, which go into the background layer after the backdrop, lit by its
+    /// sun and as bright as its lens flares, their planets turning.
     atmospheres: ?*create.atmosphere.Atmospheres = null,
     /// The screen's flash, which goes into the overlay's layer, and the ticks the frame spans
     /// (`frame_duration`), which it counts down.
@@ -760,7 +760,7 @@ pub fn drawFrame(gpa: Allocator, arena: Allocator, scene: *srcore.Scene, context
     if (frame.shockwaves) |waves| try waves.draw(gpa, scene, frame.ahead);
     frame.space.shortenDust(frame.jumping_in);
     try frame.space.frame(gpa, scene, context, frame.view, frame.cockpit_mode);
-    if (frame.atmospheres) |atmospheres| try atmospheres.frame(gpa, scene, frame.objects, context.camera.position, context.hardware, frame.space.flare_brightness, frame.attachments.frame_start);
+    if (frame.atmospheres) |atmospheres| try atmospheres.frame(gpa, scene, frame.objects, context.camera.position, frame.space.sun_direction, context.hardware, frame.space.flare_brightness, frame.attachments.frame_start);
     if (context.hardware) try frame.sky.frame(gpa, scene, context);
     if (frame.view == .cockpit and frame.cockpit_mode == .cockpit and context.hardware) {
         // The backing, then the hands, then the cockpit, all over the world, sorted by depth.

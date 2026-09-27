@@ -24,7 +24,8 @@ layout(location = 5) in vec3 normal;
 layout(location = 6) in uint lightMask;
 // What its pixels take besides their lights (gpu.zig's Shading): in the low byte the shadows, 0
 // none, 1 the world's cascades, 2 the cockpit's map (device.zig's Receives); in the next bit, 1 to
-// magnify its texture smoothly (srtexture.zig's Magnify).
+// magnify its texture smoothly (srtexture.zig's Magnify); in the one after, 1 for the key lights to
+// reach past its terminator, as a planet's atmosphere carries them.
 layout(location = 7) in uint shading;
 
 layout(set = 1, binding = 0) uniform Target {
@@ -178,6 +179,8 @@ float sunlit(vec3 n) {
 // vertex (srmesh.zig): nothing for a vertex that comes lit already, as every one does in the
 // original's look. A shadowed light is scaled by how much of the sun reaches the pixel, looked up
 // once, and only where such a light faces it.
+const float terminatorWrap = 0.25;
+
 vec3 lights() {
     float length = length(facing);
     if (mask == 0xFFFFFFFFu || length < 1e-6) return vec3(0.0);
@@ -190,6 +193,12 @@ vec3 lights() {
         if ((light.mask & mask) != 0u) continue;
         if (light.kind == 0u) {
             float amount = dot(n, light.vector.xyz);
+            // A planet's atmosphere carries the sun a little way past its terminator: the key
+            // light's cosine is taken from -terminatorWrap rather than from 0.
+            if ((shade & 0x200u) != 0u && light.shadowed != 0u) {
+                float strength = sqrt(dot(light.vector.xyz, light.vector.xyz));
+                amount = (amount / strength + terminatorWrap) / (1.0 + terminatorWrap) * strength;
+            }
             if (amount <= 0.0) continue;
             // In linear light the key light falls off as light does. A fill light, the nebula's
             // glow, falls off as the original's did, which its colour and strength were chosen

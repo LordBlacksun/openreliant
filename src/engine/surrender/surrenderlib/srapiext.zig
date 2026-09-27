@@ -443,6 +443,10 @@ pub const MeshObject = struct {
     /// OpenReliant's: its surfaces blended by alpha cast a shadow as strong as its colour's alpha,
     /// as a cloaked part's see-through hull does (`srshadow`). Otherwise only its solid ones cast.
     alpha_shadow: bool = false,
+    /// OpenReliant's: the key lights reach a little way past its terminator, as a planet's
+    /// atmosphere carries the sun round into its night side, where the device lights each pixel
+    /// (`atmosphere.Style.haze`). Its surfaces drawn in order take it; the sorted ones do not.
+    soft_terminator: bool = false,
 
     /// The mesh of the level drawn, or of the coarsest where the level is past them; it has one
     /// at least.
