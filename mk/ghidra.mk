@@ -222,6 +222,16 @@ explode-tables: ## Re-derive how each capital ship splits in two as its hull is 
 	$(ROOT)/zig-out/bin/tablegen sequences $(PAYLOAD) $(SEQUENCE_TABLES)
 	$(ZIG) fmt $(SEQUENCE_TABLES)
 
+SPEECH_TABLES := $(ROOT)/src/engine/game/voice/tables.zig
+
+.PHONY: speech-tables
+speech-tables: ## Re-derive the speech codec's tables, its coefficients' levels and its pulses' code, from the payload executable
+	@test -f $(PAYLOAD) || { echo "missing $(PAYLOAD), the game executable with its code readable" >&2; exit 1; }
+	$(ZIG) build tablegen
+	mkdir -p $(dir $(SPEECH_TABLES))
+	$(ROOT)/zig-out/bin/tablegen speech $(PAYLOAD) $(SPEECH_TABLES)
+	$(ZIG) fmt $(SPEECH_TABLES)
+
 VIEW_TABLES := $(ROOT)/src/engine/game/camera/views.zig
 
 .PHONY: view-tables

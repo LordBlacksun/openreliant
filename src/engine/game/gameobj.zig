@@ -1510,6 +1510,8 @@ pub const World = struct {
     /// The game's variables the mission's script reads and writes (`vm.Variables`); null where no
     /// mission runs, as in a test.
     variables: ?*@import("../vm.zig").Variables = null,
+    /// The radio, whose lines the pilots say (`videoreports.cpp`); null where nothing is heard.
+    radio: ?*@import("videoreports.zig").Radio = null,
 
     /// The ship types' stats and their models.
     pub const Spawn = struct {

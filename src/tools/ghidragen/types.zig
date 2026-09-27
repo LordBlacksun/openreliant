@@ -169,6 +169,8 @@ pub const exported = [_]Export{
     .{ "LandStyle", engine.game.ailand.Style },
     .{ "LandState", engine.game.ailand.State },
     .{ "LandStep", engine.game.ailand.Step },
+    .{ "VoiceState", engine.game.voice.State },
+    .{ "SpeechHeader", engine.game.cbox.Header },
     .{ "RipperGrabState", engine.game.airipper.GrabState },
     .{ "RipperGrabStep", engine.game.airipper.GrabStep },
     .{ "RipperDropState", engine.game.airipper.DropState },

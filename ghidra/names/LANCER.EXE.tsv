@@ -1531,7 +1531,7 @@ address	kind	name	type	comment
 004156b0	function	eject_free	void (void)	Frees eject_flash_template
 0051cf94	data	eject_flash_template	ParticleTemplate *	The flash of a pilot's ejection, which eject_separate bursts 100 of at the cockpit's eject point
 004156c0	function	eject_separate	void __fastcall (GameObject *object, int cockpit)	The root's child cockpit leaves the ship as the pilot's pod: the ship becomes a new object with Eject 106, tumbling, EJECT01 heard from it; the pod keeps the slot, unpowered, invulnerable, with no guns, shields or armour; a flash at the eject point, and the pod shoots out along it at 50
-00456250	function	radio_say_pilot		Has a pilot say a line on the radio, from the pilot's speech file (msspeech.hog), outside a multiplayer game; the ejection's lines go through it
+00456250	function	radio_say_pilot	void __fastcall (int pilot, int head, char *speech, int mode, int flags, int expiry)	radio_say for a pilot of pilot_faces, with its film for the head movement and the pilot's number from 0xFFFF for whose the line is, outside a multiplayer mission; the ejection's lines go through it
 00456d80	function	radio_wingman_ejected		A wingman's call on the radio as its pilot ejects, and the rescue's word a thousand ticks later
 004598d0	function	cmd_SetRescueProbabilities		The mission's SetRescueProbabilities: sets rescue_odds_rescued, rescue_odds_captured and rescue_odds_killed
 0052a414	data	mission_over	int	Set to 1 as the camera has watched the mission's end long enough, or 270 ticks after the player's ship has landed, which ends the mission
@@ -1712,3 +1712,36 @@ address	kind	name	type	comment
 0052a418	data	landing_cleared	int	Script variable 10: whether PERMISSION TO LAND clears the player's ship to land
 0052a428	data	mission_success	int	Script variable 14: how the script rates the mission, -1 a total failure to 4 a success with a bonus, which picks the carrier's clearance
 00474b40	function	friendly_fire_send_home	void __fastcall (int slot)	Outside a multiplayer game, for the player's ship: the mission's ending 6, or 7 where +0x678 is 3, and Friendly Fire pushed; for another player's slot, Jump Out
+004a7290	function	voice_init	void __fastcall (byte *stream, VoiceState *state)	Starts decoding a speech stream (voice.zig): the bit reader on its first byte, the header's step, coded levels, first gain and ratio, and the coefficients, the filter's memory and the past excitation cleared
+004a7360	function	voice_read_bits	uint __fastcall (VoiceState *state, int bits)	The stream's next bits, eight at most, least significant first, taking the next byte below eight held
+004a73b0	function	voice_frame	void __fastcall (VoiceState *state)	Decodes a frame of 432 samples: twelve coefficient levels, then each subframe's lag, pitch gain, gain and pulses into the excitation, the last 324 kept, and the synthesis filter over four blocks as the coefficients step
+004a76a0	function	voice_pulses	void __fastcall (VoiceState *state, int coded, float *excitation, int step)	A subframe's pulses at a step: the plain code, or the variable code of two contexts with pulses, runs of zeros and escapes
+004a7850	function	voice_skip_bits	void __fastcall (VoiceState *state, int bits)	The stream past its next bits, eight at most
+004a7890	function	voice_fill	void __fastcall (float *excitation)	Fills in every other sample of an excitation read at a step of two, from six neighbours weighted 0.5974, -0.1146 and 0.0180
+004a78d0	function	voice_synthesize	void __fastcall (VoiceState *state, int start, int blocks)	Filters blocks of twelve of the frame's samples into speech, each the sample plus the filter's weights times the twelve before
+004a8050	function	voice_coefficients	void __fastcall (float *reflection, float *weights)	The synthesis filter's twelve weights from the twelve reflection coefficients, the lattice's impulse response
+005090c0	data	voice_bit_masks	uint[9]	The masks voice_read_bits reads n bits by
+005090e4	data	voice_levels	float[64]	The levels a reflection coefficient is quantized to; the last eight coefficients take the 32 from the 17th
+005091e4	data	voice_symbols	byte[512]	For each of the pulse code's two contexts, the symbol the stream's next eight bits begin with
+005093e8	data	voice_records	byte[348]	The pulse code's 29 symbols: the next context, the length in bits and the value, three dwords each
+00461eb0	function	speech_start	int __fastcall (SpeechHeader *file, uint flags, int rate, int volume, int slot)	Plays a speech file on stream slot: unscrambled, its decoder started, and the speech sample set up as 16-bit stereo at 22050 Hz at Speechvolume times Mastervolume / 127; flags bit 0 loops it; the stream's own volume, volume / 127, is kept but applied nowhere
+00462000	function	speech_unscramble	void __fastcall (SpeechHeader *file, int length)	XORs the stream from +0xC with AB 2D 9A AA repeating, length - 0x18 bytes, unless the file begins man or CB, and writes man over its length; the files are scrambled to 8 bytes before their end, so the last 8 scrambled bytes are left
+00462070	function	speech_stop	int __fastcall (int slot)	Ends the stream in slot, 0 to 7, by clearing its state
+004620a0	function	speech_playing	int __fastcall (int slot)	Whether the stream in slot plays, or -1 for a slot past the eight
+004620d0	function	speech_stop_all	int (void)	Ends every stream and the speech sample
+004620f0	function	speech_restart	int __fastcall (byte *stream)	Starts a stream's decoder again from its data, its frame spent
+00462110	function	speech_init	int (void)	Once: the streams cleared, the speech timer started and its buffer of 0x4000 bytes allocated (cbox.cpp)
+00462190	function	speech_timer	void (void)	The timer's callback: the first stream playing decodes 2048 frames into the speech sample's next buffer, each float rounded and held to 16 bits, and a stream over is ended
+00462290	function	speech_fetch	int __fastcall (byte *stream, int floats, float *out)	Fills out with the stream's next samples as floats plus 12582912, each for both channels, decoding a frame as one runs out; 1 once the stream's samples are done, or looping it where its flag says
+00539ad8	data	speech_streams	byte[27424]	Eight speech streams of 0xD64 bytes: the data, the sample count, a rate, the volume over 127, the loop flag, the state at +0x14, the decoder at +0x18, the frame's sample at +0xD5C and the samples played at +0xD60
+00563f18	data	speech_sample	void *	The Miles sample the speech plays on, which sound_init allocates
+00563f20	data	speech_buffers	void *[2]	The speech sample's double buffer
+004562d0	function	radio_say	void __fastcall (char *film, char *speech, int mode, short name, int flags, int object, int expiry)	Says a line outside a multiplayer mission: mode 0 at once, opening window 0 and playing the film with the speech; 1 queued; 2 queued unless the radio is busy; a full queue drops it
+004561c0	function	radio_say_ship	void __fastcall (int slot, int head, char *speech, int mode, int flags, int expiry)	radio_say for the ship in slot, unless a stand-in, exploding or without a pilot record, with the film its record names for the head movement
+004561a0	function	radio_busy	bool (void)	Whether a line plays or waits in the queue
+00456510	function	radio_frame	void (void)	Each frame: while lines wait, the window is shut or open and no speech plays, the next line is taken and said unless its time has passed
+005295a0	data	radio_queue	byte[580]	The radio's five queued lines, 0x74 bytes each: the film's flags, the speaker's name, the film, the speech, whose it is and the tick it expires at
+00529594	data	radio_queue_count	short	How many lines wait in radio_queue
+00529870	data	radio_queue_write	int	Where the next line queued goes
+00529cbe	data	radio_queue_read	int	Where the next line said comes from
+005048d8	data	pilot_faces	byte[288]	The pilots' table radio_say_pilot names by number, 24 bytes each: the string that names the pilot, the side, and four films for the head movements; at least twelve

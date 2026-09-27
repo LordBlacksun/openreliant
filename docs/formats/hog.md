@@ -60,7 +60,7 @@ record, rather than trusting the count.
 |---|---|---|
 | `resource.hog` | Almost every member | Models, sprites, images, missions, stat tables, sound banks, fonts |
 | `pilots.hog` | No | `.fm8` pilot files |
-| `msspeech.hog` | No | Speech, one member per line, no extensions |
+| `msspeech.hog` | No | Speech, one member per line, no extensions ([speech files](speech.md)) |
 | `CD1.HOG` | A few members | Bink video, MP3 music, sprites |
 | `CD2.HOG` | No | Bink video, MP3 music, sprites |
 
