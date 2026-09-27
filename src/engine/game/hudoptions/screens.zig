@@ -233,7 +233,8 @@ pub const Video = struct {
     const brightness: Slider = .{ .down = -30, .label = .brightness, .low = 0.5, .high = 2 };
     const view: Selector = .{ .down = 30, .label = .default_view };
 
-    /// `[Device]`, where the video settings are kept, and their keys.
+    /// `[Device]`, where the video settings are kept (`0x004E8628`), and their keys (`0x004E8630`,
+    /// `0x004E8614`).
     pub const section = "Device";
     pub const view_key = "View";
     pub const gamma_key = "gamma";

@@ -677,11 +677,12 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
     sound.stdsmp = stdsmp;
     sound.open3D(try openreliant.fat.Bank.parse(try resources.readFile(arena, "smp3d.fat")));
 
-    // The options' cockpit setting and the brightness, as `[Device]` keeps them, and the camera,
-    // which keeps the setting and starts in the cockpit mode it picks, as a mission's start does.
-    const video = game.hudoptions.screens.Video;
-    const cockpit_setting: camera.CockpitSetting = options.cockpit orelse @enumFromInt(settings_file.profile.int(video.section, video.view_key, 0));
-    var brightness = @as(f32, @floatFromInt(settings_file.profile.int(video.section, video.gamma_key, video.gamma_scale))) / video.gamma_scale;
+    // The options' cockpit setting and the brightness, as `WinMain` reads them from `[Device]`, and
+    // the camera, which keeps the setting and starts in the cockpit mode it picks, as a mission's
+    // start does.
+    const device_settings: game.winmain.Device = .read(settings_file.profile);
+    const cockpit_setting = options.cockpit orelse device_settings.view;
+    var brightness = device_settings.brightness;
     var view: camera.Camera = .{ .setting = cockpit_setting, .cockpit_mode = cockpit_setting.mode(), .missiles = &objects.missiles };
     var last_view = view.view;
     // The mission's clocks, which `mission_run` zeroes before it loops.
