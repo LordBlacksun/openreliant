@@ -179,6 +179,49 @@ pub const Wave = struct {
 
 /// Reads a wave's frames in order, as 16-bit samples, the one channel of a mono sound in both. IMA
 /// ADPCM is decoded as it goes, a block at a time, with no buffer of its own.
+/// A WAVE file of 16-bit PCM in `gpa`: `samples`, `channels` to a frame, at `rate`, as the
+/// game's sounds hold theirs (`Wave.parse` reads it back).
+pub fn pcm16(gpa: std.mem.Allocator, rate: u32, channels: u16, samples: []const i16) std.mem.Allocator.Error![]u8 {
+    const fmt_size = @sizeOf(riff.ChunkHeader) + @sizeOf(Wave.FormatChunk);
+    const data_size: u32 = @intCast(samples.len * @sizeOf(i16));
+    const file = try gpa.alloc(u8, @sizeOf(riff.Header) + fmt_size + @sizeOf(riff.ChunkHeader) + data_size);
+    const riff_header: riff.Header = .{ .id = riff.Header.riff_id.*, .size = @intCast(file.len - 8), .form = Wave.form.* };
+    const fmt_header: riff.ChunkHeader = .{ .id = "fmt ".*, .size = @sizeOf(Wave.FormatChunk) };
+    const fmt: Wave.FormatChunk = .{
+        .format = .pcm,
+        .channels = channels,
+        .rate = rate,
+        .byte_rate = rate * channels * @sizeOf(i16),
+        .block_align = channels * @sizeOf(i16),
+        .bits = 16,
+    };
+    const data_header: riff.ChunkHeader = .{ .id = "data".*, .size = data_size };
+    var at: usize = 0;
+    for ([_][]const u8{ std.mem.asBytes(&riff_header), std.mem.asBytes(&fmt_header), std.mem.asBytes(&fmt), std.mem.asBytes(&data_header), std.mem.sliceAsBytes(samples) }) |part| {
+        @memcpy(file[at..][0..part.len], part);
+        at += part.len;
+    }
+    return file;
+}
+
+test pcm16 {
+    const gpa = std.testing.allocator;
+    const file = try pcm16(gpa, 22050, 1, &.{ 0, 1000, -1000, 32767 });
+    defer gpa.free(file);
+    // Read back as the sounds are.
+    const sound = try Wave.parse(file);
+    try std.testing.expectEqual(.pcm, sound.format);
+    try std.testing.expectEqual(1, sound.channels);
+    try std.testing.expectEqual(22050, sound.rate);
+    try std.testing.expectEqual(4, sound.frameCount());
+    var decoder: Decoder = try .init(sound);
+    try std.testing.expectEqual([2]i16{ 0, 0 }, decoder.next().?);
+    try std.testing.expectEqual([2]i16{ 1000, 1000 }, decoder.next().?);
+    try std.testing.expectEqual([2]i16{ -1000, -1000 }, decoder.next().?);
+    try std.testing.expectEqual([2]i16{ 32767, 32767 }, decoder.next().?);
+    try std.testing.expectEqual(null, decoder.next());
+}
+
 pub const Decoder = struct {
     wave: Wave,
     frames: u32,

@@ -65,6 +65,10 @@ const implementations = table: {
         .{ "DisableTaunts", disableTaunts },
         .{ "DisableGenericComms", disableGenericComms },
         .{ "UpdateEnvironmentFXState", updateEnvironmentFXState },
+        .{ "CommsFromShip", commsFromShip },
+        .{ "CommsFromPilot", commsFromPilot },
+        .{ "CommsFromShipOnce", commsFromShip },
+        .{ "CommsFromPilotOnce", commsFromPilot },
         .{ "WaitForJumpOrLaunch", waitForJumpOrLaunch },
         .{ "SetEnvironmentFXNebula", setEnvironmentFXNebula },
         .{ "OpenInstrument", openInstrument },
@@ -399,6 +403,40 @@ fn playMusic(call: Call) u32 {
     hearing.sound.playMusic(path, music_forever, music_level, call.args[1] != 0);
     return 1;
 }
+
+/// `cmd_CommsFromShip` (`0x00458AC0`, command `0x18`) and `cmd_CommsFromShipOnce` (`0x00458FD0`,
+/// `0x29`): the ship the first argument names says the speech file the third names at once, its
+/// face moving as the second says (`videoreports.Radio.sayShip`); the second command plays the
+/// face's film without looping. Both end the frame's handlers.
+///
+/// Not ported: the film ([#99](https://github.com/vdmkenny/openreliant/issues/99)).
+fn commsFromShip(call: Call) u32 {
+    const machine = call.machine;
+    const game = machine.game orelse return 0;
+    const radio = game.world.radio orelse return 0;
+    const hearing = game.world.hearing orelse return 0;
+    const all = game.world.objects;
+    const ship = shipSlot(machine, all, call.args[0]) orelse return 0;
+    const name = machine.text(call.args[2]) catch return 0;
+    radio.sayShip(hearing.sound, all, ship, call.args[1], name, .now, no_expiry, game.world.clock.frame_start);
+    return 0;
+}
+
+/// `cmd_CommsFromPilot` (`0x00458B10`, command `0x19`) and `cmd_CommsFromPilotOnce`
+/// (`0x00459020`, `0x2A`): likewise for a pilot of the pilots' table, the first argument
+/// (`videoreports.Radio.sayPilot`).
+fn commsFromPilot(call: Call) u32 {
+    const machine = call.machine;
+    const game = machine.game orelse return 0;
+    const radio = game.world.radio orelse return 0;
+    const hearing = game.world.hearing orelse return 0;
+    const name = machine.text(call.args[2]) catch return 0;
+    radio.sayPilot(hearing.sound, @truncate(call.args[0]), call.args[1], name, .now, no_expiry, game.world.clock.frame_start);
+    return 0;
+}
+
+/// The expiry the commands give a line: none (`0x00458AF0`).
+const no_expiry: i32 = -1;
 
 /// A command's argument read as the halfword the game stores it as, set or not.
 fn halfwordSet(argument: u32) bool {

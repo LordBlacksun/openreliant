@@ -462,6 +462,8 @@ pub fn controlsFrame(controls: Controls) void {
         .world = world,
         .all = all,
     });
+    // `mission_frame` runs the radio's queue after the controls.
+    if (world.radio) |radio| if (world.hearing) |hearing| radio.frame(hearing.sound, clock.frame_start);
     const cockpit_input: ?camera.Cockpit.Input = if (controls.cockpit) |shown| moved: {
         const live = &slot.object;
         const flight = slot.flight orelse break :moved null;
@@ -1509,6 +1511,7 @@ pub fn startMission(gpa: Allocator, start: Start, image: []u8, number: u16) !*Lo
     if (world.tractors) |tractors| tractors.reset();
     if (world.rippers) |rippers| rippers.reset();
     if (world.atmospheres) |atmospheres| atmospheres.reset();
+    if (world.radio) |radio| radio.reset(if (world.hearing) |hearing| hearing.sound else null);
     if (world.flash) |lit| lit.* = .{};
     start.display.interference = .{};
     start.display.caption = .{};

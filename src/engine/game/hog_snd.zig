@@ -6,8 +6,10 @@
 //! **Unverified:** most of it lies outside this file's known code (`0x00482160` to `0x004822E9`),
 //! from `0x00481400` to `0x00482DE0`, between `hog_gen.cpp`'s and `hud.cpp`'s.
 //!
-//! Not ported: the CD's own music (`AIL_redbook_open`), which the shipped game plays none of, and
-//! the speech sample's double buffer that `sound_init` sets up for the radio's voices.
+//! Not ported: the CD's own music (`AIL_redbook_open`), which the shipped game plays none of. The
+//! radio's speech plays on the sample `sound_init` allocates for it (`speech`), which
+//! [`cbox.zig`](cbox.zig) feeds a line at a time where the game streams it through the sample's
+//! double buffer.
 
 const std = @import("std");
 const assert = std.debug.assert;
@@ -369,6 +371,9 @@ pub const Sound = struct {
     missile_sound: sound3d.MissileSound = .follows,
     /// What surrounds the camera, which the reverb plays (`surround`).
     surroundings: mss.Surroundings = .space,
+    /// The speech sample (`0x00563F18`), which the radio's lines play on (`cbox.Player`); null
+    /// where the driver has none to give.
+    speech: ?mss.Sample = null,
 
     /// `sound_init` (`0x00481440`), as far as OpenReliant goes: up to 16 voices for the banks, each
     /// a sample of `driver`, and the timer that steps the fades. `driver` is null where the
@@ -384,6 +389,15 @@ pub const Sound = struct {
             sound.voice_count += 1;
         }
         if (sound.voice_count > 0) sound.driver = opened;
+        if (sound.driver != null) sound.speech = opened.allocateSample();
+    }
+
+    /// The speech sample's volume as the game hands it to Miles (`speech_start`,
+    /// `sound_volumes_apply`): the speech volume, scaled by the master volume's share; and by
+    /// `volume`, 0 to 127, a line's own, which the game keeps but applies nowhere, so that every
+    /// line the game plays, at 127, comes out as the game has it.
+    pub fn speechVolume(sound: *const Sound, volume: i32) i32 {
+        return sound.volumes.mastered(sound.volumes.speech, volume, loudest);
     }
 
     /// `sound_shutdown` (`0x00481750`): every voice ended and the music closed.
@@ -561,13 +575,14 @@ pub const Sound = struct {
     }
 
     /// `sound_volumes_apply` (`0x00482990`): the volumes again, after a setting changes: the
-    /// music's, and each voice's still playing.
+    /// music's, each voice's still playing, and the speech sample's.
     pub fn applyVolumes(sound: *Sound) void {
         const driver = sound.driver orelse return;
         if (sound.music.stream) |stream| driver.setStreamVolume(stream, sound.volumes.mastered(sound.volumes.music, sound.music.level, loudest));
         for (0..sound.voice_count) |v| {
             if (driver.sampleStatus(sound.voices[v].sample) != .done) sound.setVoiceVolume(@intCast(v), sound.voices[v].volume);
         }
+        if (sound.speech) |sample| driver.setSampleVolume(sample, sound.speechVolume(loudest));
     }
 
     /// `tick_timer`'s (`0x004827C0`) sound: every five ticks and more, the music's fade and each

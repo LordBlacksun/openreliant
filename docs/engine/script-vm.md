@@ -151,6 +151,8 @@ Some of the commands mission 1 runs:
 | Command | What it does |
 |---|---|
 | `SetInvulnerability` (`0x1A`) | Each ship the first argument names takes the invulnerability the second gives, or the component `push_component` named for it does. Only ships past the players' slots are reached, save in missions 30 to 35 and in the game's mode `0x00524FE4` 1 ([Objects](objects.md)) |
+| `CommsFromShip` (`0x18`), `CommsFromShipOnce` (`0x29`) | The ship the first argument names says the speech file the third names, at once, its face moving as the second says; `Once` plays the face's film without looping ([Radio](radio.md)) |
+| `CommsFromPilot` (`0x19`), `CommsFromPilotOnce` (`0x2A`) | Likewise for a pilot of the pilots' table, the first argument |
 | `PlayMusic` (`0x23`) | Plays `music\` and the name the first argument points at, for ever at level 80, at once where the second is set, or once the music playing has faded out ([Sound](sound.md#music)) |
 | `DisableTaunts` (`0x27`), `DisableGenericComms` (`0x2E`) | Keep the enemy's taunts on the radio (`0x00529CB4`), and the remarks the radio makes by itself (`0x00529538`), quiet while the argument is set |
 | `UpdateEnvironmentFXState` (`0x38`) | Applies what the script asks of its space at once rather than at the next jump (`environment_update`), and aims the sun, the lights and the nebula again from the markers (`backdrop_place`) ([Backdrop](backdrop.md)) |
@@ -383,7 +385,8 @@ clock, the timers, `for_each_ship`, and the commands that lie beside the interpr
 the commands that act on the game: `CreateFlightGroup` ([Missions](missions.md#the-missions-ships)),
 `SetAI`, `Fly`, `SetRescueProbabilities`, the launch's `SetupLaunch`, `StartLaunch` and
 `WaitForJumpOrLaunch` ([Launches](launch.md#how-a-launch-is-given)), `SetInvulnerability`,
-`SetShipAvoidance`, the radio's `DisableTaunts` and `DisableGenericComms`, `PlayMusic`, the
+`SetShipAvoidance`, the radio's `DisableTaunts`, `DisableGenericComms`, `CommsFromShip` and
+`CommsFromPilot` with their `Once` forms, `PlayMusic`, the
 display's `OpenInstrument`, `CloseInstrument` and `SetObjective`, the space's
 `SetEnvironmentFXNebula` and `UpdateEnvironmentFXState`, `WaitForMovie`, `MultiplayerScriptSync`,
 `WhenPlayerLastJumped`, and those of the ships and the player's targets: `DestroyFlightGroup`,

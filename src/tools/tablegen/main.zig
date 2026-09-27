@@ -14,6 +14,7 @@
 //!     tablegen views <LANCER.EXE> <output.zig>
 //!     tablegen objectives <LANCER.EXE> <output.zig>
 //!     tablegen sequences <LANCER.EXE> <output.zig>
+//!     tablegen speech <LANCER.EXE> <output.zig>
 //!     tablegen sources <LANCER.EXE> <disassembly.asm> <strings.tsv> <output.zig>
 //!
 //! `opcodes`: the VM dispatches on a byte through a table of handler addresses. Reading that table
@@ -51,6 +52,9 @@
 //!
 //! `sequences`: how each capital ship type that splits in two as its hull is destroyed does so.
 //!
+//! `speech`: the speech codec's tables, the levels of its reflection coefficients and the code
+//! its pulses are read with.
+//!
 //! `sources`: the source files the payload was compiled from, in link order, and the code known to
 //! be each one's, from the paths their assertions hold. `strings.tsv` is the export's too.
 //!
@@ -77,6 +81,7 @@ const models = @import("models.zig");
 const orders = @import("orders.zig");
 const sources = @import("sources.zig");
 const sequences = @import("sequences.zig");
+const speech = @import("speech.zig");
 const views = @import("views.zig");
 const objectives = @import("objectives.zig");
 const x86 = @import("x86.zig");
@@ -110,6 +115,7 @@ const usage =
     \\       tablegen views <LANCER.EXE> <output.zig>
     \\       tablegen objectives <LANCER.EXE> <output.zig>
     \\       tablegen sequences <LANCER.EXE> <output.zig>
+    \\       tablegen speech <LANCER.EXE> <output.zig>
     \\       tablegen sources <LANCER.EXE> <disassembly.asm> <strings.tsv> <output.zig>
     \\
 ;
@@ -129,6 +135,7 @@ const Mode = union(enum) {
     views: struct { binary: []const u8, output: []const u8 },
     objectives: struct { binary: []const u8, output: []const u8 },
     sequences: struct { binary: []const u8, output: []const u8 },
+    speech: struct { binary: []const u8, output: []const u8 },
     sources: struct { binary: []const u8, listing: []const u8, strings: []const u8, output: []const u8 },
 
     /// The mode `args` names, then its paths in the order its fields list them.
@@ -194,6 +201,7 @@ pub fn main(init: std.process.Init) !u8 {
         .views => |paths| viewTable(init, arena, paths),
         .objectives => |paths| objectiveTable(init, arena, paths),
         .sequences => |paths| sequenceTable(init, arena, paths),
+        .speech => |paths| speechTables(init, arena, paths),
         .sources => |paths| sourceMap(init, arena, paths),
     };
 }
@@ -273,6 +281,13 @@ fn sequenceTable(init: std.process.Init, arena: std.mem.Allocator, paths: @Field
     const records = try sequences.read(arena, try loadBinary(init, arena, paths.binary));
     try writeOutput(init, paths.output, sequences.emit, .{records});
     std.debug.print("{d} explosion sequences -> {s}\n", .{ records.len, paths.output });
+    return 0;
+}
+
+fn speechTables(init: std.process.Init, arena: std.mem.Allocator, paths: @FieldType(Mode, "speech")) !u8 {
+    const tables = try speech.read(arena, try loadBinary(init, arena, paths.binary));
+    try writeOutput(init, paths.output, speech.emit, .{tables});
+    std.debug.print("{d} levels and {d} symbols -> {s}\n", .{ tables.levels.len, tables.records.len, paths.output });
     return 0;
 }
 
@@ -462,6 +477,7 @@ test {
     _ = orders;
     _ = sequences;
     _ = sources;
+    _ = speech;
     _ = views;
     _ = objectives;
     _ = x86;

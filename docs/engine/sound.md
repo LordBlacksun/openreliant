@@ -173,6 +173,23 @@ the start. The stream's volume is `round(((Musicvolume × level) / 127) × Maste
 `music_update` (`0x00482C30`) then starts the piece waiting. Mission 1 plays `new_launch.wav` as its
 wing launches, and `new_searching mission 09.wav` once it is out.
 
+## Speech
+
+`sound_init` allocates a sample for the radio's speech (`speech_sample`, `0x00563F18`) with two
+buffers (`0x00563F20`), which `cbox.cpp` streams a line through: `speech_start` (`0x00461EB0`)
+sets the sample up as 16-bit stereo at 22,050 Hz, both channels the same, at
+`round(Speechvolume × Mastervolume / 127)`, which `sound_volumes_apply` sets again, and a timer
+decodes the line into the buffers as it plays ([Speech files](../formats/speech.md)). OpenReliant
+decodes a line whole as it starts and plays it on the sample
+([`cbox.zig`](../../src/engine/game/cbox.zig)), which then goes through OpenAL Soft's resampling
+and the master bus like every sound ([Sound](../port/sound.md)).
+
+**Improvement:** the recordings push past full scale in a few samples of every thousand, which the
+game cuts flat, and crackle; OpenReliant rounds the peaks off, unchanged within 0.8 of full scale
+and eased toward it past that by a hyperbolic tangent (`cbox.softClip`). **Improvement:** the lines
+ring in the cockpit's cabin, as Betty's warnings do, where the game plays them dry. `--original`
+cuts the peaks and plays the lines dry.
+
 ## Where the sounds come from
 
 - A shot the step hears (`guns.heard`) plays its gun type's sound following it, on a voice of the

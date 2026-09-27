@@ -12,6 +12,7 @@ const fnt = @import("fnt.zig");
 const hog = @import("hog.zig");
 const render = @import("render.zig");
 const shp = @import("shp.zig");
+const speech = @import("speech.zig");
 const spr = @import("spr.zig");
 const stats = @import("stats.zig");
 const tcache = @import("tcache.zig");
@@ -61,6 +62,7 @@ const Command = union(enum) {
     hog: hog.Command,
     render: render.Command,
     shp: shp.Command,
+    speech: speech.Command,
     spr: spr.Command,
     stats: stats.Command,
     tcache: tcache.Command,
@@ -71,7 +73,7 @@ const Command = union(enum) {
         \\
         \\commands:
         \\
-    ++ cd.Command.usage ++ dte.Command.usage ++ fat.Command.usage ++ fnt.Command.usage ++ hog.Command.usage ++ render.Command.usage ++ shp.Command.usage ++ spr.Command.usage ++ stats.Command.usage ++ tcache.Command.usage ++
+    ++ cd.Command.usage ++ dte.Command.usage ++ fat.Command.usage ++ fnt.Command.usage ++ hog.Command.usage ++ render.Command.usage ++ shp.Command.usage ++ speech.Command.usage ++ spr.Command.usage ++ stats.Command.usage ++ tcache.Command.usage ++
         \\  help                            show this text
         \\
     ;
