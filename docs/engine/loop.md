@@ -57,7 +57,7 @@ After moving objects, `objects_update` gathers colliding candidates: slot index,
 |---|---|
 | Two of one type, where either is a torpedo | Nothing |
 | A torpedo that is already going off | Nothing |
-| Either lists components, but not both, and neither is the limpet pod (`0xBC`) | The ship is tested against the other's collision tree, up to nine times over (`0x00465C50`) |
+| Either lists components, but not both, and neither is the limpet pod (`0xBC`) | The ship is tested against the other's collision tree, up to nine times over (`0x00465C50`), a torpedo once |
 | Both list components | Nothing |
 | Two torpedoes, two pieces of debris, or two satellites (`0x71`) | Nothing |
 | Either is a mine, against a fighter | The fighter's fore quadrant takes 500 as a collision, the fighter named as its own attacker, and the mine is destroyed |
@@ -72,9 +72,16 @@ The pair is then separated along that line: each object is placed at 1.1 times i
 
 A ship colliding with an object that lists components tests against that object's collision tree ([Models](../formats/shp.md#tree-node-tag-0x07)): parts are traversed down to leaf nodes, and leaf faces within reach of the ship's sphere determine the nearest contact point. These are the file's own indexed faces, not the merged polygons the renderer draws. The ship is shoved at its center and the hull at the hit point, rotating the hull around the impact while the ship does not rotate.
 
+A torpedo that strikes a hull (`collision_test_hull`, `0x004656CF`) takes no damage of its own:
+
+- The hull lurches, unless it is unlisted, or its current order is already a lurch, a jump or a warp: it takes Make capship list left (115) where the torpedo came in heading to its left, and right (116) otherwise ([Orders](orders.md)).
+- The part struck takes 5001 as a crash (`component_damage`).
+- Where that part belongs to an assembly and starts with less than 1000 armour, the first hull part the hull's model shows takes 5001 as well, of kind 4: unless the part struck is itself a hull part or the Ulysses' fin (`0x004F7480`), or that hull part is of its own assembly. For a part of a model mounted on the hull, the hull's first hull part shown whatever the part.
+- The torpedo is destroyed (`object_destroyed`), and the pair is tested no more.
+
 Impact damage is calculated from the collision impulse (`collision_damage`, `0x00465CA0`): 1/5 of the impulse divided by the lighter mass, halved, applied to the struck quadrant. The Ripper takes no damage. The player's fore or aft [shield reserve](controls.md#the-shield-balance) absorbs damage first. If the reserve is depleted, the shield takes damage; when down, armor absorbs the damage, updating armor condition, and the shield [flares](effects.md#shields). A ship striking a hull takes damage similarly, drawing twice the damage from reserve. Collisions do not count toward recent damage taken from an attacker, so they do not trigger retaliatory orders; weapon hits do.
 
-Ported so far: the sweep, ignored pairs, shove impulse, object separation, hull collision tree tests, and damage ([`collision.zig`](../../src/engine/game/collision.zig)). Collisions do not damage components: only torpedo impacts and ships destroying themselves against a hull call `component_damage`.
+Ported so far: the sweep, ignored pairs, shove impulse, object separation, hull collision tree tests, a torpedo's strike on a hull, and damage ([`collision.zig`](../../src/engine/game/collision.zig)). Collisions do not damage components but for a torpedo's strike.
 
 A destroyed torpedo or mine runs Explode ([Destruction](objects.md#destruction)), through `object_destroyed_net` (`0x00402100`), which first tells the other players where a network session runs a mission that is not multiplayer's. Not ported: that message, and a mine's 5000 in a multiplayer game, which credits the kill to its owner ([#55](https://github.com/vdmkenny/openreliant/issues/55)).
 

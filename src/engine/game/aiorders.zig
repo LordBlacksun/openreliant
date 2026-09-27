@@ -1,6 +1,6 @@
 //! The orders a ship flies by: Mill, Do Nothing, Escort, Fly, Run Away, Find New Target, Object
-//! Attach, Toggle Cloak, Slow Rotate, the Random Spins, Match Speed and Disrupted; and the two that
-//! launch a missile. [`aigeneric.zig`](aigeneric.zig) runs them, [`ai.zig`](ai.zig) steers for them, and
+//! Attach, Toggle Cloak, Slow Rotate, the Random Spins, Match Speed and Disrupted; the two that
+//! launch a missile; and the start of a capital ship's lurch as a torpedo strikes it. [`aigeneric.zig`](aigeneric.zig) runs them, [`ai.zig`](ai.zig) steers for them, and
 //! `docs/engine/orders.md` describes what each does.
 //!
 //! **Unknown:** its source file. The code lies after `aifight.cpp`'s and before `aifuncs.cpp`'s,
@@ -321,9 +321,8 @@ const most_fought = 3;
 /// torpedo class; with none, it mills round the lightest of the second (Mill, 120); each pushed
 /// above it. With neither it pops.
 ///
-/// Not ported: the Torpedo order it pushes, which does nothing yet
-/// ([#30](https://github.com/vdmkenny/openreliant/issues/30)); and in a multiplayer game, a ship
-/// another machine flies, which pushes no Fight ([#55](https://github.com/vdmkenny/openreliant/issues/55)).
+/// Not ported: in a multiplayer game, a ship another machine flies, which pushes no Fight
+/// ([#55](https://github.com/vdmkenny/openreliant/issues/55)).
 pub fn findNewTarget(ctx: Context, index: u16) void {
     const slot = &ctx.world.objects.slots[index];
     const state = &slot.state.find_target;
@@ -352,6 +351,25 @@ pub fn findNewTarget(ctx: Context, index: u16) void {
     _ = aigeneric.pushShip(ctx, index, pushed, @intCast(ship), @intCast(component)) catch |err| {
         log.warn("ship {d} takes no order {d}: {s}", .{ index, @intFromEnum(pushed), @errorName(err) });
     };
+}
+
+/// What Make capship list left and right (115, 116) keep (`0x0040C3A0`): the step the lurch has come
+/// to, and the tick its step ends.
+pub const ListState = extern struct {
+    step: i32,
+    until: i32,
+    _unknown_08: [0x90 - 0x08]u8,
+
+    comptime {
+        assert(@offsetOf(ListState, "until") == 0x04);
+        assert(@sizeOf(ListState) == 0x90);
+    }
+};
+
+/// `0x0040B1C0`: the init of Make capship list left and right (115, 116), which a capital ship takes
+/// as a torpedo strikes it (`collision`): the lurch from its first step (`aigeneric.capshipList`).
+pub fn capshipListInit(ctx: Context, index: u16) void {
+    ctx.world.objects.slots[index].state.list.step = 0;
 }
 
 /// The visitor of Find New Target's walk (`weighTarget`).

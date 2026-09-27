@@ -537,18 +537,58 @@ fn home(world: gameobj.World, at: u8) void {
                 return end(world, at);
             }
             break :decoyed decoy.place().position;
-        } else led: {
-            const aimed = ai.aimedAt(all, missile.target).position;
-            const target = &all.slots[@intCast(missile.target.index)];
-            const lead = math.distance(aimed, from) * target.object.speed / missile.flight().max_speed;
-            break :led aimed + math.forward(target.drawn.orientation) * @as(Vector, @splat(lead));
-        };
+        } else intercept(all, missile.target, from, missile.flight().max_speed).at;
         const toward = aim - from;
         if (math.lengthSquared(toward) <= lost_range * lost_range) return steer(object, missile.slot.drawn.orientation, toward);
     }
     // The game asks whether the missile's trail has the Solomon's look.
     if (missile.type == .solomon) return steady(object, 1);
     end(world, at);
+}
+
+/// Where a shot flying at `max_speed` from `from` meets `target`: the point it aims at
+/// (`ai.aimedAt`), led along the target's nose by how far the target flies in the ticks the shot
+/// takes to reach that point, and those ticks (`missile_home`, `order_torpedo`).
+fn intercept(all: *const create.Objects, target: aigeneric.Target, from: Vector, max_speed: f32) struct { at: Vector, ticks: f32 } {
+    const aimed = ai.aimedAt(all, target).position;
+    const struck = &all.slots[@intCast(target.index)];
+    const ticks = math.distance(aimed, from) / max_speed;
+    return .{ .at = aimed + math.forward(struck.drawn.orientation) * @as(Vector, @splat(ticks * struck.object.speed)), .ticks = ticks };
+}
+
+/// How much of its time to the target a torpedo reckons its own drift over, the most ticks it
+/// reckons it over, and how hard it turns (`order_torpedo`: `0x004DC408`, `0x004DC7F0`, and the
+/// limit it steers with).
+const drift_share: f32 = 0.5;
+const most_drift: f32 = 25;
+const torpedo_turn_limit: f32 = 2;
+
+/// `order_torpedo_init` (`0x00496F70`): the init of Torpedo (103), which Find New Target pushes for
+/// a ship of the torpedo class (`aiorders.findNewTarget`): full throttle. **Unverified:** the order
+/// lies among the missiles' code, past the path's last assertion.
+pub fn torpedoInit(ctx: aigeneric.Context, index: u16) void {
+    ctx.world.objects.slots[index].object.throttle = 1;
+}
+
+/// `order_torpedo` (`0x00496F90`): the update of Torpedo (103). While its target is one to aim at
+/// (`ai.targetValid`), the torpedo steers (`ai.steer`, at `torpedo_turn_limit` and no ease) at where
+/// it meets the target (`intercept`), less how far its own velocity carries it over `drift_share`
+/// of the ticks that takes, `most_drift` at most; with none, the order ends. It goes off against
+/// what it meets (`collision`).
+pub fn torpedo(ctx: aigeneric.Context, index: u16) void {
+    const world = ctx.world;
+    const all = world.objects;
+    const slot = &all.slots[index];
+    const target = slot.orders[0].target;
+    if (!ai.targetValid(all, target, .{})) {
+        _ = aigeneric.pop(ctx, index);
+        return;
+    }
+    const flight = slot.flight orelse return;
+    const met = intercept(all, target, slot.drawn.position, flight.max_speed);
+    const drift = @min(met.ticks * drift_share, most_drift);
+    const aim = met.at - gameobj.vector(slot.object.velocity) * @as(Vector, @splat(drift));
+    _ = ai.steer(world, index, aim, torpedo_turn_limit, 0, .{});
 }
 
 /// The countermeasure that has drawn the missile away, where one has.
@@ -1093,6 +1133,49 @@ test steer {
     try std.testing.expectEqual(-1, object.yaw_input);
     try std.testing.expectEqual(0, object.pitch_input);
     try std.testing.expectEqual(0, object.throttle);
+}
+
+test "a torpedo flies at where it meets its target, less its own drift" {
+    var mission: gameobj.testing.Mission = undefined;
+    try mission.init(std.testing.allocator);
+    defer mission.deinit();
+    const ctx = mission.orders();
+    // The first slot is the player's, which takes none of these orders.
+    _ = try mission.add(.predator, .{ 0, 5000, 0 });
+    const fired = try mission.add(.russian_torpedo, @splat(0));
+    const twin = try mission.add(.russian_torpedo, @splat(0));
+    const mammoth = try mission.add(.mammoth, .{ 0, 0, 20000 });
+    mission.tables.combat[@intFromEnum(gameobj.Type.russian_torpedo)].class = .torpedo;
+    // The target crosses ahead, and the torpedoes drift up and on.
+    const target = mission.slot(mammoth);
+    target.object.flags.targetable = true;
+    objects.setOrientation(&target.object, &target.drawn, math.rotation(.y, std.math.pi / 2.0));
+    target.object.speed = 40;
+    const velocity: Vector = .{ 0, 10, 50 };
+    for ([_]u16{ fired, twin }) |index| mission.slot(index).object.velocity = gameobj.vec3(velocity);
+
+    // Told to find a target, a ship of the torpedo class takes Torpedo, which starts it at full
+    // throttle and steers it at where it meets the target, led along the target's nose by the
+    // ticks it takes to get there, less its drift over half of them, 25 at most.
+    _ = try aigeneric.pushShip(ctx, fired, .find_new_target, mammoth, aigeneric.Target.whole);
+    @import("aiorders.zig").findNewTarget(ctx, fired);
+    try std.testing.expectEqual(.torpedo, mission.slot(fired).orders[0].order);
+    aigeneric.objectOrders(ctx, fired);
+    try std.testing.expectEqual(1, mission.slot(fired).object.throttle);
+    const flight = mission.slot(fired).flight.?;
+    const met = intercept(mission.objects, mission.slot(fired).orders[0].target, @splat(0), flight.max_speed);
+    try std.testing.expectApproxEqRel(20000 / flight.max_speed, met.ticks, 1e-5);
+    try std.testing.expectApproxEqAbs(met.ticks * 40, math.dot(met.at - Vector{ 0, 0, 20000 }, math.forward(target.drawn.orientation)), 1e-2);
+    const drift = @min(met.ticks * drift_share, most_drift);
+    _ = ai.steer(ctx.world, twin, met.at - velocity * @as(Vector, @splat(drift)), torpedo_turn_limit, 0, .{});
+    try std.testing.expectEqual(mission.slot(twin).object.yaw_input, mission.slot(fired).object.yaw_input);
+    try std.testing.expectEqual(mission.slot(twin).object.pitch_input, mission.slot(fired).object.pitch_input);
+    try std.testing.expect(mission.slot(fired).object.yaw_input != 0);
+
+    // With its target no longer one to aim at, the order ends.
+    target.object.flags.targetable = false;
+    torpedo(ctx, fired);
+    try std.testing.expectEqual(.find_new_target, mission.slot(fired).orders[0].order);
 }
 
 test choose {

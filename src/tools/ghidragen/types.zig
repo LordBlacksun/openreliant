@@ -136,6 +136,7 @@ pub const exported = [_]Export{
     .{ "OrderState", engine.game.aigeneric.State },
     .{ "FlyState", engine.game.aiorders.FlyState },
     .{ "MillState", engine.game.aiorders.MillState },
+    .{ "CapshipListState", engine.game.aiorders.ListState },
     .{ "EscortState", engine.game.aiorders.EscortState },
     .{ "FindTargetState", engine.game.aiorders.FindTargetState },
     .{ "AttachState", engine.game.aiorders.AttachState },
