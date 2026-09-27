@@ -21,15 +21,13 @@ OpenReliant is an independent, non-commercial open-source project. It is not aff
 
 ## Current Status
 
-OpenReliant is in active development: the campaign's first mission is fully playable, while the front end and the rest of the campaign are still to come. Mission 1 plays from start to finish as the original plays it: you launch from the Reliant, meet the convoy and fight off the Coalition's ambush, then land back aboard. The mission's script runs its triggers and orders, and its objectives show on the display. The pilots speak on the radio with their faces, the music follows the fight, and your wingmen answer the radio menu and the F keys. The sandbox, mission 0, is built through the same mission code and remains for testing.
+OpenReliant is in active development, with the campaign's first mission playable from start to finish as the original plays it. The front end, the other missions and multiplayer are still to come: see the [milestones](../../milestones).
 
-- **Flight & Combat**: Fly any ship from the game using mouse/keyboard, flight sticks, HOTAS, or gamepads, with the authentic flight model, throttle, afterburners, and 8 camera modes (including 3D cockpits).
-- **AI**: Coalition fighters fight with the original's maneuvers, capital ships' turrets track and fire, and wingmen take your orders.
-- **Weapons & Damage**: Guns, missiles and torpedoes fire from ship stats and the power grid. Shields, armor and components wear down, and ships break up in explosions, debris and shockwaves.
-- **Missions**: Every mission file, the game's own or a custom one, loads as the original loads it, and the script commands mission 1 uses run as the original runs them. The later missions' remaining commands are in progress.
-- **HUD & Cockpit Displays**: The targeting reticle, radar, status indicators, the objectives, wing status, gunnery, damage and power windows, and the radio's face and menu all work.
-- **Positional 3D Audio**: Sound effects, engine audio, directional flybys, speech and music are mixed with 3D spatial positioning, environmental reverb, and headphone HRTF support.
-- **In Development**: The front end (menus, briefings, loadout), the rest of the campaign's missions, and multiplayer. See the [milestones](../../milestones) for the development roadmap.
+- **Flight & Combat**: Every ship, with the original's flight model, weapons, damage, AI and cockpit displays, and 8 camera views including 3D cockpits.
+- **Missions**: Any mission file, the game's own or a custom one, loads as the original loads it. Mission 1's script runs in full, and the later missions' commands are in progress.
+- **Controls**: Mouse and keyboard, flight sticks, HOTAS and gamepads, with the original's force-feedback effects played as rumble.
+- **Graphics**: The display's own resolution, 32-bit colour, per-pixel lighting, shadows from the sun, bloom, smooth edges and motion, and more detailed explosions, shields and planets. `--original` brings back the original's look.
+- **Audio**: 3D positional sound with reverb and headphone HRTF.
 
 ---
 
