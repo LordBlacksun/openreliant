@@ -404,7 +404,8 @@ pub const Driver = struct {
         const gpa = driver.gpa;
         const mesh = drawn.mesh;
         const material = surface.material;
-        const st = driver.state(surface, pass, layer);
+        var st = driver.state(surface, pass, layer);
+        st.soft_terminator = drawn.object.soft_terminator;
         driver.vertices.clearRetainingCapacity();
         driver.indices.clearRetainingCapacity();
         var start: usize = 0;

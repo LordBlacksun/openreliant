@@ -1694,3 +1694,9 @@ address	kind	name	type	comment
 004e2060	data	ripper_grab_ticks	int[10]	How long each step of Ripper grabs target object lasts, -1 for a step that doesn't
 004e20ac	data	ripper_attach_ticks	int[6]	How long each step of Ripper attach cargo pod to Mammoth lasts, -1 for a step that doesn't
 004e20d8	data	ripper_grab_offsets	int[8]	The types whose components the Ripper grabs from above, and how far: the Mammoth and the Stalag, (0, 2500, 0) each
+0044f200	function	mesh_build_band	void * __fastcall (int segments, uint flags, float radius, float depth)	A band of segments quads round Z, between a circle of radius at Z 0 and another at depth, the texture across each quad once, v 1 on the first circle; its normals and bounds worked out
+004666b0	function	objects_free	void __fastcall (void)	As a mission ends: each planet atmosphere's scene object, every object, and every ship type's model and data let go
+00545868	data	planet_atmospheres	byte[144]	The planets' atmospheres, 4 of 0x24 bytes: the ring's scene object, the planet's spin a tick, where the planet stood as it was made at +0x14, and its slot at +0x20
+005458f8	data	planet_atmosphere_count	int	How many of planet_atmospheres are in use
+005458fc	data	planet_atmosphere_texture	void *	atmos, which objects_reset loads and the atmospheres are drawn over
+00595bc0	data	planets_turned_at	int	The frame_start the planets with an atmosphere last turned at, in backdrop_frame

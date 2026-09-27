@@ -101,6 +101,60 @@ Drawn back at the game's size, each redrawn texture keeps the original's light t
 
 `--original` draws the game's textures and keeps its visibility.
 
+## Planet atmospheres
+
+Four of the planets have an atmosphere: a ring round the rim that glows in the planet's colour and
+fades out to its edge. `create_object` (`0x00466C10`) makes one as it makes a planet of those types,
+and keeps up to four in a table (`planet_atmospheres`, `0x00545868`, 0x24 bytes each: the ring, the
+planet's spin, where the planet stood as it was made, which nothing reads, and its slot).
+`objects_reset` loads the ring's texture, `atmos`, and empties the table as a mission starts;
+`objects_free` (`0x004666B0`) lets go of the rings as it ends.
+
+The ring is a band of 20 quads (`mesh_build_band`, `0x0044F200`): a circle of 20 vertices round the
+Z axis at the radius of the planet's first part, as its scene object has it, and a second circle
+like it, the texture spanning each quad once. `create_object` draws the first circle in to 0.85 of
+that radius and colours it, and draws the second out to 0.95 or 1.005 and colours it black:
+
+| Planet | Types | Colour of the inner circle | Outer circle |
+|---|---|---|---|
+| Neptune | `0x5F`, `0xC9` | (0.1, 0.15, 0.2) | 0.95 |
+| Uranus | `0x61`, `0xCB` | (0.15, 0.2, 0.2) | 0.95 |
+| Jupiter, Venus | `0x64`, `0x69`, `0xCE`, `0xD3` | (0.2, 0.2, 0.15) | 1.005 |
+
+It is drawn over `atmos`, added by the alpha of its own colours, and never culled (object flags
+`0x84800`). A branch of the same code colours the Saturns' (`0x62`, `0xCC`), but they are not among
+the types that get one.
+
+At the end of `backdrop_frame`, each planet with an atmosphere turns about its own Y by 0.0007 of a
+radian for each tick since the last frame (`planets_turned_at`, `0x00595BC0`). With the hardware
+renderer, and the planet not disabled, its ring stands where the planet does, turned to face the
+camera, as solid as the lens flares are bright (`backdrop.flareBrightness`), on the background
+layer, which the world is drawn over. The ring's radius is the part's, its farthest vertex from the
+origin, and Neptune's detailed model stands off its own origin by about 218000 along Z, so its
+radius is some 1.17 times the sphere's: the ring runs from about the rim to a tenth beyond it, and
+stands off the sphere's middle, which circles the planet's position as it turns. The other planets'
+models stand as far off their origins.
+
+**Fix:** OpenReliant stands the ring round the sphere's middle, the middle of the first part's
+finest mesh as the planet is turned, and turns the planet about it, so that it stays where it
+stands; the ring keeps the game's radii, so that it starts at the rim, as the game's sizes mean it
+to.
+
+**Improvement:** the atmosphere is a haze (`atmosphere.Style.haze`). The ring is made of 96 quads,
+round at any size, and is there at all times: each of its vertices is as solid as the flares are
+bright, or as `atmosphere.hazeAt` has it where that is more, 0.15 on the side away from the sun and
+0.6 on the side toward it, and between them as the cosine goes. The planet's terminator is softer,
+the sun reaching a little way round into its night side, where each pixel is lit
+([Renderer](../port/renderer.md#improvements)). `--original` makes the ring of 20 quads, only as
+solid as the flares are bright, and keeps the terminator hard.
+
+**Fix:** a fifth atmosphere would write past the table; OpenReliant makes none. With the sun square
+to the view, the game leaves the flares' brightness unset for the rings; OpenReliant keeps the last.
+`DestroyFlightGroup` counts one atmosphere fewer for any planet of the types from `0x60` to `0x69`
+and `0xCA` to `0xD3`, whether it has one or not, leaving out both Neptunes, looks for its ring
+among the atmospheres before the last alone, and frees the one it finds while keeping it in the
+table, which goes on drawing it; OpenReliant lets go of the planet's own and takes it out.
+
 ## Lights
 
 `backdrop_create` makes six lights; `backdrop_place` (`0x004A5A00`) aims the key lights along the sun and the fill lights along the nebula marker's forward axis, or `(-1, 0.5, 0)` without one.

@@ -333,6 +333,13 @@ pub const Type = enum(u32) {
     crewman = 0x58,
     /// The Russian torpedo (`rus_torp.shp`).
     russian_torpedo = 0x5C,
+    /// The planets with an atmosphere (`create.atmosphere`): Neptune (`neptune_hi_1.shp`), Uranus
+    /// (`uranus_hi_1.shp`), Jupiter (`jupiter_hi_1.shp`) and Venus (`venus1_hi_1.shp`), and their
+    /// models of less detail below.
+    neptune_hi = 0x5F,
+    uranus_hi = 0x61,
+    jupiter_hi = 0x64,
+    venus_hi = 0x69,
     /// The Coalition's gates: the prototype (`coalprotogate.shp`) and the advanced one
     /// (`coaladvgate.shp`).
     proto_gate = 0x6D,
@@ -385,6 +392,12 @@ pub const Type = enum(u32) {
     limpet_pod = 0xBC,
     /// The Kiev (`kiev.shp`).
     kiev = 0xC2,
+    /// The planets with an atmosphere in less detail: `neptune_lo_1.shp`, `uranus_lo_1.shp`,
+    /// `jupiter_lo_1.shp` and `venus1_lo_1.shp`.
+    neptune_lo = 0xC9,
+    uranus_lo = 0xCB,
+    jupiter_lo = 0xCE,
+    venus_lo = 0xD3,
     /// The Reliant's hangar (`reliant_hang.shp`): the cutaway the Reliant's launch shows the
     /// player's ship in.
     reliant_hangar = 0xD6,
@@ -1463,6 +1476,8 @@ pub const World = struct {
     tractors: ?*@import("tractor.zig").Tractors = null,
     /// What the Rippers carry, and their beams (`airipper.cpp`); null where no Ripper carries.
     rippers: ?*@import("airipper.zig").Rippers = null,
+    /// The planets' atmospheres (`create.atmosphere`); null where no planet has one drawn.
+    atmospheres: ?*@import("create/atmosphere.zig").Atmospheres = null,
     /// The screen's flash (`main.cpp`); null where nothing flashes.
     flash: ?*@import("main/flash.zig").Flash = null,
     /// The force feedback the player's controller plays; null where it plays none.

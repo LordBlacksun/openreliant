@@ -109,7 +109,7 @@ const Doc = struct {
 
 /// Every option's help, which the compiler holds to having one for each.
 const docs: std.enums.EnumArray(Arg, Doc) = .init(.{
-    .@"--original" = .{ .section = .original, .text = "the original's look and sound: 16-bit colour, one sample a pixel, bilinear filtering, lighting each vertex, light worked out on encoded colours, no shadows, motion that moves on with the game's ticks, a launching ship a frame behind the retainer that lowers it, lights from the latest shots only, muzzle flashes that light nothing and none from the turrets, the force feedback's own effects only, a blow shaking the camera only while the controller rumbles, an explosion's debris lit by every light, its fireballs, rings, particles and burning bits as few, plain and brief as the original's, the Uber Explode as coarse, unlit and tied to the frame rate as the original's, a damaged ship's smoke as even as the original's, the shields' bubbles as coarse as the original's, the tractor beams as thin as the original's, the hangar's beacons falling short of the launching ship, the sun and its lens flares from their small textures and the sun's glow going out at once behind what hides it, the levels of detail changing as near as the original's, as little drawn a frame as the original allows, the marker for a target out of sight placed as the original misplaces it, a missile's sound left where it was launched, and the sound mixed plainly in stereo" },
+    .@"--original" = .{ .section = .original, .text = "the original's look and sound: 16-bit colour, one sample a pixel, bilinear filtering, lighting each vertex, light worked out on encoded colours, no shadows, motion that moves on with the game's ticks, a launching ship a frame behind the retainer that lowers it, lights from the latest shots only, muzzle flashes that light nothing and none from the turrets, the force feedback's own effects only, a blow shaking the camera only while the controller rumbles, an explosion's debris lit by every light, its fireballs, rings, particles and burning bits as few, plain and brief as the original's, the Uber Explode as coarse, unlit and tied to the frame rate as the original's, a damaged ship's smoke as even as the original's, the shields' bubbles as coarse as the original's, the tractor beams as thin as the original's, the hangar's beacons falling short of the launching ship, the planets' atmospheres as coarse and fleeting as the original's and their terminators as hard, the sun and its lens flares from their small textures and the sun's glow going out at once behind what hides it, the levels of detail changing as near as the original's, as little drawn a frame as the original allows, the marker for a target out of sight placed as the original misplaces it, a missile's sound left where it was launched, and the sound mixed plainly in stereo" },
     .@"--mission" = .{ .section = .mission, .value = "<number>", .text = "the mission to play, by the number the game names its file by, mission<number>.dte, from the game's missions folder or resource.hog; 0 by default, OpenReliant's own sandbox, which openreliant carries where the game has no mission 0" },
     .@"--ship" = .{ .section = .mission, .value = "<type>", .text = "the ship type to fly, by its number in shipstats.bin, in place of the loadout screen's choice, with its default missiles; the mission's own by default" },
     .@"--view" = .{ .section = .mission, .value = "<0|1|2>", .text = "the view it starts in, as the game's settings keep it: 0 the cockpit; 1 the chase view; 2 no cockpit. The settings' own by default, which the pause menu's video screen changes" },
@@ -260,6 +260,8 @@ const Options = struct {
     beam_glow: game.tractor.Glow = .halo,
     /// How the sun and the lens flares are drawn.
     sun: game.backdrop.Sun = .smooth,
+    /// How the planets' atmospheres are drawn.
+    atmospheres: game.create.atmosphere.Style = .haze,
     /// How far the finer levels of detail reach.
     detail_reach: game.main.DetailReach = .far,
     /// How much a frame may draw.
@@ -330,6 +332,7 @@ const Options = struct {
                 options.hangar_beacons = .own;
                 options.beam_glow = .none;
                 options.sun = .original;
+                options.atmospheres = .original;
                 options.detail_reach = .original;
                 options.draw_budget = .original;
                 options.edge_line = .original;
@@ -699,6 +702,9 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
     var rippers: game.airipper.Rippers = try .init(gpa, &textures);
     defer rippers.deinit();
     rippers.glow = options.beam_glow;
+    var atmospheres: game.create.atmosphere.Atmospheres = try .init(gpa, &textures);
+    defer atmospheres.deinit();
+    atmospheres.style = options.atmospheres;
     var flash: game.main.flash.Flash = .{};
     // The countermeasures' model, read once for the whole run, as `decoys_init` reads it.
     var effects_models: game.create.library.MountCache = .{ .gpa = arena, .resources = &resources, .textures = &textures };
@@ -718,7 +724,7 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
     while (lacking.next()) |effect| std.log.warn("forces\\{s} is missing or isn't an effect file: it plays nothing", .{effect.fileName()});
     var force_feedback: engine.input.force.Forces = .{ .library = &found_forces.library, .settings = options.forces };
     // What the objects run in, the camera's view brought up to date each frame.
-    var world: game.gameobj.World = .{ .forces = &force_feedback, .objects = objects, .player = &player, .clock = &clock, .view = view.view, .shake = &view.hit_shake, .random = &rand, .difficulty = options.difficulty, .hangar_beacons = options.hangar_beacons, .hearing = hearing, .camera = &view, .explosions = &explosions, .particles = &particles, .smoke = &smoke, .gun_particles = &gun_particles, .shockwaves = &shockwaves, .trails = &trails, .countermeasures = &countermeasures, .sparks = &sparks, .shields = &shields, .rays = &rays, .tractors = &tractors, .rippers = &rippers, .flash = &flash, .spawn = .{ .tables = tables, .types = types.types() }, .environment = &environment };
+    var world: game.gameobj.World = .{ .forces = &force_feedback, .objects = objects, .player = &player, .clock = &clock, .view = view.view, .shake = &view.hit_shake, .random = &rand, .difficulty = options.difficulty, .hangar_beacons = options.hangar_beacons, .hearing = hearing, .camera = &view, .explosions = &explosions, .particles = &particles, .smoke = &smoke, .gun_particles = &gun_particles, .shockwaves = &shockwaves, .trails = &trails, .countermeasures = &countermeasures, .sparks = &sparks, .shields = &shields, .rays = &rays, .tractors = &tractors, .rippers = &rippers, .atmospheres = &atmospheres, .flash = &flash, .spawn = .{ .tables = tables, .types = types.types() }, .environment = &environment };
 
     // The pause menu, which stands in the display's place while the game is paused.
     var pause_menu: game.hudoptions.PauseMenu = .{};
@@ -938,6 +944,7 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
             .rays = &rays,
             .tractors = &tractors,
             .rippers = &rippers,
+            .atmospheres = &atmospheres,
             .flash = &flash,
             .interference = &display.state.interference,
             .ticks = @intCast(clock.frameTicks()),
@@ -1259,6 +1266,8 @@ test Options {
     try std.testing.expectEqual(.fuller, plain.fireballs);
     try std.testing.expectEqual(.smooth, plain.shields);
     try std.testing.expectEqual(.original, retro.shields);
+    try std.testing.expectEqual(.haze, plain.atmospheres);
+    try std.testing.expectEqual(.original, retro.atmospheres);
     try std.testing.expectEqual(.to_the_ship, plain.hangar_beacons);
     try std.testing.expectEqual(.own, retro.hangar_beacons);
     try std.testing.expectEqual(.halo, plain.beam_glow);

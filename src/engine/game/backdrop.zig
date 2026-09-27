@@ -248,6 +248,10 @@ pub const Backdrop = struct {
     fields: [field_count]srstars.Field,
     dust: srstars.Field,
     lights: Lights,
+    /// The lens flares' brightness this frame (`flareBrightness`), which the planets' atmospheres
+    /// take as well (`create.atmosphere`). **Fix:** with the sun square to the view, the game
+    /// leaves it unset for them; OpenReliant keeps the last.
+    flare_brightness: f32 = 0,
     /// Toward the sun, `sun_distance` long (`sun_direction`, `0x00595BE0`).
     sun_direction: Vector,
     sun: [sun_sprite_count]srapiext.SpriteSet,
@@ -404,6 +408,7 @@ pub const Backdrop = struct {
             const glow = backdrop.style.glow(visibility);
             if (glow > 0) try xtrabits.sceneAdd(gpa, scene, .{ .sprites = sun3 }, .background);
             const brightness = flareBrightness(visibility, offset);
+            backdrop.flare_brightness = brightness;
             sun1.sprites[0].colour = @splat(SunLayer.sunlayer1.grey(brightness));
             if (brightness > 0) {
                 if (context.hardware) {

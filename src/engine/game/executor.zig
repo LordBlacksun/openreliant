@@ -166,6 +166,7 @@ pub fn createShip(game: aigeneric.Context, bound: *const mission.Mission, index:
         log.warn("mission ship {d} is not made: {s}", .{ index, @errorName(err) });
         return;
     };
+    if (game.world.atmospheres) |atmospheres| atmospheres.made(all, made);
     const first: Order = if (made >= all.players) .do_nothing else if (made == all.player) .player_control else .multiplayer_control;
     _ = aigeneric.push(game, made, first, .none) catch |err| log.warn("mission ship {d} takes no order: {s}", .{ index, @errorName(err) });
     if (made == all.player) if (game.world.camera) |view| {
@@ -561,10 +562,8 @@ fn shipSlot(machine: *const vm.Machine, all: *const create.Objects, place: u32) 
 }
 
 /// `cmd_DestroyFlightGroup` (`0x00457FD0`, command `0x04`): each ship of the flight group the
-/// argument names leaves the mission at once, a stand-in in its place (`create.retire`).
-///
-/// Not ported: the atmosphere of a planet among them let go of (`0x00545868`), as the planets'
-/// atmospheres are not ported ([#233](https://github.com/vdmkenny/openreliant/issues/233)).
+/// argument names leaves the mission at once, a stand-in in its place (`create.retire`), a
+/// planet's atmosphere let go of with it (`create.atmosphere.Atmospheres.release`).
 fn destroyFlightGroup(call: Call) u32 {
     const machine = call.machine;
     const game = machine.game orelse return 1;
@@ -573,7 +572,9 @@ fn destroyFlightGroup(call: Call) u32 {
     if (group >= groups.len) return 1;
     const all = game.world.objects;
     for (machine.mission.groupShips(groups[group])) |ship| {
-        if (ship < all.slots.len) create.retire(game, ship);
+        if (ship >= all.slots.len) continue;
+        if (game.world.atmospheres) |atmospheres| atmospheres.release(ship);
+        create.retire(game, ship);
     }
     return 1;
 }
