@@ -630,8 +630,7 @@ A ship's end, and the limpet car's, posts its Destroyed event for the mission's 
 The blasts' break-up, particles, fireballs, burning bits and shockwaves are in
 [Effects](effects.md). Not ported: what a few types set off first
 ([#238](https://github.com/vdmkenny/openreliant/issues/238)); the Ulysses' own end
-([#232](https://github.com/vdmkenny/openreliant/issues/232)); the radio's lines on the kill
-([#48](https://github.com/vdmkenny/openreliant/issues/48)); and the pilots' records the end keeps,
+([#232](https://github.com/vdmkenny/openreliant/issues/232)); and the pilots' records the end keeps,
 its pilot taken off the wing's list (`0x0058A958`) and marked lost (`0x005047D0`)
 ([#301](https://github.com/vdmkenny/openreliant/issues/301)).
 

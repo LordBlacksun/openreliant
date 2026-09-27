@@ -9,391 +9,391 @@ const pilots = @import("../pilots.zig");
 /// Every pilot's face, by the pilot's number.
 pub const faces = [194]pilots.Face{
     // 0
-    .{ .name = 33, .side = .friendly, .films = .{ "45TigersWL_Bandit", "45TigersWL_Bandit_L", "45Tigers_Plt", "45TigersWL_Bandit_d" } },
+    .{ .name = 33, .side = .friendly, .films = .{ "45TigersWL_Bandit", "45TigersWL_Bandit_L", "45Tigers_Plt", "45TigersWL_Bandit_d" }, .voice = .rus, .allied_voice = .ban },
     // 1
-    .{ .name = 37, .side = .friendly, .films = .{ "45TigersWL_Diceman", "45TigersWL_Diceman_L", "45Tigers_Plt", "45TigersWL_Diceman_D" } },
+    .{ .name = 37, .side = .friendly, .films = .{ "45TigersWL_Diceman", "45TigersWL_Diceman_L", "45Tigers_Plt", "45TigersWL_Diceman_D" }, .voice = .rus, .allied_voice = .dic },
     // 2
-    .{ .name = 131, .side = .friendly, .films = .{ "45Tigers_Moose", "45Tigers_Moose_L", "45Tigers_Plt", "45Tigers_Moose_D" } },
+    .{ .name = 131, .side = .friendly, .films = .{ "45Tigers_Moose", "45Tigers_Moose_L", "45Tigers_Plt", "45Tigers_Moose_D" }, .voice = .rus },
     // 3
-    .{ .name = 101, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 101, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .fre },
     // 4
-    .{ .name = 131, .side = .friendly, .films = .{ "45Volntrs_Moose", "45Volntrs_Moose_L", "45Tigers_Plt", "45Volntrs_Moose_d" } },
+    .{ .name = 131, .side = .friendly, .films = .{ "45Volntrs_Moose", "45Volntrs_Moose_L", "45Tigers_Plt", "45Volntrs_Moose_d" }, .voice = .rus },
     // 5
-    .{ .name = 99, .side = .friendly, .films = .{ "45Volntrs_Plt", "45Volntrs_Plt_L", "45Tigers_Plt", "45Volntrs_Plt_d" } },
+    .{ .name = 99, .side = .friendly, .films = .{ "45Volntrs_Plt", "45Volntrs_Plt_L", "45Tigers_Plt", "45Volntrs_Plt_d" }, .voice = .rus, .allied_voice = .fre },
     // 6
-    .{ .name = 33, .side = .friendly, .films = .{ "45VolntrWL_Bandit", "45VolntrWL_Bandit_L", "45Tigers_Plt", "45VolntrWL_Bandit_d" } },
+    .{ .name = 33, .side = .friendly, .films = .{ "45VolntrWL_Bandit", "45VolntrWL_Bandit_L", "45Tigers_Plt", "45VolntrWL_Bandit_d" }, .voice = .rus, .allied_voice = .ban },
     // 7
-    .{ .name = 29, .side = .friendly, .films = .{ "45VolntrWL_Viper", "45VolntrWL_Viper_L", "45Tigers_Plt", "45VolntrWL_Viper_D" } },
+    .{ .name = 29, .side = .friendly, .films = .{ "45VolntrWL_Viper", "45VolntrWL_Viper_L", "45Tigers_Plt", "45VolntrWL_Viper_D" }, .voice = .rus, .allied_voice = .vip },
     // 8
-    .{ .name = 115, .side = .friendly, .films = .{ "51st_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "51st_Plt_d" } },
+    .{ .name = 115, .side = .friendly, .films = .{ "51st_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "51st_Plt_d" }, .voice = .rus },
     // 9
-    .{ .name = 87, .side = .friendly, .films = .{ "BGUARDP", "45Tigers_Plt_L", "45Tigers_Plt", "BGUARDD" } },
+    .{ .name = 87, .side = .friendly, .films = .{ "BGUARDP", "45Tigers_Plt_L", "45Tigers_Plt", "BGUARDD" }, .voice = .rus },
     // 10
-    .{ .name = 75, .side = .friendly, .films = .{ "BlacksunWL_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "BlacksunWL_Plt_D" } },
+    .{ .name = 75, .side = .friendly, .films = .{ "BlacksunWL_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "BlacksunWL_Plt_D" }, .voice = .rus },
     // 11
-    .{ .name = 75, .side = .friendly, .films = .{ "Blacksun_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Blacksun_Plt_D" } },
+    .{ .name = 75, .side = .friendly, .films = .{ "Blacksun_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Blacksun_Plt_D" }, .voice = .rus },
     // 12
-    .{ .name = 117, .side = .friendly, .films = .{ "Blades_Plt", "Blades_Plt_L", "45Tigers_Plt", "Blades_Plt_d" } },
+    .{ .name = 117, .side = .friendly, .films = .{ "Blades_Plt", "Blades_Plt_L", "45Tigers_Plt", "Blades_Plt_d" }, .voice = .rus },
     // 13
-    .{ .name = 84, .side = .friendly, .films = .{ "BlckEgleWL_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "BlckEgleWL_Plt_D" } },
+    .{ .name = 84, .side = .friendly, .films = .{ "BlckEgleWL_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "BlckEgleWL_Plt_D" }, .voice = .rus },
     // 14
-    .{ .name = 83, .side = .friendly, .films = .{ "BlckEgle_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "BlckEgle_Plt_D" } },
+    .{ .name = 83, .side = .friendly, .films = .{ "BlckEgle_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "BlckEgle_Plt_D" }, .voice = .rus },
     // 15
-    .{ .name = 91, .side = .friendly, .films = .{ "BlckGrdIP_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "BlckGrdIP_Plt_D" } },
+    .{ .name = 91, .side = .friendly, .films = .{ "BlckGrdIP_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "BlckGrdIP_Plt_D" }, .voice = .rus },
     // 16
-    .{ .name = 92, .side = .friendly, .films = .{ "BlckGrdNP_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "BlckGrdNP_Plt_D" } },
+    .{ .name = 92, .side = .friendly, .films = .{ "BlckGrdNP_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "BlckGrdNP_Plt_D" }, .voice = .rus },
     // 17
-    .{ .name = 127, .side = .friendly, .films = .{ "BLKACE", "45Tigers_Plt_L", "45Tigers_Plt", "BlkAces_Plt_d" } },
+    .{ .name = 127, .side = .friendly, .films = .{ "BLKACE", "45Tigers_Plt_L", "45Tigers_Plt", "BlkAces_Plt_d" }, .voice = .rus },
     // 18
-    .{ .name = 68, .side = .friendly, .films = .{ "Bremen_Brdge_Off", "45Tigers_Plt_L", "45Tigers_Plt", "Bremen_Brdge_Off_D" } },
+    .{ .name = 68, .side = .friendly, .films = .{ "Bremen_Brdge_Off", "45Tigers_Plt_L", "45Tigers_Plt", "Bremen_Brdge_Off_D" }, .voice = .rus },
     // 19
-    .{ .name = 113, .side = .friendly, .films = .{ "BUCC", "45Tigers_Plt_L", "45Tigers_Plt", "BUCCDETH" } },
+    .{ .name = 113, .side = .friendly, .films = .{ "BUCC", "45Tigers_Plt_L", "45Tigers_Plt", "BUCCDETH" }, .voice = .rus },
     // 20
-    .{ .name = 666, .side = .friendly, .films = .{ "Cat_Foster", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 666, .side = .friendly, .films = .{ "Cat_Foster", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus },
     // 21
-    .{ .name = 667, .side = .hostile, .films = .{ "COB", "45Tigers_Plt_L", "45Tigers_Plt", "Cobra_Plt_D" } },
+    .{ .name = 667, .side = .hostile, .films = .{ "COB", "45Tigers_Plt_L", "45Tigers_Plt", "Cobra_Plt_D" }, .voice = @enumFromInt(4) },
     // 22
-    .{ .name = 111, .side = .friendly, .films = .{ "Couger_Plt", "Couger_Plt_L", "45Tigers_Plt", "CCouger_Plt_D" } },
+    .{ .name = 111, .side = .friendly, .films = .{ "Couger_Plt", "Couger_Plt_L", "45Tigers_Plt", "CCouger_Plt_D" }, .voice = .rus },
     // 23
-    .{ .name = 71, .side = .friendly, .films = .{ "C_comms_off1", "45Tigers_Plt_L", "45Tigers_Plt", "C_comms_off1_death" } },
+    .{ .name = 71, .side = .friendly, .films = .{ "C_comms_off1", "45Tigers_Plt_L", "45Tigers_Plt", "C_comms_off1_death" }, .voice = .rus },
     // 24
-    .{ .name = 668, .side = .friendly, .films = .{ "C_Fhtr_01", "45Tigers_Plt_L", "45Tigers_Plt", "C_Fhtr_01_D" } },
+    .{ .name = 668, .side = .friendly, .films = .{ "C_Fhtr_01", "45Tigers_Plt_L", "45Tigers_Plt", "C_Fhtr_01_D" }, .voice = .rus },
     // 25
-    .{ .name = 669, .side = .friendly, .films = .{ "C_Scientist", "45Tigers_Plt_L", "45Tigers_Plt", "C_Scientist_D" } },
+    .{ .name = 669, .side = .friendly, .films = .{ "C_Scientist", "45Tigers_Plt_L", "45Tigers_Plt", "C_Scientist_D" }, .voice = .rus },
     // 26
-    .{ .name = 68, .side = .friendly, .films = .{ "Endevr_Brdge_Off", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 68, .side = .friendly, .films = .{ "Endevr_Brdge_Off", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus },
     // 27
-    .{ .name = 136, .side = .friendly, .films = .{ "Enq_RelBridge", "45Tigers_Plt_L", "45Tigers_Plt", "Enq_RelBridge_D" } },
+    .{ .name = 136, .side = .friendly, .films = .{ "Enq_RelBridge", "45Tigers_Plt_L", "45Tigers_Plt", "Enq_RelBridge_D" }, .voice = .rus },
     // 28
-    .{ .name = 136, .side = .friendly, .films = .{ "Enq_YamBridge", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 136, .side = .friendly, .films = .{ "Enq_YamBridge", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus },
     // 29
-    .{ .name = 136, .side = .friendly, .films = .{ "Enriquez_Cockpit", "Enriquez_Cockpit_L", "45Tigers_Plt", "Enriquez_Cockpit_D" } },
+    .{ .name = 136, .side = .friendly, .films = .{ "Enriquez_Cockpit", "Enriquez_Cockpit_L", "45Tigers_Plt", "Enriquez_Cockpit_D" }, .voice = .rus, .allied_voice = .enq },
     // 30
-    .{ .name = 47, .side = .friendly, .films = .{ "FOSTDED", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 47, .side = .friendly, .films = .{ "FOSTDED", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus },
     // 31
-    .{ .name = 71, .side = .friendly, .films = .{ "FrtBear_Comms", "45Tigers_Plt_L", "45Tigers_Plt", "FrtBear_Comms_D" } },
+    .{ .name = 71, .side = .friendly, .films = .{ "FrtBear_Comms", "45Tigers_Plt_L", "45Tigers_Plt", "FrtBear_Comms_D" }, .voice = .rus },
     // 32
-    .{ .name = 71, .side = .friendly, .films = .{ "FrtBxtr_Comms", "45Tigers_Plt_L", "45Tigers_Plt", "FrtBxtr_Comms_D" } },
+    .{ .name = 71, .side = .friendly, .films = .{ "FrtBxtr_Comms", "45Tigers_Plt_L", "45Tigers_Plt", "FrtBxtr_Comms_D" }, .voice = .rus },
     // 33
-    .{ .name = 71, .side = .friendly, .films = .{ "frtcrtr_comms", "45Tigers_Plt_L", "45Tigers_Plt", "frtcrtr_comms_death" } },
+    .{ .name = 71, .side = .friendly, .films = .{ "frtcrtr_comms", "45Tigers_Plt_L", "45Tigers_Plt", "frtcrtr_comms_death" }, .voice = .rus },
     // 34
-    .{ .name = 71, .side = .friendly, .films = .{ "frtshrmn_comms", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 71, .side = .friendly, .films = .{ "frtshrmn_comms", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus },
     // 35
-    .{ .name = 47, .side = .friendly, .films = .{ "GAMMADEA", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 47, .side = .friendly, .films = .{ "GAMMADEA", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus },
     // 36
-    .{ .name = 301, .side = .friendly, .films = .{ "Gamma_Ldr", "Gamma_Ldr_L", "45Tigers_Plt", "GAMMADEA" } },
+    .{ .name = 301, .side = .friendly, .films = .{ "Gamma_Ldr", "Gamma_Ldr_L", "45Tigers_Plt", "GAMMADEA" }, .voice = .rus },
     // 37
-    .{ .name = 76, .side = .friendly, .films = .{ "GoldWarr_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "GoldWarr_Plt_D" } },
+    .{ .name = 76, .side = .friendly, .films = .{ "GoldWarr_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "GoldWarr_Plt_D" }, .voice = .rus },
     // 38
-    .{ .name = 110, .side = .friendly, .films = .{ "HellcatWL", "45Tigers_Plt_L", "45Tigers_Plt", "HellcatWL_d" } },
+    .{ .name = 110, .side = .friendly, .films = .{ "HellcatWL", "45Tigers_Plt_L", "45Tigers_Plt", "HellcatWL_d" }, .voice = .rus },
     // 39
-    .{ .name = 109, .side = .friendly, .films = .{ "Hellcat_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Hellcat_Plt_d" } },
+    .{ .name = 109, .side = .friendly, .films = .{ "Hellcat_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Hellcat_Plt_d" }, .voice = .rus },
     // 40
-    .{ .name = 129, .side = .friendly, .films = .{ "Hornet_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Hornet_Plt_D" } },
+    .{ .name = 129, .side = .friendly, .films = .{ "Hornet_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Hornet_Plt_D" }, .voice = .rus },
     // 41
-    .{ .name = 106, .side = .friendly, .films = .{ "JAckelWL_Plt", "JackelWL_Plt_L", "45Tigers_Plt", "JackelWL_Plt_d" } },
+    .{ .name = 106, .side = .friendly, .films = .{ "JAckelWL_Plt", "JackelWL_Plt_L", "45Tigers_Plt", "JackelWL_Plt_d" }, .voice = .rus },
     // 42
-    .{ .name = 105, .side = .friendly, .films = .{ "Jackel_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Jackel_Plt_D" } },
+    .{ .name = 105, .side = .friendly, .films = .{ "Jackel_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Jackel_Plt_D" }, .voice = .rus },
     // 43
-    .{ .name = 121, .side = .friendly, .films = .{ "Jaguar_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Jaguar_Plt_D" } },
+    .{ .name = 121, .side = .friendly, .films = .{ "Jaguar_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Jaguar_Plt_D" }, .voice = .rus },
     // 44
-    .{ .name = 71, .side = .friendly, .films = .{ "KestrlCmmnd_Comms", "45Tigers_Plt_L", "45Tigers_Plt", "KestrlCmmnd_Comms_D" } },
+    .{ .name = 71, .side = .friendly, .films = .{ "KestrlCmmnd_Comms", "45Tigers_Plt_L", "45Tigers_Plt", "KestrlCmmnd_Comms_D" }, .voice = .rus },
     // 45
-    .{ .name = 68, .side = .friendly, .films = .{ "Koenig_Brdge_off", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 68, .side = .friendly, .films = .{ "Koenig_Brdge_off", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus },
     // 46
-    .{ .name = 68, .side = .friendly, .films = .{ "Kstrl_Brge_Off", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 68, .side = .friendly, .films = .{ "Kstrl_Brge_Off", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus },
     // 47
-    .{ .name = 670, .side = .friendly, .films = .{ "kurgen_pil", "45Tigers_Plt_L", "45Tigers_Plt", "C_Kurgen_Plt_D" } },
+    .{ .name = 670, .side = .friendly, .films = .{ "kurgen_pil", "45Tigers_Plt_L", "45Tigers_Plt", "C_Kurgen_Plt_D" }, .voice = .rus },
     // 48
-    .{ .name = 165, .side = .friendly, .films = .{ "Lonestar_Plt", "Lonestar_Plt_L", "45Tigers_Plt", "Lonestar_Plt_D" } },
+    .{ .name = 165, .side = .friendly, .films = .{ "Lonestar_Plt", "Lonestar_Plt_L", "45Tigers_Plt", "Lonestar_Plt_D" }, .voice = .rus },
     // 49
-    .{ .name = 119, .side = .friendly, .films = .{ "Mauler_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Mauler_Plt_D" } },
+    .{ .name = 119, .side = .friendly, .films = .{ "Mauler_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Mauler_Plt_D" }, .voice = .rus },
     // 50
-    .{ .name = 140, .side = .friendly, .films = .{ "MCGANNNO", "MCGALOOK", "45Tigers_Plt", "MCGDEATH" } },
+    .{ .name = 140, .side = .friendly, .films = .{ "MCGANNNO", "MCGALOOK", "45Tigers_Plt", "MCGDEATH" }, .voice = .rus },
     // 51
-    .{ .name = 68, .side = .friendly, .films = .{ "Mitchel_Brdge_Off", "45Tigers_Plt_L", "45Tigers_Plt", "Mtchel_Brdge_Off_D" } },
+    .{ .name = 68, .side = .friendly, .films = .{ "Mitchel_Brdge_Off", "45Tigers_Plt_L", "45Tigers_Plt", "Mtchel_Brdge_Off_D" }, .voice = .rus },
     // 52
-    .{ .name = 164, .side = .friendly, .films = .{ "Nanny_Ldr", "Nanny_Ldr_L", "45Tigers_Plt", "Nanny_Ldr_D" } },
+    .{ .name = 164, .side = .friendly, .films = .{ "Nanny_Ldr", "Nanny_Ldr_L", "45Tigers_Plt", "Nanny_Ldr_D" }, .voice = .rus },
     // 53
-    .{ .name = 104, .side = .friendly, .films = .{ "PirateWL_Plt", "PirateWL_Plt_L", "45Tigers_Plt", "PirateWL_Plt_D" } },
+    .{ .name = 104, .side = .friendly, .films = .{ "PirateWL_Plt", "PirateWL_Plt_L", "45Tigers_Plt", "PirateWL_Plt_D" }, .voice = .rus },
     // 54
-    .{ .name = 103, .side = .friendly, .films = .{ "Pirate_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Pirate_Plt_D" } },
+    .{ .name = 103, .side = .friendly, .films = .{ "Pirate_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Pirate_Plt_D" }, .voice = .rus },
     // 55
-    .{ .name = 98, .side = .friendly, .films = .{ "Prowler_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Prowler_Plt_D" } },
+    .{ .name = 98, .side = .friendly, .films = .{ "Prowler_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Prowler_Plt_D" }, .voice = .rus },
     // 56
-    .{ .name = 672, .side = .friendly, .films = .{ "Pukov_Cap", "45Tigers_Plt_L", "45Tigers_Plt", "Pukov_Cap_D" } },
+    .{ .name = 672, .side = .friendly, .films = .{ "Pukov_Cap", "45Tigers_Plt_L", "45Tigers_Plt", "Pukov_Cap_D" }, .voice = .rus },
     // 57
-    .{ .name = 673, .side = .friendly, .films = .{ "PumaWL_Plt", "PumaWL_Plt_L", "45Tigers_Plt", "PumaWL_Plt_D" } },
+    .{ .name = 673, .side = .friendly, .films = .{ "PumaWL_Plt", "PumaWL_Plt_L", "45Tigers_Plt", "PumaWL_Plt_D" }, .voice = .rus },
     // 58
-    .{ .name = 114, .side = .friendly, .films = .{ "Puma_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Puma_Plt_D" } },
+    .{ .name = 114, .side = .friendly, .films = .{ "Puma_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Puma_Plt_D" }, .voice = .rus },
     // 59
-    .{ .name = 85, .side = .friendly, .films = .{ "Raven_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Raven_Plt_D" } },
+    .{ .name = 85, .side = .friendly, .films = .{ "Raven_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Raven_Plt_D" }, .voice = .rus },
     // 60
-    .{ .name = 68, .side = .friendly, .films = .{ "Rel_Brdge_Off", "45Tigers_Plt_L", "45Tigers_Plt", "Rel_Brdge_Off_D" } },
+    .{ .name = 68, .side = .friendly, .films = .{ "Rel_Brdge_Off", "45Tigers_Plt_L", "45Tigers_Plt", "Rel_Brdge_Off_D" }, .voice = .rus },
     // 61
-    .{ .name = 674, .side = .friendly, .films = .{ "Ripper_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Ripper_Plt_D" } },
+    .{ .name = 674, .side = .friendly, .films = .{ "Ripper_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Ripper_Plt_D" }, .voice = .rus },
     // 62
-    .{ .name = 30, .side = .friendly, .films = .{ "RoninWL_Plt", "RoninWL_Plt_L", "45Tigers_Plt", "RoninWL_Plt_D" } },
+    .{ .name = 30, .side = .friendly, .films = .{ "RoninWL_Plt", "RoninWL_Plt_L", "45Tigers_Plt", "RoninWL_Plt_D" }, .voice = .rus },
     // 63
-    .{ .name = 108, .side = .friendly, .films = .{ "Ronin_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Ronin_Plt_D" } },
+    .{ .name = 108, .side = .friendly, .films = .{ "Ronin_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Ronin_Plt_D" }, .voice = .rus },
     // 64
-    .{ .name = 675, .side = .friendly, .films = .{ "RUSSBOMB", "45Tigers_Plt_L", "45Tigers_Plt", "C_TorpWL_Plt_D" } },
+    .{ .name = 675, .side = .friendly, .films = .{ "RUSSBOMB", "45Tigers_Plt_L", "45Tigers_Plt", "C_TorpWL_Plt_D" }, .voice = .rus },
     // 65
-    .{ .name = 82, .side = .friendly, .films = .{ "SabreWL_plt_", "45Tigers_Plt_L", "45Tigers_Plt", "SabreWL_Plt_D" } },
+    .{ .name = 82, .side = .friendly, .films = .{ "SabreWL_plt_", "45Tigers_Plt_L", "45Tigers_Plt", "SabreWL_Plt_D" }, .voice = .rus },
     // 66
-    .{ .name = 81, .side = .friendly, .films = .{ "Sabre_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Sabre_Plt_D" } },
+    .{ .name = 81, .side = .friendly, .films = .{ "Sabre_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Sabre_Plt_D" }, .voice = .rus },
     // 67
-    .{ .name = 78, .side = .friendly, .films = .{ "Saracen_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Saracen_Plt_D" } },
+    .{ .name = 78, .side = .friendly, .films = .{ "Saracen_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Saracen_Plt_D" }, .voice = .rus },
     // 68
-    .{ .name = 80, .side = .friendly, .films = .{ "ScorpionWL_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "ScorpionWL_Plt_D" } },
+    .{ .name = 80, .side = .friendly, .films = .{ "ScorpionWL_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "ScorpionWL_Plt_D" }, .voice = .rus },
     // 69
-    .{ .name = 79, .side = .friendly, .films = .{ "Scorpion_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Scorpion_Plt_D" } },
+    .{ .name = 79, .side = .friendly, .films = .{ "Scorpion_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Scorpion_Plt_D" }, .voice = .rus },
     // 70
-    .{ .name = 89, .side = .friendly, .films = .{ "sladin_cap_normal", "45Tigers_Plt_L", "45Tigers_Plt", "Saladin_Cap_D" } },
+    .{ .name = 89, .side = .friendly, .films = .{ "sladin_cap_normal", "45Tigers_Plt_L", "45Tigers_Plt", "Saladin_Cap_D" }, .voice = .rus },
     // 71
-    .{ .name = 133, .side = .friendly, .films = .{ "Stahl_BrdShip", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 133, .side = .friendly, .films = .{ "Stahl_BrdShip", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus },
     // 72
-    .{ .name = 132, .side = .friendly, .films = .{ "Stahl_Marines", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 132, .side = .friendly, .films = .{ "Stahl_Marines", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus },
     // 73
-    .{ .name = 135, .side = .friendly, .films = .{ "Stiener_Ejected", "45Tigers_Plt_L", "45Tigers_Plt", "Stiener_Ejected_D" } },
+    .{ .name = 135, .side = .friendly, .films = .{ "Stiener_Ejected", "45Tigers_Plt_L", "45Tigers_Plt", "Stiener_Ejected_D" }, .voice = .rus },
     // 74
-    .{ .name = 125, .side = .friendly, .films = .{ "Stinger_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Stinger_Plt_D" } },
+    .{ .name = 125, .side = .friendly, .films = .{ "Stinger_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Stinger_Plt_D" }, .voice = .rus },
     // 75
-    .{ .name = 676, .side = .friendly, .films = .{ "Stork_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Stork_Plt_D" } },
+    .{ .name = 676, .side = .friendly, .films = .{ "Stork_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Stork_Plt_D" }, .voice = .rus },
     // 76
-    .{ .name = 236, .side = .friendly, .films = .{ "Ullys_Capt", "45Tigers_Plt_L", "45Tigers_Plt", "Ullys_Capt_Panic" } },
+    .{ .name = 236, .side = .friendly, .films = .{ "Ullys_Capt", "45Tigers_Plt_L", "45Tigers_Plt", "Ullys_Capt_Panic" }, .voice = .rus },
     // 77
-    .{ .name = 236, .side = .friendly, .films = .{ "ullys_capt_panic", "45Tigers_Plt_L", "45Tigers_Plt", "ullys_capt_panic" } },
+    .{ .name = 236, .side = .friendly, .films = .{ "ullys_capt_panic", "45Tigers_Plt_L", "45Tigers_Plt", "ullys_capt_panic" }, .voice = .rus },
     // 78
-    .{ .name = 135, .side = .friendly, .films = .{ "VampireWL_Stiener", "VampireWL_Stiener_L", "45Tigers_Plt", "VampireWL_Stiener_D" } },
+    .{ .name = 135, .side = .friendly, .films = .{ "VampireWL_Stiener", "VampireWL_Stiener_L", "45Tigers_Plt", "VampireWL_Stiener_D" }, .voice = .rus },
     // 79
-    .{ .name = 107, .side = .friendly, .films = .{ "Vampire_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Vampire_Plt_D" } },
+    .{ .name = 107, .side = .friendly, .films = .{ "Vampire_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Vampire_Plt_D" }, .voice = .rus },
     // 80
-    .{ .name = 88, .side = .friendly, .films = .{ "Varygag_Capt", "45Tigers_Plt_L", "45Tigers_Plt", "Varygag_Capt_D" } },
+    .{ .name = 88, .side = .friendly, .films = .{ "Varygag_Capt", "45Tigers_Plt_L", "45Tigers_Plt", "Varygag_Capt_D" }, .voice = .rus },
     // 81
-    .{ .name = 68, .side = .friendly, .films = .{ "Victorious_Brdge_Off", "45Tigers_Plt_L", "45Tigers_Plt", "Victorious_Brdge_Off_D" } },
+    .{ .name = 68, .side = .friendly, .films = .{ "Victorious_Brdge_Off", "45Tigers_Plt_L", "45Tigers_Plt", "Victorious_Brdge_Off_D" }, .voice = .rus },
     // 82
-    .{ .name = 256, .side = .friendly, .films = .{ "VirtFlt_Ins", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 256, .side = .friendly, .films = .{ "VirtFlt_Ins", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus },
     // 83
-    .{ .name = 68, .side = .friendly, .films = .{ "Washngtn_Brdge_Off", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 68, .side = .friendly, .films = .{ "Washngtn_Brdge_Off", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus },
     // 84
-    .{ .name = 68, .side = .friendly, .films = .{ "Yam_Brdge_Off", "45Tigers_Plt_L", "45Tigers_Plt", "Yam_Brdge_Off_D" } },
+    .{ .name = 68, .side = .friendly, .films = .{ "Yam_Brdge_Off", "45Tigers_Plt_L", "45Tigers_Plt", "Yam_Brdge_Off_D" }, .voice = .rus },
     // 85
-    .{ .name = 32, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 32, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .fre },
     // 86
-    .{ .name = 34, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 34, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .sil },
     // 87
-    .{ .name = 35, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 35, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .tak },
     // 88
-    .{ .name = 36, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 36, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .jor },
     // 89
-    .{ .name = 38, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 38, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .vix },
     // 90
-    .{ .name = 39, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 39, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .cut },
     // 91
-    .{ .name = 40, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 40, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .cla },
     // 92
-    .{ .name = 41, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 41, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .ski },
     // 93
-    .{ .name = 42, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 42, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .jui },
     // 94
-    .{ .name = 43, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 43, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .fac },
     // 95
-    .{ .name = 44, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 44, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .haw },
     // 96
-    .{ .name = 45, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 45, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .arr },
     // 97
-    .{ .name = 46, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 46, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .ner },
     // 98
-    .{ .name = 47, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 47, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .rhi },
     // 99
-    .{ .name = 48, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 48, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .sta },
     // 100
-    .{ .name = 49, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 49, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .fla },
     // 101
-    .{ .name = 50, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 50, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus },
     // 102
-    .{ .name = 51, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 51, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .sil },
     // 103
-    .{ .name = 52, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 52, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .jor },
     // 104
-    .{ .name = 53, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 53, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .cut },
     // 105
-    .{ .name = 54, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 54, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .rhi },
     // 106
-    .{ .name = 55, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 55, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus },
     // 107
-    .{ .name = 56, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 56, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .ner },
     // 108
-    .{ .name = 57, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 57, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .wor },
     // 109
-    .{ .name = 58, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 58, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .sil },
     // 110
-    .{ .name = 59, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 59, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .vix },
     // 111
-    .{ .name = 60, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 60, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .ner },
     // 112
-    .{ .name = 61, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 61, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .sta },
     // 113
-    .{ .name = 62, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 62, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .fre },
     // 114
-    .{ .name = 63, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 63, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .rhi },
     // 115
-    .{ .name = 64, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 64, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .jui },
     // 116
-    .{ .name = 65, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 65, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .ego },
     // 117
-    .{ .name = 66, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 66, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .fla },
     // 118
-    .{ .name = 67, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 67, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .sta },
     // 119
-    .{ .name = 677, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 677, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .ego },
     // 120
-    .{ .name = 37, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 37, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .dic },
     // 121
-    .{ .name = 681, .side = .friendly, .films = .{ "Capt_Mukai", "45Tigers_Plt_L", "45Tigers_Plt", "Capt_Mukai_D" } },
+    .{ .name = 681, .side = .friendly, .films = .{ "Capt_Mukai", "45Tigers_Plt_L", "45Tigers_Plt", "Capt_Mukai_D" }, .voice = .rus },
     // 122
-    .{ .name = 666, .side = .friendly, .films = .{ "Cat_foster_prwlr", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 666, .side = .friendly, .films = .{ "Cat_foster_prwlr", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus },
     // 123
-    .{ .name = 682, .side = .friendly, .films = .{ "C_TorpWL_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "C_TorpWL_Plt_D" } },
+    .{ .name = 682, .side = .friendly, .films = .{ "C_TorpWL_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "C_TorpWL_Plt_D" }, .voice = .rus },
     // 124
-    .{ .name = 1262, .side = .friendly, .films = .{ "Gen_Reese_Pod", "45Tigers_Plt_L", "45Tigers_Plt", "Gen_Reese_Pod_D" } },
+    .{ .name = 1262, .side = .friendly, .films = .{ "Gen_Reese_Pod", "45Tigers_Plt_L", "45Tigers_Plt", "Gen_Reese_Pod_D" }, .voice = .rus },
     // 125
-    .{ .name = 90, .side = .friendly, .films = .{ "Kulov_Borodin", "45Tigers_Plt_L", "45Tigers_Plt", "Kulov_Borodin_D" } },
+    .{ .name = 90, .side = .friendly, .films = .{ "Kulov_Borodin", "45Tigers_Plt_L", "45Tigers_Plt", "Kulov_Borodin_D" }, .voice = .rus },
     // 126
-    .{ .name = 683, .side = .friendly, .films = .{ "Kulov_Pod", "45Tigers_Plt_L", "45Tigers_Plt", "Kulov_Pod_D" } },
+    .{ .name = 683, .side = .friendly, .films = .{ "Kulov_Pod", "45Tigers_Plt_L", "45Tigers_Plt", "Kulov_Pod_D" }, .voice = .rus },
     // 127
-    .{ .name = 684, .side = .friendly, .films = .{ "Mammoth_Plt_01", "45Tigers_Plt_L", "45Tigers_Plt", "Mammoth_Plt_01_D" } },
+    .{ .name = 684, .side = .friendly, .films = .{ "Mammoth_Plt_01", "45Tigers_Plt_L", "45Tigers_Plt", "Mammoth_Plt_01_D" }, .voice = .rus },
     // 128
-    .{ .name = 684, .side = .friendly, .films = .{ "Mammoth_Plt_02", "45Tigers_Plt_L", "45Tigers_Plt", "Mammoth_Plt_02_D" } },
+    .{ .name = 684, .side = .friendly, .films = .{ "Mammoth_Plt_02", "45Tigers_Plt_L", "45Tigers_Plt", "Mammoth_Plt_02_D" }, .voice = .rus },
     // 129
-    .{ .name = 684, .side = .friendly, .films = .{ "Mammoth_Plt_03", "45Tigers_Plt_L", "45Tigers_Plt", "Mammoth_Plt_03_d" } },
+    .{ .name = 684, .side = .friendly, .films = .{ "Mammoth_Plt_03", "45Tigers_Plt_L", "45Tigers_Plt", "Mammoth_Plt_03_d" }, .voice = .rus },
     // 130
-    .{ .name = 684, .side = .friendly, .films = .{ "Mammoth_Plt_04", "45Tigers_Plt_L", "45Tigers_Plt", "Mammoth_Plt_04_D" } },
+    .{ .name = 684, .side = .friendly, .films = .{ "Mammoth_Plt_04", "45Tigers_Plt_L", "45Tigers_Plt", "Mammoth_Plt_04_D" }, .voice = .rus },
     // 131
-    .{ .name = 685, .side = .friendly, .films = .{ "SaracenWL_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "SaracenWL_Plt_D" } },
+    .{ .name = 685, .side = .friendly, .films = .{ "SaracenWL_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "SaracenWL_Plt_D" }, .voice = .rus },
     // 132
-    .{ .name = 686, .side = .friendly, .films = .{ "Stahl_RippShip", "Stahl_RippShip_L", "45Tigers_Plt", "Stahl_RippShip_D" } },
+    .{ .name = 686, .side = .friendly, .films = .{ "Stahl_RippShip", "Stahl_RippShip_L", "45Tigers_Plt", "Stahl_RippShip_D" }, .voice = .rus },
     // 133
-    .{ .name = 77, .side = .friendly, .films = .{ "goldwarrwl_plt", "45Tigers_Plt", "45Tigers_Plt", "goldwarrwl_plt_d" } },
+    .{ .name = 77, .side = .friendly, .films = .{ "goldwarrwl_plt", "45Tigers_Plt", "45Tigers_Plt", "goldwarrwl_plt_d" }, .voice = .rus },
     // 134
-    .{ .name = 976, .side = .friendly, .films = .{ "hornetwl_plt", "hornetwl_plt_l", "45Tigers_Plt", "hornetwl_plt_d" } },
+    .{ .name = 976, .side = .friendly, .films = .{ "hornetwl_plt", "hornetwl_plt_l", "45Tigers_Plt", "hornetwl_plt_d" }, .voice = .rus },
     // 135
-    .{ .name = 684, .side = .friendly, .films = .{ "mammoth_plt_05", "45Tigers_Plt", "45Tigers_Plt", "mammoth_plt_05_d" } },
+    .{ .name = 684, .side = .friendly, .films = .{ "mammoth_plt_05", "45Tigers_Plt", "45Tigers_Plt", "mammoth_plt_05_d" }, .voice = .rus },
     // 136
-    .{ .name = 684, .side = .friendly, .films = .{ "mammoth_plt_06", "45Tigers_Plt", "45Tigers_Plt", "mammoth_plt_06_d" } },
+    .{ .name = 684, .side = .friendly, .films = .{ "mammoth_plt_06", "45Tigers_Plt", "45Tigers_Plt", "mammoth_plt_06_d" }, .voice = .rus },
     // 137
-    .{ .name = 684, .side = .friendly, .films = .{ "mammoth_plt_07", "45Tigers_Plt", "45Tigers_Plt", "mammoth_plt_07_d" } },
+    .{ .name = 684, .side = .friendly, .films = .{ "mammoth_plt_07", "45Tigers_Plt", "45Tigers_Plt", "mammoth_plt_07_d" }, .voice = .rus },
     // 138
-    .{ .name = 1277, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1277, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .jor },
     // 139
-    .{ .name = 1278, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1278, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .tak },
     // 140
-    .{ .name = 1279, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1279, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .fla },
     // 141
-    .{ .name = 1280, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1280, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .arr },
     // 142
-    .{ .name = 1281, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1281, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .vix },
     // 143
-    .{ .name = 1282, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1282, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .fac },
     // 144
-    .{ .name = 1283, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1283, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .jor },
     // 145
-    .{ .name = 1284, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1284, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .fre },
     // 146
-    .{ .name = 1285, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1285, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .cut },
     // 147
-    .{ .name = 1287, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1287, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .jui },
     // 148
-    .{ .name = 1288, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1288, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .ego },
     // 149
-    .{ .name = 1289, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1289, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .cla },
     // 150
-    .{ .name = 1290, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1290, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .cla },
     // 151
-    .{ .name = 1291, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1291, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .ner },
     // 152
-    .{ .name = 1292, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1292, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .cla },
     // 153
-    .{ .name = 1293, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1293, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .fac },
     // 154
-    .{ .name = 1294, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1294, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .wor },
     // 155
-    .{ .name = 1295, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1295, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .ego },
     // 156
-    .{ .name = 1296, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1296, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .jui },
     // 157
-    .{ .name = 1297, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1297, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .ski },
     // 158
-    .{ .name = 1298, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1298, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .fac },
     // 159
-    .{ .name = 1299, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1299, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .jor },
     // 160
-    .{ .name = 1300, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1300, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .cut },
     // 161
-    .{ .name = 1301, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1301, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .wor },
     // 162
-    .{ .name = 1302, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1302, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .fac },
     // 163
-    .{ .name = 1303, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1303, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .jor },
     // 164
-    .{ .name = 1304, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1304, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .ner },
     // 165
-    .{ .name = 1305, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1305, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .jui },
     // 166
-    .{ .name = 1306, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1306, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .jor },
     // 167
-    .{ .name = 1307, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1307, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .ego },
     // 168
-    .{ .name = 1308, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1308, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .ski },
     // 169
-    .{ .name = 1309, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1309, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .vix },
     // 170
-    .{ .name = 1310, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1310, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .wor },
     // 171
-    .{ .name = 1311, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1311, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus },
     // 172
-    .{ .name = 33, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 33, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus, .allied_voice = .ban },
     // 173
-    .{ .name = 1121, .side = .friendly, .films = .{ "mammoth_plt_01", "45Tigers_Plt_L", "45Tigers_Plt", "mammoth_plt_01_D" } },
+    .{ .name = 1121, .side = .friendly, .films = .{ "mammoth_plt_01", "45Tigers_Plt_L", "45Tigers_Plt", "mammoth_plt_01_D" }, .voice = .rus },
     // 174
-    .{ .name = 1122, .side = .friendly, .films = .{ "mammoth_plt_03", "45Tigers_Plt_L", "45Tigers_Plt", "mammoth_plt_03_D" } },
+    .{ .name = 1122, .side = .friendly, .films = .{ "mammoth_plt_03", "45Tigers_Plt_L", "45Tigers_Plt", "mammoth_plt_03_D" }, .voice = .rus },
     // 175
-    .{ .name = 1123, .side = .friendly, .films = .{ "mammoth_plt_02", "45Tigers_Plt_L", "45Tigers_Plt", "mammoth_plt_02_D" } },
+    .{ .name = 1123, .side = .friendly, .films = .{ "mammoth_plt_02", "45Tigers_Plt_L", "45Tigers_Plt", "mammoth_plt_02_D" }, .voice = .rus },
     // 176
-    .{ .name = 1124, .side = .friendly, .films = .{ "mammoth_plt_05", "45Tigers_Plt_L", "45Tigers_Plt", "mammoth_plt_05_D" } },
+    .{ .name = 1124, .side = .friendly, .films = .{ "mammoth_plt_05", "45Tigers_Plt_L", "45Tigers_Plt", "mammoth_plt_05_D" }, .voice = .rus },
     // 177
-    .{ .name = 1125, .side = .friendly, .films = .{ "mammoth_plt_07", "45Tigers_Plt_L", "45Tigers_Plt", "mammoth_plt_07_D" } },
+    .{ .name = 1125, .side = .friendly, .films = .{ "mammoth_plt_07", "45Tigers_Plt_L", "45Tigers_Plt", "mammoth_plt_07_D" }, .voice = .rus },
     // 178
-    .{ .name = 1126, .side = .friendly, .films = .{ "mammoth_plt_06", "45Tigers_Plt_L", "45Tigers_Plt", "mammoth_plt_06_D" } },
+    .{ .name = 1126, .side = .friendly, .films = .{ "mammoth_plt_06", "45Tigers_Plt_L", "45Tigers_Plt", "mammoth_plt_06_D" }, .voice = .rus },
     // 179
-    .{ .name = 1127, .side = .friendly, .films = .{ "mammoth_plt_01", "45Tigers_Plt_L", "45Tigers_Plt", "mammoth_plt_01_D" } },
+    .{ .name = 1127, .side = .friendly, .films = .{ "mammoth_plt_01", "45Tigers_Plt_L", "45Tigers_Plt", "mammoth_plt_01_D" }, .voice = .rus },
     // 180
-    .{ .name = 1128, .side = .friendly, .films = .{ "mammoth_plt_02", "45Tigers_Plt_L", "45Tigers_Plt", "mammoth_plt_02_D" } },
+    .{ .name = 1128, .side = .friendly, .films = .{ "mammoth_plt_02", "45Tigers_Plt_L", "45Tigers_Plt", "mammoth_plt_02_D" }, .voice = .rus },
     // 181
-    .{ .name = 1129, .side = .friendly, .films = .{ "mammoth_plt_07", "45Tigers_Plt_L", "45Tigers_Plt", "mammoth_plt_07_D" } },
+    .{ .name = 1129, .side = .friendly, .films = .{ "mammoth_plt_07", "45Tigers_Plt_L", "45Tigers_Plt", "mammoth_plt_07_D" }, .voice = .rus },
     // 182
-    .{ .name = 1130, .side = .friendly, .films = .{ "mammoth_plt_05", "45Tigers_Plt_L", "45Tigers_Plt", "mammoth_plt_05_D" } },
+    .{ .name = 1130, .side = .friendly, .films = .{ "mammoth_plt_05", "45Tigers_Plt_L", "45Tigers_Plt", "mammoth_plt_05_D" }, .voice = .rus },
     // 183
-    .{ .name = 1131, .side = .friendly, .films = .{ "mammoth_plt_01", "45Tigers_Plt_L", "45Tigers_Plt", "mammoth_plt_01_D" } },
+    .{ .name = 1131, .side = .friendly, .films = .{ "mammoth_plt_01", "45Tigers_Plt_L", "45Tigers_Plt", "mammoth_plt_01_D" }, .voice = .rus },
     // 184
-    .{ .name = 1286, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" } },
+    .{ .name = 1286, .side = .friendly, .films = .{ "45Tigers_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "45Tigers_Plt_D" }, .voice = .rus },
     // 185
-    .{ .name = 667, .side = .friendly, .films = .{ "COB", "45Tigers_Plt_L", "45Tigers_Plt", "Cobra_Plt_D" } },
+    .{ .name = 667, .side = .friendly, .films = .{ "COB", "45Tigers_Plt_L", "45Tigers_Plt", "Cobra_Plt_D" }, .voice = @enumFromInt(0), .allied_voice = .wor },
     // 186
-    .{ .name = 124, .side = .friendly, .films = .{ "MarauderWL_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "MarauderWL_Plt_d" } },
+    .{ .name = 124, .side = .friendly, .films = .{ "MarauderWL_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "MarauderWL_Plt_d" }, .voice = @enumFromInt(0) },
     // 187
-    .{ .name = 123, .side = .friendly, .films = .{ "Marauders_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Marauders_Plt_D" } },
+    .{ .name = 123, .side = .friendly, .films = .{ "Marauders_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "Marauders_Plt_D" }, .voice = @enumFromInt(0) },
     // 188
-    .{ .name = 1366, .side = .friendly, .films = .{ "Marine_Leader", "45Tigers_Plt_L", "45Tigers_Plt", "Marauders_Plt_D" } },
+    .{ .name = 1366, .side = .friendly, .films = .{ "Marine_Leader", "45Tigers_Plt_L", "45Tigers_Plt", "Marauders_Plt_D" }, .voice = @enumFromInt(0) },
     // 189
-    .{ .name = 137, .side = .friendly, .films = .{ "Marine_Combat", "45Tigers_Plt_L", "45Tigers_Plt", "Marauders_Plt_D" } },
+    .{ .name = 137, .side = .friendly, .films = .{ "Marine_Combat", "45Tigers_Plt_L", "45Tigers_Plt", "Marauders_Plt_D" }, .voice = @enumFromInt(0) },
     // 190
-    .{ .name = 122, .side = .friendly, .films = .{ "JaguarWL_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "JaguarWL_Plt_D" } },
+    .{ .name = 122, .side = .friendly, .films = .{ "JaguarWL_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "JaguarWL_Plt_D" }, .voice = @enumFromInt(0) },
     // 191
-    .{ .name = 1367, .side = .friendly, .films = .{ "BuccnrsWL_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "BUCCDETH" } },
+    .{ .name = 1367, .side = .friendly, .films = .{ "BuccnrsWL_Plt", "45Tigers_Plt_L", "45Tigers_Plt", "BUCCDETH" }, .voice = @enumFromInt(0) },
     // 192
-    .{ .name = 1261, .side = .friendly, .films = .{ "Pukov_Cap", "45Tigers_Plt_L", "45Tigers_Plt", "Pukov_Cap_D" } },
+    .{ .name = 1261, .side = .friendly, .films = .{ "Pukov_Cap", "45Tigers_Plt_L", "45Tigers_Plt", "Pukov_Cap_D" }, .voice = .rus },
     // 193
-    .{ .name = 1450, .side = .friendly, .films = .{ "Mammoth_Plt_01", "45Tigers_Plt_L", "45Tigers_Plt", "Mammoth_Plt_01_D" } },
+    .{ .name = 1450, .side = .friendly, .films = .{ "Mammoth_Plt_01", "45Tigers_Plt_L", "45Tigers_Plt", "Mammoth_Plt_01_D" }, .voice = .rus },
 };

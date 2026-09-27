@@ -297,18 +297,6 @@ fn setRescueProbabilities(call: Call) u32 {
     return 1;
 }
 
-/// The radio and what it reaches as a line is said, where the game has a radio and is heard.
-fn onAir(game: aigeneric.Context) ?struct { *videoreports.Radio, videoreports.Context } {
-    const radio = game.world.radio orelse return null;
-    const hearing = game.world.hearing orelse return null;
-    return .{ radio, .{
-        .sound = hearing.sound,
-        .windows = if (game.world.display) |display| &display.windows else null,
-        .all = game.world.objects,
-        .frame_start = game.world.clock.frame_start,
-    } };
-}
-
 /// How far back a wait for the radio runs again: over itself.
 const radio_wait_back = 2;
 
@@ -317,7 +305,7 @@ const radio_wait_back = 2;
 /// (`videoreports.Radio.playSpeech`).
 fn playSpeech(call: Call) u32 {
     const game = call.machine.game orelse return 1;
-    const radio, const ctx = onAir(game) orelse return 1;
+    const radio, const ctx = videoreports.onAir(game.world) orelse return 1;
     const name = call.machine.text(call.args[0]) catch return 1;
     radio.playSpeech(ctx.sound, name);
     return 1;
@@ -327,7 +315,7 @@ fn playSpeech(call: Call) u32 {
 /// (`videoreports.Radio.speaking`), running the command again each time.
 fn waitForSpeech(call: Call) u32 {
     const game = call.machine.game orelse return 1;
-    const radio, const ctx = onAir(game) orelse return 1;
+    const radio, const ctx = videoreports.onAir(game.world) orelse return 1;
     return if (radio.speaking(ctx.sound)) call.again(radio_wait_back) else 1;
 }
 
@@ -344,7 +332,7 @@ const comms_movie_path_size = 52;
 fn playCommsMovie(call: Call) u32 {
     const machine = call.machine;
     const game = machine.game orelse return 1;
-    const radio, const ctx = onAir(game) orelse return 1;
+    const radio, const ctx = videoreports.onAir(game.world) orelse return 1;
     const film = machine.text(call.args[0]) catch return 1;
     const speech = machine.text(call.args[1]) catch return 1;
     var buffer: [comms_movie_path_size]u8 = undefined;
@@ -474,7 +462,7 @@ fn commsFromShip(comptime flags: hudmovie.Flags) vm.Implementation {
         fn run(call: Call) u32 {
             const machine = call.machine;
             const game = machine.game orelse return 0;
-            const radio, const ctx = onAir(game) orelse return 0;
+            const radio, const ctx = videoreports.onAir(game.world) orelse return 0;
             const ship = shipSlot(machine, ctx.all, call.args[0]) orelse return 0;
             const name = machine.text(call.args[2]) catch return 0;
             radio.sayShip(ctx, ship, @enumFromInt(call.args[1]), name, .now, flags, videoreports.no_expiry);
@@ -491,7 +479,7 @@ fn commsFromPilot(comptime flags: hudmovie.Flags) vm.Implementation {
         fn run(call: Call) u32 {
             const machine = call.machine;
             const game = machine.game orelse return 0;
-            const radio, const ctx = onAir(game) orelse return 0;
+            const radio, const ctx = videoreports.onAir(game.world) orelse return 0;
             const name = machine.text(call.args[2]) catch return 0;
             radio.sayPilot(ctx, @truncate(call.args[0]), @enumFromInt(call.args[1]), name, .now, flags, videoreports.no_expiry);
             return 0;
@@ -505,18 +493,18 @@ fn halfwordSet(argument: u32) bool {
 }
 
 /// `cmd_DisableTaunts` (`0x00458F40`, command `0x27`): the enemy's taunts on the radio stop, or go
-/// on again (`input.Player.taunts_disabled`).
+/// on again (`videoreports.Remarks.taunts_disabled`).
 fn disableTaunts(call: Call) u32 {
     const game = call.machine.game orelse return 1;
-    game.world.player.taunts_disabled = halfwordSet(call.args[0]);
+    game.world.player.remarks.taunts_disabled = halfwordSet(call.args[0]);
     return 1;
 }
 
 /// `cmd_DisableGenericComms` (`0x004591F0`, command `0x2E`): the remarks the radio makes by itself
-/// stop, or go on again (`input.Player.generic_comms_disabled`).
+/// stop, or go on again (`videoreports.Remarks.generic_comms_disabled`).
 fn disableGenericComms(call: Call) u32 {
     const game = call.machine.game orelse return 1;
-    game.world.player.generic_comms_disabled = halfwordSet(call.args[0]);
+    game.world.player.remarks.generic_comms_disabled = halfwordSet(call.args[0]);
     return 1;
 }
 
@@ -1352,7 +1340,7 @@ test "the commands that set ships, the radio, the display and the space" {
     // Outside missions 30 to 35 the player's ship is not reached.
     try std.testing.expectEqual(.none, all.slots[0].object.invulnerable);
     try std.testing.expectEqual(.full, all.slots[2].object.invulnerable);
-    try std.testing.expect(world.player.taunts_disabled and world.player.generic_comms_disabled);
+    try std.testing.expect(world.player.remarks.taunts_disabled and world.player.remarks.generic_comms_disabled);
     try std.testing.expect(display.windows.up(.objectives));
     try std.testing.expect(display.windows.status.get(.objectives).held);
     try std.testing.expectEqual(.current, display.objectives.states[1]);

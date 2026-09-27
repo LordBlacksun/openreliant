@@ -27,6 +27,7 @@ const events = @import("mission/events.zig");
 const gameobj = @import("gameobj.zig");
 const objects = @import("objects.zig");
 const srofiles = @import("srofiles.zig");
+const videoreports = @import("videoreports.zig");
 const xtrabits = @import("xtrabits.zig");
 
 pub const reliant = @import("launch/reliant.zig");
@@ -229,10 +230,8 @@ pub fn init(ctx: aigeneric.Context, index: u16) void {
 /// Before its style's steps, a carrier gone, a stand-in or exploding, ends the ship with it
 /// (`ai.objectDestroyed`), save an escape pod leaving the Ulysses as it is lost. Once StartLaunch
 /// has it go (`Data.go`), the launch waits a random moment of up to `most_delay` ticks, drawn from
-/// the ship's own numbers (`xtrabits.objectRandom15`), then its style runs it from step 2.
-///
-/// Not ported: for the player's ship, the radio's line as the launch goes (`0x00456E50`), which is
-/// the comms' ([#48](https://github.com/vdmkenny/openreliant/issues/48)).
+/// the ship's own numbers (`xtrabits.objectRandom15`), then its style runs it from step 2. As the
+/// player's launch goes, the radio has its words (`videoreports.launchLine`).
 ///
 /// **Fix:** the game reads the carrier of a Launch aimed at nothing from before its objects, with
 /// the assertion "Launch Crash Imminent"; OpenReliant lets the ship go (`letGo`).
@@ -252,6 +251,7 @@ pub fn update(ctx: aigeneric.Context, index: u16) void {
         }
         if (entry.data.launch.go and state.step == .waiting) {
             state.advance(.delaying, now, @intCast(xtrabits.objectRandom15(&slot.object) % most_delay));
+            if (index == all.player) videoreports.launchLine(ctx.world, carrier);
         }
         if (state.step == .delaying and state.due < now) state.step = Step.styled;
     }

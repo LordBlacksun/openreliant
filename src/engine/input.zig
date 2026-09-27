@@ -1016,13 +1016,9 @@ pub const Player = struct {
     /// (`SetPrimaryTarget`) and PRIMARY TARGET makes the player's target; none from the mission's
     /// start (`mission_start`, `0x004935C9`).
     primary_target: ?PrimaryTarget = null,
-    /// What the radio leaves unsaid, as a mission's script asks: the enemy's taunts
-    /// (`DisableTaunts`, `0x00529CB4`), and the remarks the game makes by itself, on a kill, a ship
-    /// lost, a missile coming or a launch (`DisableGenericComms`, `0x00529538`). The radio's lines,
-    /// which read them, are not ported yet ([#48](https://github.com/vdmkenny/openreliant/issues/48)).
-    /// A mission's start leaves them as the one before set them.
-    taunts_disabled: bool = false,
-    generic_comms_disabled: bool = false,
+    /// What the radio's remarks keep, and what the mission's script has them leave unsaid, which a
+    /// mission's start clears.
+    remarks: videoreports.Remarks = .{},
     /// The mission's odds of how the pilot fares after ejecting.
     rescue_odds: @import("game/aieject.zig").RescueOdds = .{},
     /// The pilot's kills over the whole campaign.

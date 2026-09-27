@@ -33,9 +33,9 @@ queued is dropped.
 
 The pilots' table (`pilot_faces`, `0x005048D8`, 24 bytes each) holds a face for each of the 194
 pilots of `pilot_stats`, which `object_set_pilot` points an object at as its pilot record: the
-string that names the pilot, a halfword (**Unknown:** `0x53` in every record), the side, a halfword
-(**Unknown:** 5 in most, 4 or 0 in a few), and a film for each of four head movements: talking,
-laughing, the 45th's own pilot (the same film for every pilot), and dying. `radio_say_pilot`
+string that names the pilot, a halfword (**Unknown:** `0x53` in every record), the side, the voice
+the pilot speaks in flying a hostile ship ([Remarks](#remarks)), and a film for each of four head
+movements: talking, laughing, the 45th's own pilot (the same film for every pilot), and dying. `radio_say_pilot`
 (`0x00456250`) says a line for a pilot of the table, as `0xFFFF` and its number; `radio_say_ship`
 (`0x004561C0`) for a ship, with its pilot's face, unless the ship is a stand-in, exploding, or
 without a pilot record. Each names the film `pilots\<film>.fm8` for the head movement the line
@@ -43,8 +43,9 @@ asks for. OpenReliant generates the table from the payload (`make face-tables`).
 head past the four or a pilot past the table, which the game reads beside them, OpenReliant plays
 the dead channel's film, with no name.
 
-`radio_reset` (`0x004560F0`) empties the queue and names nobody. **Fix:** the game leaves a film
-playing into the next mission, whose first line then starts before its window has opened;
+`radio_reset` (`0x004560F0`), as `hud_init` readies a mission, empties the queue and names nobody;
+it also clears the remarks' state and the script's switches over them. **Fix:** the game leaves a
+film playing into the next mission, whose first line then starts before its window has opened;
 OpenReliant stops it.
 
 ## The window
@@ -142,8 +143,71 @@ answer 300 ticks on:
   from `_lnd_017` to `_lnd_024` for any other; refusing it, from `_lnd_den_01` to `_lnd_den_04`.
   It also writes "DEBUG: Mission is flagged as a" and the rating's name into a line nothing shows.
 
-Not ported: the reports the wingmen's keys and the radio's menu queue, and the kill remarks
+Not ported: the reports the wingmen's keys and the radio's menu queue
 ([#99](https://github.com/vdmkenny/openreliant/issues/99)).
+
+## Remarks
+
+The game has the pilots speak by themselves on the radio. Moose makes the squadron's remarks: pilot
+2 of the pilots' table, the 45th Tigers' Moose, after mission 13, and pilot 4, the 45th Volunteers',
+through it. `0x00453A50` picks a line of a table at random by `rand`. Unless it says otherwise
+below, each is said talking, the film looping (flags 5), queued (mode 1) and kept for good; mode 2
+queues it only while the radio is free.
+
+A ship's pilot speaks in its voice. `ship_line` (`0x00453710`) names the line into `0x00529CC0`:
+for a friendly ship, the pilot's number up to `0xB9` indexes a byte table (`0x004538E0`) whose
+cases start the line with one of 22 voices, `ban`, `dic`, `fre`, `vip`, `enq`, `sil`, `tak`, `jor`,
+`vix`, `cut`, `cla`, `ski`, `jui`, `fac`, `haw`, `arr`, `ner`, `rhi`, `sta`, `fla`, `wor` and
+`ego`, or with none; for a hostile ship, the face's halfword at `+0x06` does, 5 `rus`, 6 `chn` and
+7 `arb`, any other none. Every pilot of the table is `rus` but a few, of 4 or 0. A pilot with no
+voice has no line, which `radio_say` then leaves out. **Fix:** for a ship of any other side the
+game leaves the name as it was, the line it made last; OpenReliant has no line.
+
+`DisableGenericComms` leaves the remarks unsaid (`0x00529538`), but for the reminders to jump, the
+flight instructor's reminder to land and the ejection's words, and `DisableTaunts` the taunts
+(`0x00529CB4`) ([Script VM](script-vm.md)).
+
+`radio_remarks_frame` (`0x00456B90`), each frame after the reports, runs four:
+
+- `radio_landing_reminder` (`0x00456710`): unless the player's ship is landing, while the script's
+  `landing_cleared` is set and the mission goes on, the reminder runs (`0x00529878`); otherwise it
+  is over. As it begins, in a training mission, the flight instructor, pilot `0x52`, says
+  `trnprm_001` once. In any other, 4500 ticks of `frame_start` on and every 4500 after
+  (`0x00529D40`), Moose says one of `moolnd_001` to `moolnd_003`.
+- `radio_jump_reminder` (`0x00456860`): while the mission has a jump or a warp ready (`jump_ready`,
+  `warp_ready`) and goes on, the reminder runs (`0x00529874`). As it begins, the flight instructor
+  says `trnjmp_001` in training; Moose otherwise says one of `jmp_001` to `jmp_004` for a jump, or
+  of `wrp_001` to `wrp_004` for a warp alone. Outside training Moose then calls the pilot to jump
+  every 2000 game ticks (`0x00529D44`), four times (`0x00529598`), from `moo_w1001` to `moo_w1004`
+  the first time to `moo_w4001` to `moo_w4004` the fourth; 300 ticks after the fourth, the player's
+  ship jumps (`player_jump`).
+- `radio_missile_warning` (`0x00456A80`): while a missile homes on the player's ship and the ship is
+  neither exploding, ejected nor sent off, at most once in 1000 ticks of `frame_start`
+  (`0x005297E4`), Moose says one of `plck_001` to `plck_008`, mode 2, kept 500 ticks.
+- `radio_rescue` (`0x00456B10`): 1000 ticks of `frame_start` after a wingman's pilot ejects
+  (`0x00529880`), unless the pilot's pod is exploding, the pilot of the ship in the last place of
+  the player's wing (`0x00515D92`) says `res_001` to `res_003` in its voice, mode 2. **Fix:** the
+  game reads before its objects where the wing has no ship there; OpenReliant says nothing.
+
+The others answer what happens:
+
+| Remark | When | Words |
+|---|---|---|
+| `radio_kill_remark` (`0x00456BB0`) | The player's kill is credited (`explode_kill_credit`, and a hull lost from a Kurgan, an Antanov or a Gurevich) | A pilot's pod: Moose, `enmejt_001` to `enmejt_003`, mode 2. Anything else, at most once in 600 game ticks (`0x00529CB8`), then only while the radio is free: a fighter's pilot says `dth_001` to `dth_006` in its voice, dying, once (flags 6), kept 200 ticks, and Moose `plyrkl_001` to `plyrkl_009`, kept 500; a torpedo has Moose say `trpkl_001` to `trpkl_006`, mode 2, kept 500 |
+| `radio_ship_lost` (`0x00456CF0`) | A ship of the player's wing is lost, but the player's, while the radio is free | Its pilot, `dth_001` in its voice, dying, once, mode 2; then Moose, `npcdth_001` to `npcdth_004` |
+| `radio_wingman_ejected` (`0x00456D80`) | The pilot of a ship of the player's wing ejects, but the player's (`order_eject_init`) | The pilot, `ejt_001` in its voice, mode 2; the rescue waits its time |
+| `radio_enemy_taunt` (`0x00456DD0`) | A ship's shot or missile, damage of kind 0, 1 or 5, strikes the player's ship (`object_damage`, `object_armor_damage`) | A hostile ship not listing components, at most once in 2000 ticks of `frame_start` (`0x005297EC`): `tnt_001` to `tnt_013` in its voice, mode 2, unless the taunts are unsaid |
+| `radio_launch_line` (`0x00456E50`) | The player's launch goes (`order_launch`) | The flight instructor in training, `trnlch_001`; otherwise the Reliant's bridge officer, pilot `0x3C`, `relbdg_001` to `relbdg_006`, or the Yamato's, `0x54`, `yambdg_001` to `yambdg_005`, mode 2; from anything else none |
+
+`explode_kill_credit` clears the ship's exploding flag while it runs, so that the dying pilot may
+speak (`radio_say_ship` passes over an exploding ship), and puts back the flags it found.
+
+The ejection has Moose's words too ([The ejection](ejection.md)): `ejt_001` to `ejt_008` calling
+the pilot to eject, `ejt_015` or `ejt_016` as the pilot calls from the pod, and `nanpkup`,
+`antpkup` or `ejtkll` on the pilot's fate, each queued.
+
+The game's mode `0x00524FE4` 1 counts as training for the reminders and the launch's words. Not
+ported: that mode.
 
 ## Speech
 

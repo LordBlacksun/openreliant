@@ -47,6 +47,7 @@ const shockwave = @import("shockwave.zig");
 const GameObject = gameobj.GameObject;
 const libcmt = @import("../libcmt.zig");
 const main = @import("main.zig");
+const videoreports = @import("videoreports.zig");
 const xtrabits = @import("xtrabits.zig");
 
 /// What the order does, by what the object is.
@@ -358,24 +359,35 @@ fn shipInit(ctx: Context, index: u16) void {
 
 /// `explode_kill_credit` (`0x00408500`), as a ship's end begins: a kill for the player
 /// (`deathmatch.addKills`) where the player's ship struck it last and it is hostile, and a fighter
-/// by its type's class, a Kamov, a Kurgan or a Gurevich.
+/// by its type's class, a Kamov, a Kurgan or a Gurevich, which the radio remarks on
+/// (`videoreports.killRemark`); and where the ship flies in the player's wing, the radio's words on
+/// its loss (`videoreports.shipLost`). Meanwhile the ship is not marked exploding, so that its
+/// pilot may speak (`videoreports.Radio.sayShip`).
 ///
-/// Not ported: a wingman's remark on the kill (`radio_kill_remark`) and the line the loss of a
-/// ship in the player's wing draws (`radio_ship_lost`), which wait for the radio
-/// ([#48](https://github.com/vdmkenny/openreliant/issues/48)); the other players' kills in a
-/// multiplayer game; and `0x00529C6C`, which a mission's start sets and two of the radio's states
-/// set and clear, and without which it does nothing.
+/// Not ported: the other players' kills in a multiplayer game; and `0x00529C6C`, which a mission's
+/// start sets and two of the radio's states set and clear, and without which it does nothing.
 pub fn killCredit(world: gameobj.World, index: u16) void {
     const all = world.objects;
     const slot = &all.slots[index];
     const object = &slot.object;
-    if (object.last_attacker.index() != all.player or object.side != .hostile) return;
-    const fighter = if (slot.combat) |combat| combat.class == .fighter else false;
-    const credited = fighter or switch (object.type) {
+    const flags = object.flags;
+    object.flags.exploding = false;
+    defer object.flags = flags;
+    if (object.last_attacker.index() == all.player and object.side == .hostile and credited(slot)) {
+        deathmatch.addKills(world.player, all, all.player, 1);
+        videoreports.killRemark(world, index);
+    }
+    if (object.wing == .player) videoreports.shipLost(world, index);
+}
+
+/// Whether the player's kill of the ship in `slot` counts: a fighter by its type's class, a Kamov,
+/// a Kurgan or a Gurevich.
+fn credited(slot: *const create.Slot) bool {
+    if (slot.combat) |combat| if (combat.class == .fighter) return true;
+    return switch (slot.object.type) {
         .kamov, .kurgan, .gurevich => true,
         else => false,
     };
-    if (credited) deathmatch.addKills(world.player, all, all.player, 1);
 }
 
 fn movingSlowly(object: *const GameObject, flight: ?*const create.FlightModel, view: camera.View) bool {
