@@ -1882,7 +1882,7 @@ const cloak_said: Said = .{ .on = .cloak_on, .off = .cloak_off };
 ///   ship to land (`videoreports.permissionToLand`), with no sound of the display's.
 /// - TOGGLE BLINDFIRE flips blind fire on a ship that carries it, and Betty says which, with no
 ///   sound of the display's.
-/// - COMMS WINDOW opens the radio's window held, and closes it once it is open.
+/// - COMMS WINDOW opens the radio's menu, window 11, held, and closes it once it is open.
 /// - WING STATUS WINDOW closes the objectives, then opens the wing status window or, up already,
 ///   closes it; its locked form holds the window open as it opens it, without a sound of its own.
 /// - GUNNERY WINDOW opens the gunnery window and turns to the ship's next group of guns, or out of
@@ -1899,7 +1899,7 @@ const cloak_said: Said = .{ .on = .cloak_on, .off = .cloak_off };
 /// - SHIELD BALANCING held lets the stick shift the shields fore and aft, sounding as it is first
 ///   held.
 /// - RADAR RANGES moves the radar to its next range, in the view ahead with its rings still.
-/// - While the radio's window is shut, each of the power keys held puts the power at its preset
+/// - While the radio's menu is shut, each of the power keys held puts the power at its preset
 ///   and opens the power window. POWERBALL WINDOW held keeps it open and lets the stick move the
 ///   power, sounding as it is first held, and its locked form holds it open that way or closes
 ///   it, without a sound of its own.
@@ -2197,7 +2197,7 @@ test "the window keys" {
     try std.testing.expect(!object.gun_mode.all);
     slot.combat = null;
 
-    // COMMS WINDOW opens the radio's window held; while it is up the power keys do nothing.
+    // COMMS WINDOW opens the radio's menu held; while it is up the power keys do nothing.
     press.once(.comms_window);
     try std.testing.expect(windows.status.get(.comms).held);
     press.once(.full_power_to_shields);

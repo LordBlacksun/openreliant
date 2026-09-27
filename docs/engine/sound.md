@@ -208,4 +208,4 @@ cuts the peaks and plays the lines dry.
 
 The display's own sounds are in [The display's sounds](hud.md#the-displays-sounds).
 
-Not ported: the radio's speech and its double buffer; and the CD's audio.
+Not ported: the CD's audio.

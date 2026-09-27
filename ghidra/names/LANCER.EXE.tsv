@@ -1200,7 +1200,7 @@ address	kind	name	type	comment
 0048c580	function	hud_target_changed	void (void)	Follows a change of the player's target: copies it into hud_shown_target, points hud_target_object at it while it can be aimed at, and opens its form of the target display held, closing the other; with no target closes both
 00489c70	function	hud_target	void (void)	Draws the player's target in view 0. Off the screen or behind: an arrow from the middle, lines of palette 0x26 for a hostile target and 0x62 for the rest (0xB1 and 200 in software), none in the chase view, which shows chase_target_pointer instead; and a marker where a line its way leaves the screen, shapes 0x16C to 0x16F hostile or 0x170 to 0x173, with the range in font_small. On it: brackets 0x122, or 0x126 hostile, at the corners of its box as the camera sees it, dimmed by missile_lock_count; the range in font_new; and for a target that lists no components and is not friendly the lead cursor 0x12F at ai_lead_aim's point with a line toward the target, which sets hud_target_x and hud_target_y. Also marks the radio window's object (hud_comms_marker) and the nav point
 00489bc0	function	hud_pointer_direction	void __fastcall (OrderTarget *target, Vec3 *way, Vec3 *across)	The unit way across and down to a target's node in hud_object's frame, turned a half round, and that way turned a quarter round more
-0048b0f0	function	hud_comms_marker	void (void)	Draws shapes 0x12A to 0x12D at the corners of the object 0x0057BDF4 names, which the radio's window sets
+0048b0f0	function	hud_comms_marker	void (void)	While the radio's window is open or opening, draws shapes 0x12A to 0x12D at the corners of the box of the ship comms_object names, unless it is cloaked, where its middle is on the screen in front of the camera; the corners at least 15 apart either way
 00491520	function	hud_missile_lock	void (void)	Runs the player's missile lock: its state at 0x0057DFF0 (0 idle, 1 closing, 2 waiting out the lock time, 3 locked, 5 lost), missile_lock_count and the ticks from minus the lock time, and places the three lock_rings on the line from the camera to the target node; in the chase view adds chase_target_pointer and chase_nav_pointer to the scene. Its building sound (0x0057DFC0) never plays, and it ends 2D voice 0 every frame
 004aafc0	function	line_clip	void __fastcall (void *pane, int *x0, int *y0, int *x1, int *y1)	Clips a line to a pane in whole numbers, cutting an end outside back to the edge it crosses, then keeps both ends on the screen if any of the line is on the pane, which it counts at 0x005D60DC
 004a2af0	function	fonts_open	void (void)	Once: builds the remap tables text is drawn through, text_colours and the side tables among them, and opens the fonts, font_small and font_new among them
@@ -1253,6 +1253,13 @@ address	kind	name	type	comment
 00501ca8	data	radar_reach	float[3]	How far each radar range reaches: 90000, 150000 and 230000
 00501cb8	data	radar_scale	float[3]	The share of a unit of the world a radar pixel stands for at each range: a 150000th, a 230000th and a 330000th
 0057bdf4	data	comms_object	int	The object the radio's window names, whose corners hud_comms_marker marks and whose radar contact shows in palette entry 0xFD with shape 0xE6
+0057bc4c	data	radio_name	short	The string that names whoever says the line, which the radio's window shows over the face
+0056993c	data	radio_side	short	The side of whoever says the line: the radio's window opens with shapes from 0x131 for a friendly one and from 0x148 for any other
+005883cc	data	radio_speech	void *	The speech file of the line the radio said last, read from speech_hog as it is said and started with its film
+005883d0	data	script_speech	void *	The speech file PlaySpeech plays
+005297e8	data	speech_heard	short	Set as a line of speech first plays in a mission, when sound_volumes_apply sets the volumes again, alike either way; cleared by radio_reset
+005373ea	data	comms_movie_said	short	Set by PlayCommsMovie; nothing reads it
+004560f0	function	radio_reset	void (void)	Empties the radio's queue and its delayed reports, and names nobody in the window
 004cb910	function	SR_CCB_quantize_color	byte __thiscall (void *ccb, float red, float green, float blue)	The palette entry of a colour table (CCB) nearest a colour of three levels from 0 to 1
 00471b20	function	explosion_spark	void __fastcall (Vec3 *at, Vec3 *velocity, float size)	Throws a small piece of debris into the next of explosion_bits, picked as explosion_bit picks one: at, flying at velocity a second, half to one and a half times size across, tumbling up to 0.05 a frame about each axis, for -100 to 300 ticks. particle_spark's, at size 0.1
 004942b0	function	mission_end	void (void)	A mission's end: among much else it frees the smoke's templates and pools (smoke_templates), the debris models, the radar's backing, the samples, the speech and the cockpit object, and ends the sounds and the music
@@ -1531,7 +1538,7 @@ address	kind	name	type	comment
 004156b0	function	eject_free	void (void)	Frees eject_flash_template
 0051cf94	data	eject_flash_template	ParticleTemplate *	The flash of a pilot's ejection, which eject_separate bursts 100 of at the cockpit's eject point
 004156c0	function	eject_separate	void __fastcall (GameObject *object, int cockpit)	The root's child cockpit leaves the ship as the pilot's pod: the ship becomes a new object with Eject 106, tumbling, EJECT01 heard from it; the pod keeps the slot, unpowered, invulnerable, with no guns, shields or armour; a flash at the eject point, and the pod shoots out along it at 50
-00456250	function	radio_say_pilot	void __fastcall (int pilot, int head, char *speech, int mode, int flags, int expiry)	radio_say for a pilot of pilot_faces, with its film for the head movement and the pilot's number from 0xFFFF for whose the line is, outside a multiplayer mission; the ejection's lines go through it
+00456250	function	radio_say_pilot	void __fastcall (int pilot, int head, char *speech, int mode, HudmovieFlags flags, int expiry)	radio_say for a pilot of pilot_faces, with its film for the head movement and the pilot's number from 0xFFFF for whose the line is, outside a multiplayer mission; the ejection's lines go through it
 00456d80	function	radio_wingman_ejected		A wingman's call on the radio as its pilot ejects, and the rescue's word a thousand ticks later
 004598d0	function	cmd_SetRescueProbabilities		The mission's SetRescueProbabilities: sets rescue_odds_rescued, rescue_odds_captured and rescue_odds_killed
 0052a414	data	mission_over	int	Set to 1 as the camera has watched the mission's end long enough, or 270 ticks after the player's ship has landed, which ends the mission
@@ -1736,15 +1743,15 @@ address	kind	name	type	comment
 00539ad8	data	speech_streams	byte[27424]	Eight speech streams of 0xD64 bytes: the data, the sample count, a rate, the volume over 127, the loop flag, the state at +0x14, the decoder at +0x18, the frame's sample at +0xD5C and the samples played at +0xD60
 00563f18	data	speech_sample	void *	The Miles sample the speech plays on, which sound_init allocates
 00563f20	data	speech_buffers	void *[2]	The speech sample's double buffer
-004562d0	function	radio_say	void __fastcall (char *film, char *speech, int mode, short name, int flags, int object, int expiry)	Says a line outside a multiplayer mission: mode 0 at once, opening window 0 and playing the film with the speech; 1 queued; 2 queued unless the radio is busy; a full queue drops it
-004561c0	function	radio_say_ship	void __fastcall (int slot, int head, char *speech, int mode, int flags, int expiry)	radio_say for the ship in slot, unless a stand-in, exploding or without a pilot record, with the film its record names for the head movement
+004562d0	function	radio_say	void __fastcall (char *film, char *speech, int mode, short name, HudmovieFlags flags, int object, int expiry)	Says a line outside a multiplayer mission: mode 0 at once, window 0 opened held unless it is open, the speech stopped, the speaker's name, object and side kept for the window, the speech read and the film played; 1 queued; 2 queued unless the radio is busy; a full queue drops it
+004561c0	function	radio_say_ship	void __fastcall (int slot, int head, char *speech, int mode, HudmovieFlags flags, int expiry)	radio_say for the ship in slot, unless a stand-in, exploding or without a pilot record, with the film its record names for the head movement
 004561a0	function	radio_busy	bool (void)	Whether a line plays or waits in the queue
 00456510	function	radio_frame	void (void)	Each frame: while lines wait, the window is shut or open and no speech plays, the next line is taken and said unless its time has passed
 005295a0	data	radio_queue	byte[580]	The radio's five queued lines, 0x74 bytes each: the film's flags, the speaker's name, the film, the speech, whose it is and the tick it expires at
 00529594	data	radio_queue_count	short	How many lines wait in radio_queue
 00529870	data	radio_queue_write	int	Where the next line queued goes
 00529cbe	data	radio_queue_read	int	Where the next line said comes from
-005048d8	data	pilot_faces	byte[288]	The pilots' table radio_say_pilot names by number, 24 bytes each: the string that names the pilot, the side, and four films for the head movements; at least twelve
+005048d8	data	pilot_faces	PilotFace[194]	The pilots' faces, one for each pilot of pilot_stats, which object_set_pilot points an object at as pilot_record: the string that names the pilot, a halfword 0x53, the side, a halfword, and the films of its face for the four head movements, talking, laughing, the 45th's own pilot and dying
 004a6520	function	talkie_unpack_vectors	void __fastcall (int *out, byte *packed, int count, int bits)	Unpacks count numbers of bits each from packed, least significant bit first, sign-extending from the top bit: a delta frame's motion vectors, 10 bits a part (talkie.zig)
 004a6590	function	talkie_patterns	void __fastcall (byte *patterns, byte *blocks, int count)	Draws count blocks of four colours, 8 bytes each, four palette entries and two bits a pixel from the last, into 16 pixels each
 004a66a0	function	talkie_frame	void * __fastcall (TalkieState *state, byte *chunk)	Decodes a chunk of a face film, fLED a delta frame and fYEK a key frame, frees it, and returns the frame decoded
@@ -1759,7 +1766,7 @@ address	kind	name	type	comment
 004c7dc0	function	read_le_bytes	uint __fastcall (byte *bytes, int count)	The first count bytes as a little-endian number
 0048d030	function	hudmovie_init	void (void)	Once: the face film's decoder, its timer at 15 a second, and pilots.hog opened, which is fatal to fail
 0048d0c0	function	hudmovie_shutdown	void (void)	Ends the film's timer, frees its frame and decoder, and closes pilots.hog
-0048d120	function	hudmovie_play	int __fastcall (char *film, uint flags)	Plays a face film by name from pilots.hog, the 45th Volunteers' version from mission 14 on, its first chunk decoded into the window's frame, the speech started unless flags bit 3; bit 0 loops it, bit 1 holds it while the speech plays, bit 2 takes its palette
+0048d120	function	hudmovie_play	int __fastcall (char *film, HudmovieFlags flags)	Plays a face film by name from pilots.hog, the 45th Volunteers' films up to mission 13 and the 45th Tigers' from mission 14 on, its first chunk decoded into the window's frame. With a film playing already, the speech starts at once unless flags bit 3; otherwise it waits for the window (hudmovie_waiting). Bit 0 loops the film, bit 1 holds it while the speech plays, bit 2 takes its palette. Fatal where pilots.hog lacks the film
 0048d420	function	hudmovie_stop	void (void)	Stops the film and frees its frame and decoder
 0048d460	function	hudmovie_timer	void (void)	The film's timer, 15 a second: the next chunk decoded and copied into the window's frame; at the end, the film looped or, holding for the speech, static.fm8 played once the speech is over
 0057c280	data	hudmovie_state	TalkieState *	The face film's decoder
@@ -1769,9 +1776,12 @@ address	kind	name	type	comment
 0057c284	data	hudmovie_width	int	The film's width
 0057c3b0	data	hudmovie_height	int	The film's height
 0057c3a0	data	hudmovie_frame	byte *	The frame decoded last, 4 bytes of size then the pixels
-0057c3a4	data	hudmovie_frame_new	int	Set as a frame is decoded, for the window to draw
+0057c3a4	data	hudmovie_frame_new	int	Set as a frame is decoded and cleared as the radio's window draws it; nothing reads it
 0057c3a8	data	hudmovie_playing	int	Whether a film plays
-0057c39c	data	hudmovie_flags	uint	The film's flags as hudmovie_play took them
+0057c298	data	hudmovie_waiting	int	Set while the line said with the film waits for the radio's window to open: the timer holds the film, and hud_draw starts the speech once hudmovie_waited passes 0x5B
+0057c3ac	data	hudmovie_waited	int	The ticks the line has waited for the radio's window, which hud_draw counts and the window shows as a shape from 0x131, or 0x148 for a speaker not friendly, on by one each 4
+0057c294	data	hudmovie_chunk	byte *	The film's chunk read last
+0057c39c	data	hudmovie_flags	HudmovieFlags	The film's flags as hudmovie_play took them
 0057c3b4	data	pilots_hog	void *	pilots.hog, opened by hudmovie_init
 0057c3bc	data	hudmovie_image	byte *	The window's copy of the frame, width by height pixels
 0057c3c0	data	hudmovie_timer_handle	void *	The film's timer

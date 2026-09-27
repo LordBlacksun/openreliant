@@ -8,10 +8,11 @@
 //! into place as it opens, the reverse as it closes, and in place while it is open.
 //!
 //! Ported so far: the windows' phases and times, their frames, how they open and close with the
-//! display's sounds (`hud_beep` 1 and 2), and what windows 1, 2, 3, 4, 7, 8 and 13 show
-//! ([`gunnery.zig`](gunnery.zig), [`missile_display.zig`](missile_display.zig),
-//! [`target_display.zig`](target_display.zig), [`damage.zig`](damage.zig),
-//! [`power.zig`](power.zig), [`wing_status.zig`](wing_status.zig)). Not yet: what the other
+//! display's sounds (`hud_beep` 1 and 2), and what windows 0, 1, 2, 3, 4, 7, 8 and 13 show
+//! ([`radio.zig`](radio.zig), [`gunnery.zig`](gunnery.zig),
+//! [`missile_display.zig`](missile_display.zig), [`target_display.zig`](target_display.zig),
+//! [`damage.zig`](damage.zig), [`power.zig`](power.zig), [`wing_status.zig`](wing_status.zig)).
+//! Not yet: what the other
 //! windows show, which [`hud.md`](../../../../docs/engine/hud.md) lists with the state each reads;
 //! and, in mission 25 before `0x00587CDC` is set, the gunnery, missile and wing status windows
 //! standing still and unseen.
@@ -29,8 +30,7 @@ const spr = @import("../../../formats/spr.zig");
 
 /// The windows, numbered as the game numbers their records.
 pub const Window = enum(u4) {
-    /// The face of whoever speaks on the radio, from the mission's films, with a caption; it
-    /// closes when the film ends. **Unverified:** that the pictures are the speakers'.
+    /// The radio's: the face of whoever speaks, under their name, while they speak.
     radio = 0,
     /// The guns: the ship as a wire frame, the gun or group that fires, and how.
     gunnery = 1,
@@ -186,6 +186,16 @@ pub const Windows = struct {
         windows.status.getPtr(window).left = layouts.get(window).stay;
     }
 
+    /// How the radio opens its window as it says a line (`radio_say`, `0x00456432`; `radio_frame`,
+    /// `0x00456596`): `window` held, with its full time to stay, and opening from however far it
+    /// had closed, without the display's sound.
+    pub fn hold(windows: *Windows, window: Window) void {
+        windows.renew(window);
+        const status = windows.status.getPtr(window);
+        status.phase = .opening;
+        status.held = true;
+    }
+
     /// `hud_window_close` (`0x0048B590`): starts `window` closing if it is open or opening, from
     /// its full size, however far it had opened, with the display's sound, and lets go of it. For
     /// the target display's two forms the game also keeps a picture of what they show, which they
@@ -246,7 +256,7 @@ pub const Windows = struct {
 
     /// `hud_draw`'s loop over the windows, which it runs in every view: each moves on, and in the
     /// view ahead from the cockpit is drawn over the display, with what it shows where OpenReliant
-    /// draws that.
+    /// draws that. The radio's window follows its line in every view (`hud.radio.frame`).
     pub fn frame(
         windows: *Windows,
         pen: Pen,
@@ -256,10 +266,10 @@ pub const Windows = struct {
         contents: Contents,
         scale: f32,
     ) Canvas.Error!void {
+        const ahead = hud.instrumented(last_view);
         for (std.enums.values(Window)) |window| {
             const shown = windows.step(window, frame_duration) orelse continue;
-            if (!hud.instrumented(last_view)) continue;
-            try draw(pen, screen, window, shown, windows.status.get(window).phase, contents, scale);
+            try draw(windows, pen, screen, window, shown, ahead, contents, scale);
         }
     }
 };
@@ -296,6 +306,8 @@ pub fn bufferClip(window: Window, at: [2]i32, size: f32) hud.Clip {
 
 /// What the windows show, for those OpenReliant draws the contents of.
 pub const Contents = struct {
+    /// Window 0's.
+    radio: ?hud.radio.Shown = null,
     /// Window 1's.
     gunnery: ?hud.gunnery.Shown = null,
     /// Window 2's.
@@ -383,8 +395,14 @@ pub const Canvas = struct {
 
     /// `picture` with its top left corner at `at`, cut to the window.
     pub fn image(canvas: Canvas, picture: *srtexture.Image, at: [2]i32) void {
+        canvas.imageShaken(picture, at, null);
+    }
+
+    /// `picture` with its top left corner at `at`, cut to the window, each row moved as `shake`
+    /// says where it shakes.
+    pub fn imageShaken(canvas: Canvas, picture: *srtexture.Image, at: [2]i32, shake: ?hud.Shake) void {
         const corner = canvas.inside.place(at);
-        hud.drawImage(canvas.pen.target, picture, .{ @floatFromInt(corner[0]), @floatFromInt(corner[1]) }, canvas.pen.colour, canvas.inside.size, .{ .clip = canvas.inside.clip });
+        hud.drawImage(canvas.pen.target, picture, .{ @floatFromInt(corner[0]), @floatFromInt(corner[1]) }, canvas.pen.colour, canvas.inside.size, .{ .clip = canvas.inside.clip, .shake = shake });
     }
 
     /// `words` at `at` in the display's font, aligned as `alignment` says.
@@ -419,16 +437,23 @@ test unlitRows {
     try std.testing.expectEqual(38, unlitRows(0, 38));
 }
 
-/// `hud_window_draw` (`0x00486830`): in the view ahead, each piece of the window's frame, from
-/// where its place stands, then what the window shows.
-fn draw(pen: Pen, screen: [2]u32, window: Window, shown: Shown, phase: Phase, contents: Contents, scale: f32) Canvas.Error!void {
+/// `hud_window_draw` (`0x00486830`): in the view ahead (`ahead`), each piece of the window's frame,
+/// from where its place stands, then what the window shows; the radio's window, which follows its
+/// line in every view, whatever the view.
+fn draw(windows: *Windows, pen: Pen, screen: [2]u32, window: Window, shown: Shown, ahead: bool, contents: Contents, scale: f32) Canvas.Error!void {
     const at = anchor(screen, window, shown, scale);
     const size = scale * shown.scale;
     const clip: ?hud.Clip = if (shown.buffered) bufferClip(window, at, size) else null;
     const canvas: Canvas = .{ .pen = pen, .inside = .{ .at = at, .size = size, .clip = clip } };
-    for (layouts.get(window).frame) |piece| {
+    if (ahead) for (layouts.get(window).frame) |piece| {
         try canvas.shapeWith(piece.shape, piece.offset, .{ .mirror = piece.mirror, .clip = clip, .shake = pen.shake });
+    };
+    if (window == .radio) {
+        if (contents.radio) |radio| try hud.radio.frame(radio, windows, canvas, ahead);
+        return;
     }
+    if (!ahead) return;
+    const phase = windows.status.get(window).phase;
     switch (window) {
         .gunnery => if (contents.gunnery) |gunnery| try hud.gunnery.draw(gunnery, canvas),
         .missiles => if (contents.missiles) |missiles| try hud.missile_display.draw(missiles, canvas),
@@ -497,6 +522,23 @@ test "opening a closing window only gives it its time" {
     try std.testing.expect(windows.open(.power, false));
     try std.testing.expectEqual(Phase.closing, windows.status.get(.power).phase);
     try std.testing.expectEqual(layouts.get(.power).stay, windows.status.get(.power).left);
+}
+
+test "the radio holds its window open without a sound" {
+    var windows: Windows = .{};
+    windows.hold(.radio);
+    try std.testing.expectEqual(Phase.opening, windows.status.get(.radio).phase);
+    try std.testing.expect(windows.status.get(.radio).held);
+    try std.testing.expectEqual(0, windows.beeps.slice().len);
+    // Held again as it closes, it opens again from however far it had closed.
+    _ = windows.step(.radio, opening_ticks);
+    windows.close(.radio);
+    _ = windows.step(.radio, 20);
+    windows.hold(.radio);
+    try std.testing.expectEqual(Phase.opening, windows.status.get(.radio).phase);
+    try std.testing.expectEqual(opening_ticks - 20, windows.status.get(.radio).progress);
+    for (0..10) |_| _ = windows.step(.radio, 1000);
+    try std.testing.expectEqual(Phase.open, windows.status.get(.radio).phase);
 }
 
 test "a multiplayer game refuses three windows" {
