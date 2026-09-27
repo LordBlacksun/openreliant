@@ -23,8 +23,8 @@ frame after the controls, while lines wait, the window is shut or open and no sp
 the next and says it unless its time has passed; a sixth line queued is dropped.
 
 `radio_say_pilot` (`0x00456250`) says a line for a pilot of the pilots' table (`pilot_faces`,
-`0x005048D8`, 24 bytes each: the string that names the pilot, the side, and a film for each of
-four head movements); `radio_say_ship` (`0x004561C0`) for a ship, unless it is a stand-in,
+`0x005048D8`, 24 bytes each: the string that names the pilot, the side, and a film
+([face films](../formats/fm8.md)) for each of four head movements); `radio_say_ship` (`0x004561C0`) for a ship, unless it is a stand-in,
 exploding, or without a pilot record, with the films the record names. The script's
 `CommsFromShip` and `CommsFromPilot` say a line at once, with film flags 5, and their `Once` forms
 with 6, the film not looping ([Script VM](script-vm.md#the-commands)).

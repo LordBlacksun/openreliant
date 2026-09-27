@@ -28,6 +28,7 @@ Guides for installing, configuring and playing OpenReliant:
 | [`formats/tcache.md`](formats/tcache.md) | Texture caches: every model and effect texture, their palettes and colour cubes. |
 | [`formats/fat.md`](formats/fat.md) | `.fat` sound banks. |
 | [`formats/speech.md`](formats/speech.md) | Speech files: the radio's lines, their scrambling and their codec. |
+| [`formats/fm8.md`](formats/fm8.md) | Face films: the pilots' faces the radio's window plays, their chunks and their codec. |
 | [`formats/fnt.md`](formats/fnt.md) | `.fnt` bitmap fonts. |
 | [`formats/frc.md`](formats/frc.md) | `.frc` force-feedback effects. |
 | [`formats/dte.md`](formats/dte.md) | `.DTE` missions: directory, ships, triggers, and the script VM. |

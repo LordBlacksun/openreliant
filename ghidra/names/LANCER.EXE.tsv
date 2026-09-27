@@ -1745,3 +1745,34 @@ address	kind	name	type	comment
 00529870	data	radio_queue_write	int	Where the next line queued goes
 00529cbe	data	radio_queue_read	int	Where the next line said comes from
 005048d8	data	pilot_faces	byte[288]	The pilots' table radio_say_pilot names by number, 24 bytes each: the string that names the pilot, the side, and four films for the head movements; at least twelve
+004a6520	function	talkie_unpack_vectors	void __fastcall (int *out, byte *packed, int count, int bits)	Unpacks count numbers of bits each from packed, least significant bit first, sign-extending from the top bit: a delta frame's motion vectors, 10 bits a part (talkie.zig)
+004a6590	function	talkie_patterns	void __fastcall (byte *patterns, byte *blocks, int count)	Draws count blocks of four colours, 8 bytes each, four palette entries and two bits a pixel from the last, into 16 pixels each
+004a66a0	function	talkie_frame	void * __fastcall (TalkieState *state, byte *chunk)	Decodes a chunk of a face film, fLED a delta frame and fYEK a key frame, frees it, and returns the frame decoded
+004a66f0	function	talkie_delta	bool __fastcall (TalkieState *state, byte *chunk)	A delta frame: the frames swapped, the vectors, whole blocks, patterns and map unpacked, and the frame assembled from the one before (blocks_assemble)
+004a6980	function	talkie_key	int __fastcall (TalkieState *state, byte *chunk)	A key frame: the size and palette read, the see-through colour found and the palette converted for the display, the frames and tables made, and the pixels expanded with RefPack
+004a6cc0	function	talkie_state_new	TalkieState * (void)	A face film's decoder, 0x544 bytes cleared
+004a6cf0	function	talkie_state_free	void __fastcall (TalkieState *state)	Frees a decoder and its frames and tables
+004a6d80	function	talkie_read_chunk	byte * __fastcall (FILE *file)	Reads the next chunk of a face film from the archive's stream, 8 bytes of header and its size, unscrambled; null at fDNE or the end
+004a6e30	function	talkie_unscramble	void __fastcall (byte *chunk, int size)	XORs a chunk with A3 27 B7 DD repeating, from its header's end up to 8 bytes before its end
+004be884	function	blocks_assemble	void __cdecl (uint *map, byte *previous, byte *next, int vectors, int *offsets, byte *blocks, int width, int across, int down)	Assembles a frame of 4 by 4 blocks from its map: an entry below vectors copies the block from the frame before moved by its offset, any other a block given, the entry less vectors
+004be937	function	blocks_unpack_map	void __cdecl (uint *out, byte *packed, int count, int bits)	Unpacks count entries of bits each from packed, least significant bit first: a delta frame's block map
+004c7dc0	function	read_le_bytes	uint __fastcall (byte *bytes, int count)	The first count bytes as a little-endian number
+0048d030	function	hudmovie_init	void (void)	Once: the face film's decoder, its timer at 15 a second, and pilots.hog opened, which is fatal to fail
+0048d0c0	function	hudmovie_shutdown	void (void)	Ends the film's timer, frees its frame and decoder, and closes pilots.hog
+0048d120	function	hudmovie_play	int __fastcall (char *film, uint flags)	Plays a face film by name from pilots.hog, the 45th Volunteers' version from mission 14 on, its first chunk decoded into the window's frame, the speech started unless flags bit 3; bit 0 loops it, bit 1 holds it while the speech plays, bit 2 takes its palette
+0048d420	function	hudmovie_stop	void (void)	Stops the film and frees its frame and decoder
+0048d460	function	hudmovie_timer	void (void)	The film's timer, 15 a second: the next chunk decoded and copied into the window's frame; at the end, the film looped or, holding for the speech, static.fm8 played once the speech is over
+0057c280	data	hudmovie_state	TalkieState *	The face film's decoder
+0057c290	data	hudmovie_file	FILE *	pilots.hog's stream, at the film's chunks
+0057c27c	data	hudmovie_start	int	Where the film's chunks begin in pilots.hog, to loop back to
+0057c288	data	hudmovie_frame_count	int	How many frames the film has shown
+0057c284	data	hudmovie_width	int	The film's width
+0057c3b0	data	hudmovie_height	int	The film's height
+0057c3a0	data	hudmovie_frame	byte *	The frame decoded last, 4 bytes of size then the pixels
+0057c3a4	data	hudmovie_frame_new	int	Set as a frame is decoded, for the window to draw
+0057c3a8	data	hudmovie_playing	int	Whether a film plays
+0057c39c	data	hudmovie_flags	uint	The film's flags as hudmovie_play took them
+0057c3b4	data	pilots_hog	void *	pilots.hog, opened by hudmovie_init
+0057c3bc	data	hudmovie_image	byte *	The window's copy of the frame, width by height pixels
+0057c3c0	data	hudmovie_timer_handle	void *	The film's timer
+0050276c	data	hudmovie_static	char[18]	pilots\static.fm8, the film of a dead channel, played once a line's film is over and the speech goes on

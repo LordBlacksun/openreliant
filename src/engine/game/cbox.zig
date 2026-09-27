@@ -12,6 +12,7 @@ const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.radio);
 
 const layout = @import("../../formats/layout.zig");
+const scramble = @import("../../formats/scramble.zig");
 const wave = @import("../../formats/wave.zig");
 const math = @import("../surrender/math.zig");
 const mss = @import("../mss.zig");
@@ -69,9 +70,9 @@ pub const Speech = struct {
     }
 };
 
-/// `speech_unscramble` (`0x00462000`): the stream of `bytes`, a speech file, XORed with `key` by
-/// each byte's place from the stream's start, unless the file's first bytes are `man`, which the
-/// game writes over a file's length as it unscrambles it, or `CB`. OpenReliant leaves the length.
+/// `speech_unscramble` (`0x00462000`): the stream of `bytes`, a speech file, XORed with `key`
+/// (`scramble.xor`), unless the file's first bytes are `man`, which the game writes over a file's
+/// length as it unscrambles it, or `CB`. OpenReliant leaves the length.
 ///
 /// **Fix:** the game unscrambles all but the stream's last `game_plain_tail` bytes, where the
 /// files are scrambled to their last `plain_tail`, so it reads a line's last 8 bytes scrambled,
@@ -81,7 +82,7 @@ pub fn unscramble(bytes: []u8) void {
     if (std.mem.startsWith(u8, bytes, "man") or std.mem.startsWith(u8, bytes, "CB")) return;
     const stream = bytes[@sizeOf(Header)..];
     if (stream.len <= plain_tail) return;
-    for (stream[0 .. stream.len - plain_tail], 0..) |*byte, i| byte.* ^= key[i % key.len];
+    scramble.xor(stream[0 .. stream.len - plain_tail], key);
 }
 
 /// How the radio's lines sound, OpenReliant's own choices; `original` is the game's.
