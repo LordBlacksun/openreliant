@@ -165,38 +165,90 @@ pub const part_table_size = 256;
 pub const Parts = [part_table_size]Part;
 
 /// The game's variables a script reads and writes by number (`push_array`, `select_array`): the
-/// dwords from `jump_ready` (`0x0052A3F0`) on. **Unknown:** most of them, and where the block
-/// ends. The shipped missions use the first 38.
+/// block of 64 dwords from `jump_ready` (`0x0052A3F0`) up to the next global (`0x0052A4F0`), of
+/// which the engine and the shipped missions use the first 38. Some belong to an attempt at a
+/// mission, which `gameflow.resetVariables` clears before each; the rest belong to the campaign,
+/// which a new one sets (`gameflow.newCampaign`) and the pilot's saved game keeps. **Unknown:**
+/// what most of the campaign's stand for: flags a new campaign sets, which the scripts clear as
+/// the story's characters die and the flow between missions reads
+/// ([#381](https://github.com/vdmkenny/openreliant/issues/381)).
 pub const Variables = extern struct {
-    /// `jump_ready` and `warp_ready`: whether the mission has a jump or a warp ready for JUMP
-    /// DRIVE, which the display's prompt reads (`hud.Readiness`).
+    /// `jump_ready` and `warp_ready` (0 and 1): whether the mission has a jump or a warp ready for
+    /// JUMP DRIVE, which the display's prompt reads (`hud.Readiness`).
     ready: hud.Readiness = .{},
-    _unknown_2: [2]u32 = @splat(0),
-    /// `player_missiles_left`: the missile display's counts together.
+    _unknown_2: u32 = 0,
+    /// `backup_available` (3): whether the carrier sends backup when the pilot asks for it. The
+    /// radio's REQUEST BACKUP (`0x004558D0`) raises the mission's PlayerWantsBackup event for the
+    /// first request while it is set, and the carrier refuses otherwise. The scripts set it as
+    /// backup can come and clear it as it can no longer. **Not ported:** the request
+    /// ([#99](https://github.com/vdmkenny/openreliant/issues/99)).
+    backup_available: u32 = 0,
+    /// `player_missiles_left` (4): the missile display's counts together.
     player_missiles_left: u32 = 0,
     _unknown_5: [4]u32 = @splat(0),
-    /// `mission_over`: set once the camera has watched the mission's end long enough, or once the
-    /// player's ship has landed.
+    /// `mission_over` (9): set once the camera has watched the mission's end long enough, or once
+    /// the player's ship has landed.
     mission_over: u32 = 0,
-    /// `landing_cleared`: whether PERMISSION TO LAND is granted, and the player's ship lands
+    /// `landing_cleared` (10): whether PERMISSION TO LAND is granted, and the player's ship lands
     /// (`videoreports.permissionToLand`). Mission 1's script sets it as the Reliant jumps in.
     landing_cleared: u32 = 0,
     _unknown_11: [3]u32 = @splat(0),
-    /// `mission_success`: how the script rates the mission.
+    /// `mission_success` (14): how the script rates the mission.
     mission_success: Outcome = .failure,
-    /// `script_players`: how many players fly the mission, which the game gives the script as the
-    /// mission starts (`script_set_players`, `0x004124D0`): 1 outside a multiplayer game. The
+    /// `script_players` (15): how many players fly the mission, which the game gives the script as
+    /// the mission starts (`script_set_players`, `0x004124D0`): 1 outside a multiplayer game. The
     /// scripts test it for the enemies a multiplayer game adds, and for which of a part's endings
     /// runs: mission 1's ambush ends only for the count it was flown with.
     players: u32 = 0,
-    _unknown_16: [22]u32 = @splat(0),
-    /// Room for every number a byte names. In the game these are the globals after the block,
-    /// which no shipped mission touches.
-    beyond: [218]u32 = @splat(0),
+    _unknown_16: [11]u32 = @splat(0),
+    /// `last_success` (27): how the script rated the last mission the pilot came through, which the
+    /// mission's end keeps unless the rating is a total failure (`mission_end_record`,
+    /// `0x00475AC2`). Mission 25's second part weighs its own rating by it. Mission 1's script
+    /// clears it as the mission starts, and a few others set it; the mission's end then writes
+    /// over both.
+    last_success: Outcome = .failure,
+    /// `objectives_met` (28): set by the script once the mission's objectives are met, as mission
+    /// 1's is once the ambushers are destroyed. The debriefing of a mission the ejected pilot was
+    /// picked up in tells the pilot the mission was a success by it, and a failure without it
+    /// (`0x00424ECE`, `0x0042545B`). **Not ported:** the debriefing
+    /// ([#74](https://github.com/vdmkenny/openreliant/issues/74)).
+    objectives_met: u32 = 0,
+    _unknown_29: u32 = 0,
+    /// `ghost_alive` (30): whether Ghost, the ace mission 1 puts up against the player, lives: 1 in
+    /// a new campaign. Mission 1's script clears it as Ghost dies, and mission 4's has Petrov say
+    /// a line by it. The engine only keeps it with the pilot's game.
+    ghost_alive: u32 = 0,
+    _unknown_31: [2]u32 = @splat(0),
+    /// `countdown` (33): seconds left, which mission 29's script sets and the display shows as a
+    /// clock in minutes and seconds (`0x00486221`). The game takes one off at every 100th tick of
+    /// the mission (`game_tick`, `0x00477889`). **Not ported:** the countdown and its clock
+    /// ([#382](https://github.com/vdmkenny/openreliant/issues/382)).
+    countdown: i32 = 0,
+    _unknown_34: u32 = 0,
+    _unknown_35: [2]u32 = @splat(0),
+    /// `ion_cannons_hold_lock` (37): while it is set, the Dark Reign's ion cannon keeps its target
+    /// (`aiioncan.cpp`, order 110): it loses it neither as the target flies into its cone or out of
+    /// the angle it fires in, nor, in a multiplayer game, after a long search (`0x0040D40F`,
+    /// `0x0040D7D9`). **Not ported:** the order
+    /// ([#30](https://github.com/vdmkenny/openreliant/issues/30)).
+    ion_cannons_hold_lock: u32 = 0,
+    /// The rest of the block, which neither the engine nor the shipped missions use.
+    spare: [26]u32 = @splat(0),
+    /// Room for every number past the block that a byte names. In the game these are the globals
+    /// after the block, which no shipped mission touches.
+    beyond: [192]u32 = @splat(0),
+
+    /// How many variables the block holds, up to the next global.
+    pub const block_size = 64;
 
     /// Variable `index`, as the script numbers them.
     pub fn slot(variables: *Variables, index: u8) *u32 {
         return &@as(*[256]u32, @ptrCast(variables))[index];
+    }
+
+    /// The number the scripts give the variable `name`.
+    pub fn number(comptime name: []const u8) u8 {
+        return @offsetOf(Variables, name) / @sizeOf(u32);
     }
 
     /// How the script rates the mission, as the game's debug line names each rating: the carrier's
@@ -215,11 +267,25 @@ pub const Variables = extern struct {
     };
 
     comptime {
-        assert(@offsetOf(Variables, "player_missiles_left") == 0x0052A400 - 0x0052A3F0);
-        assert(@offsetOf(Variables, "mission_over") == 0x0052A414 - 0x0052A3F0);
-        assert(@offsetOf(Variables, "landing_cleared") == 0x0052A418 - 0x0052A3F0);
-        assert(@offsetOf(Variables, "mission_success") == 0x0052A428 - 0x0052A3F0);
-        assert(@offsetOf(Variables, "players") == 0x0052A42C - 0x0052A3F0);
+        const at = struct {
+            fn at(name: []const u8, address: u32) void {
+                assert(@offsetOf(Variables, name) == address - 0x0052A3F0);
+            }
+        }.at;
+        at("backup_available", 0x0052A3FC);
+        at("player_missiles_left", 0x0052A400);
+        at("mission_over", 0x0052A414);
+        at("landing_cleared", 0x0052A418);
+        at("mission_success", 0x0052A428);
+        at("players", 0x0052A42C);
+        at("last_success", 0x0052A45C);
+        at("objectives_met", 0x0052A460);
+        at("ghost_alive", 0x0052A468);
+        at("countdown", 0x0052A474);
+        at("ion_cannons_hold_lock", 0x0052A484);
+        at("spare", 0x0052A488);
+        at("beyond", 0x0052A4F0);
+        assert(@offsetOf(Variables, "beyond") == block_size * @sizeOf(u32));
         assert(@sizeOf(Variables) == 256 * @sizeOf(u32));
     }
 };
@@ -227,17 +293,31 @@ pub const Variables = extern struct {
 test Variables {
     var variables: Variables = .{};
     variables.slot(0).* = 1;
+    variables.slot(3).* = 1;
     variables.slot(9).* = 1;
     variables.slot(10).* = 1;
     variables.slot(14).* = 3;
     variables.slot(15).* = 2;
+    variables.slot(27).* = 4;
+    variables.slot(28).* = 1;
+    variables.slot(30).* = 1;
+    variables.slot(33).* = 110;
+    variables.slot(37).* = 1;
     variables.slot(255).* = 7;
     try std.testing.expectEqual(.newly, variables.ready.jump);
+    try std.testing.expectEqual(1, variables.backup_available);
     try std.testing.expectEqual(1, variables.mission_over);
     try std.testing.expectEqual(1, variables.landing_cleared);
     try std.testing.expectEqual(.success, variables.mission_success);
     try std.testing.expectEqual(2, variables.players);
-    try std.testing.expectEqual(7, variables.beyond[217]);
+    try std.testing.expectEqual(.success_bonus, variables.last_success);
+    try std.testing.expectEqual(1, variables.objectives_met);
+    try std.testing.expectEqual(1, variables.ghost_alive);
+    try std.testing.expectEqual(110, variables.countdown);
+    try std.testing.expectEqual(1, variables.ion_cannons_hold_lock);
+    try std.testing.expectEqual(7, variables.beyond[191]);
+    try std.testing.expectEqual(10, Variables.number("landing_cleared"));
+    try std.testing.expectEqual(30, Variables.number("ghost_alive"));
 }
 
 /// One condition of the catalogue at `condition_descriptors`.

@@ -76,7 +76,9 @@ makes as the mission starts, before its script, once the players' slots are know
 
 ## The mission's start
 
-Before each mission, the loading (`0x004AD0A0`) puts a stand-in in every object's slot
+Before each attempt at a mission, WinMain clears the game's variables that belong to the attempt
+(`mission_reset_variables`, `0x00475620`, [The game's variables](script-vm.md#the-games-variables)).
+Then the loading (`0x004AD0A0`) puts a stand-in in every object's slot
 (`objects_reset`), loads the Turret Flak's shell and the debris, and readies the jumps
 (`jump_init`, `0x00416490`, [Jumps](jump.md#what-a-jump-shows)). Then `mission_start`
 (`0x004934F0`):
@@ -175,7 +177,8 @@ band's middle, to 0.25 at least. The band reaches the next ring or place of chev
 `game.main.startMission` ([`main.zig`](../../src/engine/game/main.zig)) is the loading and
 `mission_start`; `mission.Loaded` ([`mission.zig`](../../src/engine/game/mission.zig)) holds a
 mission bound for play with its script, which `main.missionFrame` runs each frame, the script's
-clock ticking once for each 100 of the game's ticks the pause does not hold. The commands are in
+clock ticking once for each 100 of the game's ticks the pause does not hold. Every attempt starts
+from a new campaign's variables (`gameflow.restartPoint`). The commands are in
 [`executor.zig`](../../src/engine/game/executor.zig). Until the loadout screen is ported
 ([#44](https://github.com/vdmkenny/openreliant/issues/44)), `openreliant` chooses the loadout's ship,
 `--ship` or the test keys, and where it chooses none the player's record's kind stands.

@@ -339,7 +339,7 @@ fn script(gpa: Allocator) ![]u8 {
 }
 
 /// The game's variable that clears the player's ship to land (`vm.Variables.landing_cleared`).
-const landing_cleared: u8 = @intCast(@offsetOf(openreliant.engine.vm.Variables, "landing_cleared") / @sizeOf(u32));
+const landing_cleared = openreliant.engine.vm.Variables.number("landing_cleared");
 
 /// `PlayMusic` of the piece `piece`, once the music playing has faded out.
 fn playMusic(routine: *Routine, piece: []const u8) !void {
