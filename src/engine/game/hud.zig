@@ -60,6 +60,7 @@ pub const damage = @import("hud/damage.zig");
 pub const gunnery = @import("hud/gunnery.zig");
 pub const missile_display = @import("hud/missile_display.zig");
 const missile_lock = @import("main/lock.zig");
+pub const objectives_window = @import("hud/objectives_window.zig");
 pub const power = @import("hud/power.zig");
 pub const radio = @import("hud/radio.zig");
 pub const target_display = @import("hud/target_display.zig");
@@ -71,6 +72,7 @@ test {
     _ = gunnery;
     _ = missile_display;
     _ = windows;
+    _ = objectives_window;
     _ = power;
     _ = radio;
     _ = target_display;
@@ -715,12 +717,133 @@ pub fn drawText(
     const height = @as(f32, @floatFromInt(opened.font.header.height)) * scale;
     const tint = device.pack(colour);
     for (text) |code| {
+        if (code >= cached_codes) continue;
         const width = @as(f32, @floatFromInt(opened.widths[code])) * scale;
         defer x += width;
         const image = try glyphImage(opened, gpa, code) orelse continue;
         drawPart(target, image, .{ .left = x, .top = top, .right = x + width, .bottom = top + height }, .{ 0, 1 }, .{ 0, 1 }, tint, null);
     }
     return @intFromFloat(x);
+}
+
+/// The room `hud_text_wrapped` copies a line into (`0x00480FEC`).
+pub const wrapped_line_room = 0x400;
+
+/// A line of text as `hud_text_wrapped` breaks it (`Wrapping`): what it holds of the text, and
+/// whether a hyphen follows, where a word is broken.
+pub const WrappedLine = struct {
+    text: []const u8,
+    hyphen: bool = false,
+};
+
+/// `hud_text_wrapped` (`0x00480FD0`)'s breaking of `text` into lines at most `width` of the
+/// display's pixels wide, by a font's `widths` (`Opened.widths`), a code the font does not reach
+/// counting as nothing.
+pub const Wrapping = struct {
+    widths: *const [cached_codes]u16,
+    text: []const u8,
+    width: i32,
+    /// Where the next line starts, or null once the last is taken.
+    from: ?usize,
+
+    /// Text to break; none at all has no lines.
+    pub fn init(widths: *const [cached_codes]u16, text: []const u8, width: i32) Wrapping {
+        return .{ .widths = widths, .text = text, .width = width, .from = if (text.len == 0) null else 0 };
+    }
+
+    /// The next line, or null once there is none. A line holds as many letters as fit, up to a
+    /// line feed, which goes. Where a letter does not fit, the line ends at the last space after
+    /// its first letter, which goes; failing that after the last hyphen after its first letter,
+    /// which stays, though it be the letter that does not fit; failing that a letter short of
+    /// what fits, with a hyphen added, that letter starting the next line. The text's end ends the
+    /// last line, which may hold nothing.
+    ///
+    /// **Fix:** where fewer than two letters fit, the game copies a line of no length or less,
+    /// which draws a hyphen alone again and again or stops the game; OpenReliant takes a letter a
+    /// line.
+    pub fn next(wrapping: *Wrapping) ?WrappedLine {
+        const text = wrapping.text;
+        const start = wrapping.from orelse return null;
+        var at = start;
+        var room = wrapping.width;
+        while (at < text.len and room > 0) {
+            const code = text[at];
+            if (code == '\n') break;
+            const wide: i32 = if (code < cached_codes) wrapping.widths[code] else 0;
+            if (room < wide) {
+                room = 0;
+            } else {
+                room -= wide;
+                at += 1;
+            }
+        }
+        if (at == text.len) {
+            wrapping.from = null;
+            return .{ .text = text[start..at] };
+        }
+        if (text[at] == '\n') {
+            wrapping.from = at + 1;
+            return .{ .text = text[start..at] };
+        }
+        if (lastAfter(text, start, at, ' ')) |space| {
+            wrapping.from = space + 1;
+            return .{ .text = text[start..space] };
+        }
+        if (lastAfter(text, start, at, '-')) |hyphen| {
+            wrapping.from = hyphen + 1;
+            return .{ .text = text[start .. hyphen + 1] };
+        }
+        if (at < start + 2) {
+            wrapping.from = start + 1;
+            return .{ .text = text[start .. start + 1] };
+        }
+        wrapping.from = at - 1;
+        return .{ .text = text[start .. at - 1], .hyphen = true };
+    }
+
+    /// The last place from after `start` up to `at` itself where `text` holds `code`.
+    fn lastAfter(text: []const u8, start: usize, at: usize, code: u8) ?usize {
+        var found = at;
+        while (found > start) : (found -= 1) {
+            if (text[found] == code) return found;
+        }
+        return null;
+    }
+};
+
+test Wrapping {
+    // Every letter four wide.
+    const widths: [cached_codes]u16 = @splat(4);
+    const Expected = struct { []const u8, bool };
+    const cases = [_]struct { text: []const u8, width: i32, lines: []const Expected }{
+        // It fits, or runs to a line feed.
+        .{ .text = "abc", .width = 40, .lines = &.{.{ "abc", false }} },
+        .{ .text = "ab\ncd", .width = 40, .lines = &.{ .{ "ab", false }, .{ "cd", false } } },
+        // A space before where it stops ends the line, and goes.
+        .{ .text = "ab cdef", .width = 20, .lines = &.{ .{ "ab", false }, .{ "cdef", false } } },
+        // A hyphen stays with the line, even the letter that does not fit.
+        .{ .text = "abcd-ef", .width = 16, .lines = &.{ .{ "abcd-", false }, .{ "ef", false } } },
+        // A word too long for the line is broken a letter short, with a hyphen.
+        .{ .text = "abcdefgh", .width = 16, .lines = &.{ .{ "abc", true }, .{ "def", true }, .{ "gh", false } } },
+        // A space at the line's start doesn't end it.
+        .{ .text = " abcdefg", .width = 16, .lines = &.{ .{ " ab", true }, .{ "cde", true }, .{ "fg", false } } },
+        // A line feed last leaves a line with nothing in it.
+        .{ .text = "ab\n", .width = 40, .lines = &.{ .{ "ab", false }, .{ "", false } } },
+        // Too narrow for two letters, a letter a line.
+        .{ .text = "abc", .width = 6, .lines = &.{ .{ "a", false }, .{ "b", false }, .{ "c", false } } },
+    };
+    for (cases) |case| {
+        var lines: Wrapping = .init(&widths, case.text, case.width);
+        for (case.lines) |expected| {
+            const line = lines.next().?;
+            try std.testing.expectEqualStrings(expected[0], line.text);
+            try std.testing.expectEqual(expected[1], line.hyphen);
+        }
+        try std.testing.expectEqual(null, lines.next());
+    }
+    // No text, no lines.
+    var none: Wrapping = .init(&widths, "", 40);
+    try std.testing.expectEqual(null, none.next());
 }
 
 /// Where a line of `text` starts, for a line drawn at `x` with `alignment` and `scale`: `hud_text`
@@ -1013,10 +1136,11 @@ pub fn draw(state: *State, resources: *Resources, frame: Frame) (spr.Error || Al
         .missiles = .{ .ring = &state.missiles },
         .power = .{ .ball = resources.ball, .object = live, .hit_shake = frame.hit_shake, .random = frame.random },
         .target_display = .{ .state = state, .all = frame.all },
+        .objectives = .{ .objectives = &state.objectives },
         .wing_status = .{ .all = frame.all },
     };
     const pen: windows.Pen = .{ .art = art, .font = &resources.font, .strings = frame.strings, .gpa = frame.gpa, .target = frame.target, .colour = colour, .shake = shake };
-    try state.windows.frame(pen, frame.screen, frame.last_view, frame_duration, contents, scale);
+    try state.windows.frame(pen, frame.screen, frame.last_view, frame_duration, contents, frame.all.kamovPart(), scale);
     state.windows.beeps.play(frame.sound, frame.view);
 }
 
@@ -1284,15 +1408,21 @@ pub const Caption = struct {
 /// The objectives of the mission being flown (`mission_objectives`, `0x00504120`): ten a mission,
 /// each named by a language string from the executable's table (`objectives.rows`) and in a
 /// state its script sets (`SetObjective`), which the objectives window shows
-/// ([#98](https://github.com/vdmkenny/openreliant/issues/98)).
+/// (`objectives_window`).
 pub const Objectives = struct {
     /// The mission's row of the table, null for a mission the table has none for.
     row: ?usize = null,
     states: [per_mission]Status = @splat(.hidden),
     /// `objectives_shown` (`0x0056997E`): the objective the window shows.
-    shown: i16 = 0,
+    shown: Index = 0,
+    /// Whether paging through the objectives found every one hidden (`0x0051CF74`), which the
+    /// window then says; `mission_start` clears it (`0x004936DC`).
+    none_shown: bool = false,
 
     pub const per_mission = 10;
+
+    /// An objective's place among the mission's.
+    pub const Index = std.math.IntFittingRange(0, per_mission - 1);
 
     /// How the window shows an objective. **Unknown:** what else sets an objective hidden than a
     /// mission's script.
@@ -1323,18 +1453,47 @@ pub const Objectives = struct {
     pub fn reset(objectives: *Objectives, mission: u16, second_part: bool) void {
         objectives.* = .{ .row = rowOf(mission, second_part) };
         const row = objectives.row orelse return;
-        for (&objectives.states, objectives_table.rows[row], 0..) |*state, name, n| {
-            state.* = if (n == 0) .current else if (name != null) .listed else .hidden;
+        for (&objectives.states, objectives_table.rows[row], 0..) |*state, named, n| {
+            state.* = if (n == 0) .current else if (named != null) .listed else .hidden;
         }
     }
 
     /// The first of the objectives in the current state, which PRIMARY TARGET opens the window on
     /// (`frame_controls`, `0x00414E57`); null for none.
-    pub fn current(objectives: *const Objectives) ?i16 {
+    pub fn current(objectives: *const Objectives) ?Index {
         for (objectives.states, 0..) |state, n| {
             if (state == .current) return @intCast(n);
         }
         return null;
+    }
+
+    /// The language string that names objective `objective`, or null for one the table names
+    /// nothing for, or a mission it has no row for.
+    pub fn name(objectives: *const Objectives, objective: Index) ?u16 {
+        const row = objectives.row orelse return null;
+        return objectives_table.rows[row][objective];
+    }
+
+    /// OBJECTIVES WINDOW on the open window (`frame_controls`, `0x00414AD7`): the window shows the
+    /// next objective that is not hidden, going round to the first after the tenth, and says
+    /// there are none where every one is hidden (`none_shown`). From the tenth, though, it goes
+    /// back to the first whatever its state, and leaves what it says as it was.
+    ///
+    /// **Fix:** the game reads the states of a mission the table has no row for from beside the
+    /// table; OpenReliant finds them hidden.
+    pub fn page(objectives: *Objectives) void {
+        if (objectives.shown == per_mission - 1) {
+            objectives.shown = 0;
+            return;
+        }
+        var next = objectives.shown + 1;
+        // Each of the ten in turn from the next; with all hidden it comes round to the next again.
+        for (0..per_mission) |_| {
+            if (objectives.states[next] != .hidden) break;
+            next = if (next == per_mission - 1) 0 else next + 1;
+        }
+        objectives.shown = next;
+        objectives.none_shown = objectives.states[next] == .hidden;
     }
 
     /// `cmd_SetObjective` (`0x00459870`): objective `objective` of the mission takes state
@@ -1429,6 +1588,35 @@ test Objectives {
     objectives.reset(0, false);
     objectives.set(0, .listed);
     try std.testing.expectEqual(.hidden, objectives.states[0]);
+}
+
+test "Objectives.page" {
+    var objectives: Objectives = .{};
+    // Mission 9 names all ten; hidden ones are passed over.
+    objectives.reset(9, false);
+    objectives.states[1] = .hidden;
+    objectives.page();
+    try std.testing.expectEqual(2, objectives.shown);
+    try std.testing.expect(!objectives.none_shown);
+    // Past the last not hidden, it comes round to the first.
+    for (objectives.states[7..]) |*state| state.* = .hidden;
+    objectives.shown = 6;
+    objectives.page();
+    try std.testing.expectEqual(0, objectives.shown);
+    // From the tenth, it goes to the first whatever its state, leaving what it says as it was.
+    objectives.states[0] = .hidden;
+    objectives.shown = 9;
+    objectives.none_shown = true;
+    objectives.page();
+    try std.testing.expectEqual(0, objectives.shown);
+    try std.testing.expect(objectives.none_shown);
+    // With every one hidden, it shows the next, and says none is shown.
+    objectives.states = @splat(.hidden);
+    objectives.shown = 3;
+    objectives.none_shown = false;
+    objectives.page();
+    try std.testing.expectEqual(4, objectives.shown);
+    try std.testing.expect(objectives.none_shown);
 }
 
 test namesView {

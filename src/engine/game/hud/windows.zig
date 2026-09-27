@@ -8,14 +8,13 @@
 //! into place as it opens, the reverse as it closes, and in place while it is open.
 //!
 //! Ported so far: the windows' phases and times, their frames, how they open and close with the
-//! display's sounds (`hud_beep` 1 and 2), and what windows 0, 1, 2, 3, 4, 7, 8 and 13 show
+//! display's sounds (`hud_beep` 1 and 2), and what windows 0, 1, 2, 3, 4, 7, 8, 10 and 13 show
 //! ([`radio.zig`](radio.zig), [`gunnery.zig`](gunnery.zig),
 //! [`missile_display.zig`](missile_display.zig), [`target_display.zig`](target_display.zig),
-//! [`damage.zig`](damage.zig), [`power.zig`](power.zig), [`wing_status.zig`](wing_status.zig)).
+//! [`damage.zig`](damage.zig), [`power.zig`](power.zig),
+//! [`objectives_window.zig`](objectives_window.zig), [`wing_status.zig`](wing_status.zig)).
 //! Not yet: what the other
-//! windows show, which [`hud.md`](../../../../docs/engine/hud.md) lists with the state each reads;
-//! and, in mission 25 before `0x00587CDC` is set, the gunnery, missile and wing status windows
-//! standing still and unseen.
+//! windows show, which [`hud.md`](../../../../docs/engine/hud.md) lists with the state each reads.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -60,6 +59,16 @@ pub const Window = enum(u4) {
     wing_status = 13,
     /// **Unknown:** what it shows.
     _unknown_14 = 14,
+
+    /// Whether it is one of the windows that stand still and unseen in mission 25's first part,
+    /// where the player flies a Kamov (`hud_draw`, `0x00486408`): the gunnery, missile and wing
+    /// status windows.
+    pub fn kamovLacks(window: Window) bool {
+        return switch (window) {
+            .gunnery, .missiles, .wing_status => true,
+            else => false,
+        };
+    }
 };
 
 /// Where a window stands in its opening and closing (`+0x00`).
@@ -256,7 +265,9 @@ pub const Windows = struct {
 
     /// `hud_draw`'s loop over the windows, which it runs in every view: each moves on, and in the
     /// view ahead from the cockpit is drawn over the display, with what it shows where OpenReliant
-    /// draws that. The radio's window follows its line in every view (`hud.radio.frame`).
+    /// draws that. The radio's window follows its line in every view (`hud.radio.frame`). In
+    /// mission 25's first part (`kamov`), the windows the Kamov lacks stand still, unseen
+    /// (`Window.kamovLacks`, `0x00486408`).
     pub fn frame(
         windows: *Windows,
         pen: Pen,
@@ -264,10 +275,12 @@ pub const Windows = struct {
         last_view: camera.View,
         frame_duration: i32,
         contents: Contents,
+        kamov: bool,
         scale: f32,
     ) Canvas.Error!void {
         const ahead = hud.instrumented(last_view);
         for (std.enums.values(Window)) |window| {
+            if (kamov and window.kamovLacks()) continue;
             const shown = windows.step(window, frame_duration) orelse continue;
             try draw(windows, pen, screen, window, shown, ahead, contents, scale);
         }
@@ -316,6 +329,8 @@ pub const Contents = struct {
     damage: ?hud.damage.Shown = null,
     /// Window 7's.
     power: ?hud.power.Shown = null,
+    /// Window 10's.
+    objectives: ?hud.objectives_window.Shown = null,
     /// Windows 3 and 8's, the target display's two forms.
     target_display: ?hud.target_display.Scene = null,
     /// Window 13's.
@@ -421,6 +436,21 @@ pub const Canvas = struct {
         var buffer: [32]u8 = undefined;
         try canvas.text(std.fmt.bufPrint(&buffer, format, args) catch return, at, alignment);
     }
+
+    /// `hud_text_wrapped` (`0x00480FD0`): `words` broken into lines at most `width` of the display's
+    /// pixels wide (`hud.Wrapping`), at most `max_lines` of them, each drawn as `text` draws a line,
+    /// `line_height` below the last.
+    pub fn wrapped(canvas: Canvas, words: []const u8, at: [2]i32, alignment: hud.Align, width: i32, line_height: i32, max_lines: usize) Allocator.Error!void {
+        var lines: hud.Wrapping = .init(&canvas.pen.font.widths, words, width);
+        var y = at[1];
+        for (0..max_lines) |_| {
+            const line = lines.next() orelse return;
+            var buffer: [hud.wrapped_line_room]u8 = undefined;
+            const shown = if (line.hyphen) std.fmt.bufPrint(&buffer, "{s}-", .{line.text}) catch line.text else line.text;
+            try canvas.text(shown, .{ at[0], y }, alignment);
+            y += line_height;
+        }
+    }
 };
 
 /// How much of a bar of `rows` is dark for `share` of what it measures left: all of it less the
@@ -459,6 +489,7 @@ fn draw(windows: *Windows, pen: Pen, screen: [2]u32, window: Window, shown: Show
         .missiles => if (contents.missiles) |missiles| try hud.missile_display.draw(missiles, canvas),
         .damage => if (contents.damage) |damage| try hud.damage.draw(damage, canvas),
         .power => if (contents.power) |power| try hud.power.draw(power, canvas),
+        .objectives => if (contents.objectives) |objectives| try hud.objectives_window.draw(objectives, canvas),
         .wing_status => if (contents.wing_status) |wing| try hud.wing_status.draw(wing, canvas),
         else => if (hud.target_display.Form.of(window)) |form| if (contents.target_display) |scene| {
             try scene.draw(form, phase == .closing, canvas);
@@ -475,6 +506,14 @@ test "a window sounds as it starts opening and as it starts closing" {
     windows.close(.damage);
     windows.close(.gunnery);
     try std.testing.expectEqualSlices(hud.Beep, &.{ .opens, .closes }, windows.beeps.slice());
+}
+
+test "Window.kamovLacks" {
+    try std.testing.expect(Window.gunnery.kamovLacks());
+    try std.testing.expect(Window.missiles.kamovLacks());
+    try std.testing.expect(Window.wing_status.kamovLacks());
+    try std.testing.expect(!Window.objectives.kamovLacks());
+    try std.testing.expect(!Window.radio.kamovLacks());
 }
 
 test "a window opens, stays its time and closes" {

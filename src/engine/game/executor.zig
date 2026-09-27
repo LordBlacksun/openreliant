@@ -220,7 +220,7 @@ fn shipType(all: *const create.Objects, bound: *const mission.Mission, ship: dte
     const groups = bound.flightGroups() catch return kind;
     const group = ship.flightGroup() orelse return kind;
     if (group >= groups.len or groups[group].wing != 0) return kind;
-    if (all.mission_number == create.kamov_mission and !all.mission25_second_part) return .kamov;
+    if (all.kamovPart()) return .kamov;
     return kind.twin() orelse kind;
 }
 

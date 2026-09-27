@@ -613,9 +613,14 @@ pub const Objects = struct {
         return all.mission_number >= training_missions[0] and all.mission_number <= training_missions[1];
     }
 
+    /// Whether the mission is mission 25's first part, in which the player's wing flies Kamovs.
+    pub fn kamovPart(all: *const Objects) bool {
+        return all.mission_number == kamov_mission and !all.mission25_second_part;
+    }
+
     pub fn slotType(all: *const Objects, index: u16, asked: gameobj.Type) gameobj.Type {
         if (index >= all.players or index >= all.loadout_ships.len) return asked;
-        if (all.mission_number == kamov_mission and !all.mission25_second_part) return .kamov;
+        if (all.kamovPart()) return .kamov;
         const chosen = all.loadout_ships[index] orelse return asked;
         if (all.mission_number < twins_from_mission) return chosen;
         return chosen.twin() orelse chosen;
