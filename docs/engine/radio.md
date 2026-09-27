@@ -99,10 +99,51 @@ opened, which is fatal too, OpenReliant says the lines without the window's film
   under the string its third argument numbers, the line nobody's. It also sets `0x005373EA`, which
   nothing reads.
 
-Not ported: the delayed reports (`0x00529D48`, `0x7C` bytes each, stepped by `0x00456050`) that
-the wingmen's keys, PERMISSION TO LAND and the kill remarks queue
-([#99](https://github.com/vdmkenny/openreliant/issues/99)). The game sets the volumes again as a
-line first plays in a mission (`0x005297E8`), alike either way.
+The game sets the volumes again as a line first plays in a mission (`0x005297E8`), alike either
+way.
+
+## Reports
+
+A report waits its time before it goes to the queue (`0x00529D48`, five of them, `0x7C` bytes
+each):
+
+| Offset | Field |
+|---|---|
+| `+0x00` | In use |
+| `+0x04` | Whose it is, as a line's |
+| `+0x08` | **Unknown.** Whom it concerns: PERMISSION TO LAND puts the player's ship there, and nothing reads it |
+| `+0x0C` | **Unknown.** Its kind: only kind 1 is said |
+| `+0x10` | The string that names a pilot of the pilots' table who says it |
+| `+0x14` | The game tick past which it is said |
+| `+0x18` | The film's path, 50 bytes |
+| `+0x4A` | The speech file's name, 50 bytes |
+
+`0x004560D0` finds the first free one, or -1, which stops whatever would queue one. `0x00456050`,
+each frame after `radio_frame`, lets each whose tick has passed go, and queues it (`radio_say`,
+mode 1, flags 5, no expiry) where it is of kind 1 and neither nobody's, object `0x3E9`'s, nor an
+exploding ship's; a ship's is named by its pilot's record, a pilot's by the report. `radio_reset`
+empties them.
+
+`0x004566C0` plays the pilot's own line at once through the speech sample, without the window,
+ending the line playing, unless the mission is a multiplayer one: `0x004536D0` names it `mp` and the
+line for a man, `fp` for a woman (`0x00562F16`, which the front end's new pilot screen sets).
+
+PERMISSION TO LAND ([Landing](orders.md#landing)) has the pilot ask, `hud_012`, and queues the
+answer 300 ticks on:
+
+- In a training mission, the flight instructor's, pilot `0x52` named by string `0x100`:
+  `pilots\VirtFlt_Ins.fm8` and `trnglnd_001.ut`.
+- In any other, the bridge's: pilot `0x54` named by string `0x44` where the carrier is a Yamato,
+  pilot `0x3C` otherwise. `0x00453620` makes its line, `yam` and the Yamato's bridge officer's film
+  `pilots\Yam_Brdge_Off.fm8` where the carrier is a Yamato or explodes, `rel` and
+  `pilots\Rel_Brdge_Off.fm8` otherwise, ending in a suffix `0x00453A50` picks at random by `rand`:
+  clearing the ship, from `_lnd_001` to `_lnd_009` for a mission the script rates a success or
+  better (`mission_success`), from `_lnd_010` to `_lnd_016` for a partial failure or success, and
+  from `_lnd_017` to `_lnd_024` for any other; refusing it, from `_lnd_den_01` to `_lnd_den_04`.
+  It also writes "DEBUG: Mission is flagged as a" and the rating's name into a line nothing shows.
+
+Not ported: the reports the wingmen's keys and the radio's menu queue, and the kill remarks
+([#99](https://github.com/vdmkenny/openreliant/issues/99)).
 
 ## Speech
 

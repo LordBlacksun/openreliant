@@ -999,6 +999,10 @@ pub const Player = struct {
     /// `0x0052987C`: the timer's tick from which PERMISSION TO LAND is heard again
     /// (`videoreports.permissionToLand`).
     permission_heard_from: u32 = 0,
+    /// Whether the pilot is a woman (`0x00562F16`), whose own lines the radio plays in a woman's
+    /// voice (`videoreports.playerSays`). The front end's new pilot screen sets it; until it is
+    /// ported ([#43](https://github.com/vdmkenny/openreliant/issues/43)) the pilot is a man.
+    female: bool = false,
     /// The cutaway the player's launch from the Reliant shows.
     cutaway: @import("game/launch/reliant.zig").Cutaway = .none,
     /// `0x005E82F0`: set while the player's ship jumps in, which cuts the dust's streaks shorter

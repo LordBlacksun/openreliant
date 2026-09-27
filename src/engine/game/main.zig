@@ -475,6 +475,7 @@ pub fn controlsFrame(controls: Controls) void {
         const on_air: videoreports.Context = .{ .sound = hearing.sound, .windows = &controls.display.windows, .all = all, .frame_start = clock.frame_start };
         radio.runFilm(on_air, ticks);
         radio.frame(on_air);
+        radio.stepReports(on_air, clock.game_ticks);
     };
     const cockpit_input = if (controls.cockpit) |shown| shown.inputFor(slot, view.view) else null;
     const subject = camera.Subject.of(slot);
