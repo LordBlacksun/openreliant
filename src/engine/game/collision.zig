@@ -23,6 +23,7 @@ const shield = @import("shield.zig");
 const hud = @import("hud.zig");
 const input = @import("../input.zig");
 const camera = @import("camera.zig");
+const videoreports = @import("videoreports.zig");
 
 /// How far apart a collision sets two objects, as a share of each one's radius from the point
 /// between them (`0x004DC7C0` and `0x004DC7C4`): a tenth further than touching, so that the next
@@ -359,7 +360,7 @@ pub fn damage(world: gameobj.World, index: u16, struck: Quadrant, value: f32, fa
     const all = world.objects;
     const object = &all.slots[index].object;
     const held = object.shields.at(struck);
-    const scaled = scaledBlow(world, index, struck, value, kind, held.* >= 0) orelse return;
+    const scaled = scaledBlow(world, index, struck, value, attacker, kind, held.* >= 0) orelse return;
     const through = @max(value - held.*, 0);
     if (held.* >= 0 and object.invulnerable != ._unknown_4) held.* -= scaled;
     if (held.* < 0) armorDamage(world, index, struck, through * factor, attacker, kind);
@@ -384,16 +385,18 @@ fn holdShots(world: gameobj.World, held: bool) void {
 /// What `object_damage` and `object_armor_damage` both do first: a jumping object takes nothing,
 /// and nor does debris, though a blow to the player's ship starts the display's interference
 /// (`hud.Interference.start`) before that is known. Otherwise the blow, `value` as the difficulty
-/// scales it, shakes the player's ship and its controller (`feedback`, where `shielded` says whether
-/// the shields took it), and counts toward what the object has taken lately where its kind does.
-/// Returns the scaled blow, or null where the object takes nothing.
-fn scaledBlow(world: gameobj.World, index: u16, struck: Quadrant, value: f32, kind: Kind, shielded: bool) ?f32 {
+/// scales it, of a kind that counts, to the player's ship draws the attacker's taunt on the radio
+/// (`videoreports.enemyTaunt`); it shakes the player's ship and its controller (`feedback`, where
+/// `shielded` says whether the shields took it), and counts toward what the object has taken lately
+/// where its kind does. Returns the scaled blow, or null where the object takes nothing.
+fn scaledBlow(world: gameobj.World, index: u16, struck: Quadrant, value: f32, attacker: u16, kind: Kind, shielded: bool) ?f32 {
     const all = world.objects;
     const slot = &all.slots[index];
     if (slot.object.flags.jumping) return null;
     if (index == all.player) if (world.display) |display| display.interference.start(world);
     if (slot.combat) |combat| if (combat.class == .debris) return null;
     const scaled = byDifficulty(world, index, kind, value);
+    if (index == all.player and counted(kind)) videoreports.enemyTaunt(world, attacker);
     if (index == all.player) feedback(world, struck, kind, scaled, shielded);
     if (counted(kind)) slot.object.recent_damage += scaled;
     return scaled;
@@ -429,7 +432,7 @@ pub fn armorDamage(world: gameobj.World, index: u16, struck: Quadrant, value: f3
     const all = world.objects;
     const slot = &all.slots[index];
     const object = &slot.object;
-    const scaled = scaledBlow(world, index, struck, value, kind, false) orelse return;
+    const scaled = scaledBlow(world, index, struck, value, attacker, kind, false) orelse return;
     if (object.flags.exploding) return;
     if (kind == .bullet and object.flags.components) return events.shotAt(world, index, attacker, dte.Trigger.whole_object);
 
@@ -602,7 +605,8 @@ fn wearComponent(world: gameobj.World, index: u16, struck_part: objects.PartRef,
     }
 }
 
-/// Whether the damage counts toward what an object has taken lately, which `order_retaliate` reads.
+/// Whether the damage counts toward what an object has taken lately, which `order_retaliate` reads,
+/// and draws an enemy's taunt as it hits the player's ship: a shot's or a missile's.
 fn counted(kind: Kind) bool {
     return switch (kind) {
         .bullet, .missile, .screamer => true,

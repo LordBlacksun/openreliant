@@ -181,6 +181,7 @@ pub const exported = [_]Export{
     .{ "HudmovieFlags", engine.game.hudmovie.Flags },
     .{ "PilotFace", engine.game.pilots.Face.Record },
     .{ "FaceSide", engine.game.gameobj.Side(u16) },
+    .{ "PilotVoice", engine.game.pilots.Voice },
     .{ "RipperGrabState", engine.game.airipper.GrabState },
     .{ "RipperGrabStep", engine.game.airipper.GrabStep },
     .{ "RipperDropState", engine.game.airipper.DropState },

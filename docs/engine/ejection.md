@@ -22,6 +22,8 @@ ticks before it explodes. `order_eject_player_init` (`0x00416310`) lights the di
 ([HUD](hud.md#the-jump-prompt-the-eject-marker-and-the-scanner)) and has the cockpit glow red: every
 part of the cockpit's model takes the colour (1, 0, 0) (`0x00416383`) and light mask 1
 (`0x004163E1`), so the fill lights reach it but not the first key light, until the mission ends.
+Moose calls the pilot to eject on the radio, one of `ejt_001` to `ejt_008`
+([Remarks](radio.md#remarks)).
 
 An AI pilot ejects under Eject Spin (108), which `object_destroyed` gives a ship of the player's
 wing whose eject roll falls below 40, or one told to eject before exploding. `order_eject_spin_init`
@@ -57,7 +59,9 @@ eject point (attachment kind 6), 100 puffs of `eject_flash_template` (`0x0051CF9
 100 ticks each, growing to 100 across, from yellow to orange to nothing (`eject_init`,
 `0x00415610`), turned as the pod, spread (1, 1, 0.2), at 20 to 25 a tick, carrying a quarter of the
 pod's velocity. The pod's velocity gains 50 along the eject point's Z axis (`0x00415B9B`). The game
-also gives the point a smoke effect of kind 4 along the other way, which it never draws.
+also gives the point a smoke effect of kind 4 along the other way, which it never draws. The pilot
+of a wingman of the player's wing says it is ejecting (`radio_wingman_ejected`,
+[Remarks](radio.md#remarks)).
 
 `order_eject` (`0x00415C50`) runs the pod in stages, its state holding when the stage ends
 (`+0x00`), the stage (`+0x04`) and the kept invulnerability (`+0x08`):
@@ -66,7 +70,7 @@ also gives the point a smoke effect of kind 4 along the other way, which it neve
 |---|---|
 | 0 | Clearing the ship, for 100 ticks (`0x00415BB5`). Then the pod brakes, keeping 0.97 of its velocity each update, powered again, its invulnerability back. An AI pilot's goes to 1, the player's to 2 |
 | 1 | An AI pilot's pod, adrift for good |
-| 2 | The player's pod drifts for 100 ticks; then the pilot calls on the radio (`ejt_015` or `ejt_016`) |
+| 2 | The player's pod drifts for 100 ticks; then the pilot calls, as Moose says `ejt_015` or `ejt_016` on the radio |
 | 3 | It waits 500 ticks more; then the pickup |
 | 4 | The pickup under way |
 
@@ -92,8 +96,9 @@ axes, and the cutaway slot's ship is made:
 | Killed | A Sabre (`0x2B`) | (20000, 10000, -20000) from the pod, turned a quarter turn back about Y from it (`0x00415EFE`) | Eject Fighter Attack (113) | `0x1D` |
 
 The camera takes the view of the ship, locked and forced. For the Sabre the pod's radius doubles,
-which makes it a larger target. The pilot's word goes out on the radio: `nanpkup`, `antpkup` or
-`ejtkll`.
+which makes it a larger target. Before the ship is made, Moose's words on the pilot's fate go out
+on the radio: `nanpkup_001` or `nanpkup_002` for a rescue, `antpkup_001` or `antpkup_002` for a
+capture, `ejtkll_001` or `ejtkll_002` for a death.
 
 ### Scoop Up
 
@@ -193,5 +198,4 @@ too.
 Eject and Eject Spin post the ship's Destroyed event as they begin, and Scoop Up the ship's
 ObjectScooped as it has the pod aboard ([Script VM](script-vm.md#events)).
 
-Not ported: the radio's words ([#48](https://github.com/vdmkenny/openreliant/issues/48)), and a
-multiplayer game ([#55](https://github.com/vdmkenny/openreliant/issues/55)).
+Not ported: a multiplayer game ([#55](https://github.com/vdmkenny/openreliant/issues/55)).

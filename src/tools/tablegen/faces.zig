@@ -20,18 +20,31 @@ const zig_text = @import("zig_text.zig");
 /// index.
 pub const table: u32 = 0x005048D8;
 
+/// `ship_line`'s table of the voices friendly pilots speak in (`0x004538E0`), a byte for each pilot
+/// up to `voiced`, which the voices' cases (`pilots.AlliedVoice`) index; past them, none.
+pub const voices: u32 = 0x004538E0;
+pub const voiced = 0xBA;
+
 pub const Error = image.Error || error{NoFilm};
 
 pub fn read(arena: std.mem.Allocator, reader: image.Reader) (Error || std.mem.Allocator.Error)![]const Face {
     const records = try reader.records(Face.Record, table, pilots.Table.count);
+    const allied = try reader.slice(voices, voiced);
     const faces = try arena.alloc(Face, records.len);
-    for (faces, records) |*face, record| {
+    for (faces, records, 0..) |*face, record, pilot| {
         var films: [Face.heads][]const u8 = undefined;
         for (&films, record.films) |*film, name| {
             film.* = try reader.string(@intFromEnum(name));
             if (film.len == 0) return error.NoFilm;
         }
-        face.* = .{ .name = record.name, .side = record.side, .films = films };
+        const case = if (pilot < allied.len) allied[pilot] else std.math.maxInt(u8);
+        face.* = .{
+            .name = record.name,
+            .side = record.side,
+            .films = films,
+            .voice = record.voice,
+            .allied_voice = std.enums.fromInt(pilots.AlliedVoice, case),
+        };
     }
     return faces;
 }
@@ -58,7 +71,13 @@ pub fn emit(w: *Io.Writer, faces: []const Face) Io.Writer.Error!void {
         for (face.films, 0..) |film, head| {
             try w.print("{s}\"{f}\"", .{ if (head == 0) "" else ", ", std.zig.fmtString(film) });
         }
-        try w.writeAll(" } },\n");
+        try w.writeAll(" }, .voice = ");
+        try zig_text.enumValue(w, face.voice);
+        if (face.allied_voice) |voice| {
+            try w.writeAll(", .allied_voice = ");
+            try zig_text.enumValue(w, voice);
+        }
+        try w.writeAll(" },\n");
     }
     try w.writeAll(
         \\};
@@ -77,6 +96,10 @@ test read {
     defer allocator.free(bytes);
     @memset(bytes, 0);
     const region: testing.Region = .{ .va = table, .bytes = bytes };
+    // The first pilot speaks in the first allied voice, the rest in none.
+    var cases: [voiced]u8 = @splat(22);
+    cases[0] = 0;
+    const voice_region: testing.Region = .{ .va = voices, .bytes = &cases };
     // Every pilot names the same four films, which lie after the table; the second is hostile.
     const names = table + size;
     region.putString(names, "45Tigers_Plt");
@@ -87,18 +110,22 @@ test read {
             .name = @intCast(0x20 + pilot),
             ._unknown_02 = 0x53,
             .side = if (pilot == 1) .hostile else .friendly,
-            ._unknown_06 = 5,
+            .voice = .rus,
             .films = .{ @enumFromInt(names), @enumFromInt(names + 0x10), @enumFromInt(names), @enumFromInt(names + 0x20) },
         });
     }
 
-    const payload = try testing.reader(allocator, &.{region});
+    const payload = try testing.reader(allocator, &.{ region, voice_region });
     defer testing.freeReader(allocator, payload);
     const faces = try read(arena, payload);
     try std.testing.expectEqual(pilots.Table.count, faces.len);
     try std.testing.expectEqual(0x21, faces[1].name);
     try std.testing.expectEqual(.hostile, faces[1].side);
     try std.testing.expectEqualStrings("45Tigers_Plt_D", faces[5].films[3]);
+    try std.testing.expectEqual(.rus, faces[1].voice);
+    try std.testing.expectEqual(.ban, faces[0].allied_voice.?);
+    try std.testing.expectEqual(null, faces[1].allied_voice);
+    try std.testing.expectEqual(null, faces[pilots.Table.count - 1].allied_voice);
 
     var out: Io.Writer.Allocating = .init(allocator);
     defer out.deinit();
@@ -107,7 +134,7 @@ test read {
 
     // A pilot without a film is not a table this reader knows.
     region.putWord(table + @offsetOf(Face.Record, "films"), 0);
-    const broken = try testing.reader(allocator, &.{region});
+    const broken = try testing.reader(allocator, &.{ region, voice_region });
     defer testing.freeReader(allocator, broken);
     try std.testing.expectError(error.NoFilm, read(arena, broken));
 }

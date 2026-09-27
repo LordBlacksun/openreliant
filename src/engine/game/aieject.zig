@@ -28,6 +28,7 @@ const objects = @import("objects.zig");
 const particles = @import("particles.zig");
 const sound3d = @import("sound3d.zig");
 const srmesh = @import("../surrender/surrenderlib/srmesh.zig");
+const videoreports = @import("videoreports.zig");
 
 /// What Eject Player keeps in the object's order state.
 pub const PlayerState = extern struct {
@@ -78,20 +79,20 @@ pub const Stage = enum(i32) {
 
 /// `order_eject_init` (`0x00415BD0`): the pilot ejects, where the ship has a cockpit to leave in:
 /// the first part at its root of that class, which leaves the ship as the pilot's pod
-/// (`separate`). The ship's Destroyed event is posted (`events.destroyed`).
+/// (`separate`). The ship's Destroyed event is posted (`events.destroyed`), and a wingman of the
+/// player's wing has its words on the radio (`videoreports.wingmanEjected`).
 ///
-/// Not ported: a wingman's call on the radio as the pilot ejects, and the rescue's word a thousand
-/// ticks later (`radio_wingman_ejected`, `0x00456D80`), which wait for the radio
-/// ([#48](https://github.com/vdmkenny/openreliant/issues/48)); and a multiplayer game, in which
-/// nobody ejects so.
+/// Not ported: a multiplayer game, in which nobody ejects so.
 pub fn init(ctx: Context, index: u16) void {
-    const slot = &ctx.world.objects.slots[index];
+    const all = ctx.world.objects;
+    const slot = &all.slots[index];
     const model = if (slot.model) |*live| live else return;
     const cockpit = for (model.parts, 0..) |part, at| {
         if (part.parent == null and part.class == .cockpit) break at;
     } else return;
     separate(ctx, index, cockpit);
     events.destroyed(ctx.world, index, dte.Trigger.whole_object);
+    if (index >= all.players and slot.object.wing == .player) videoreports.wingmanEjected(ctx.world, index);
 }
 
 /// How long the pod takes to shoot clear of its ship (`0x00415BB5`), and to drift before the pilot
@@ -99,6 +100,14 @@ pub fn init(ctx: Context, index: u16) void {
 const clearing_ticks = 100;
 const drifting_ticks = 100;
 const calling_ticks = 500;
+
+/// Moose's words on the radio as the player's pilot calls from the pod (`0x004E3A2C`), and on the
+/// pilot's fate: picked up by a nanny ship (`0x004E3A34`), by the enemy (`0x004E3A3C`), or shot
+/// down (`0x004E3A44`).
+const calling_lines = [_][]const u8{ "ejt_015.ut", "ejt_016.ut" };
+const rescued_lines = [_][]const u8{ "nanpkup_001.ut", "nanpkup_002.ut" };
+const captured_lines = [_][]const u8{ "antpkup_001.ut", "antpkup_002.ut" };
+const killed_lines = [_][]const u8{ "ejtkll_001.ut", "ejtkll_002.ut" };
 
 /// How fast the ship its pilot has left starts to tumble: this pitch, and up to half of
 /// `tumble_most` of yaw and roll either way, a step (`0x004158CB`, `0x004DC518`).
@@ -233,11 +242,11 @@ fn ejectPoint(pod: *const create.Slot, cockpit: usize) ?math.Place {
 
 /// `order_eject` (`0x00415C50`): the pilot's pod. Once clear of its ship it slows to a stop, its
 /// own invulnerability back; an AI pilot's then drifts for good. The player's drifts until the
-/// pilot calls, then waits to be picked up (`pickUp`).
+/// pilot calls, as Moose speaks on the radio (`calling_lines`), then waits to be picked up
+/// (`pickUp`).
 ///
-/// Not ported: the pilot's call on the radio (`ejt_015` or `ejt_016`), which waits for the radio
-/// ([#48](https://github.com/vdmkenny/openreliant/issues/48)); and a multiplayer game, in which the
-/// order ends at once, and in which a player's pod is disabled once clear.
+/// Not ported: a multiplayer game, in which the order ends at once, and in which a player's pod is
+/// disabled once clear.
 pub fn update(ctx: Context, index: u16) void {
     const all = ctx.world.objects;
     const slot = &all.slots[index];
@@ -258,6 +267,7 @@ pub fn update(ctx: Context, index: u16) void {
         },
         .drifting => {
             if (state.until >= now) return;
+            videoreports.mooseSays(ctx.world, videoreports.pick(ctx.world, &calling_lines), .queued, videoreports.no_expiry);
             state.stage = .called;
             state.until += calling_ticks;
         },
@@ -320,10 +330,7 @@ const PickupScene = struct {
 /// enemy's Antanov, made in the cutaway slot `pickup_short` short of the pod, picks it up (Scoop
 /// Up, `tractor`), watched round the ship (`camera.View.pickup`); or a Sabre shoots it down (Eject
 /// Fighter Attack), watched from behind the pod (`camera.View.pod_shot`), the pod made twice as
-/// large a target.
-///
-/// Not ported: the pilot's word on the radio as it happens (`nanpkup`, `antpkup`, `ejtkll`),
-/// which waits for the radio ([#48](https://github.com/vdmkenny/openreliant/issues/48)).
+/// large a target. Moose's words on the pilot's fate go out on the radio first.
 fn pickUp(ctx: Context, index: u16) void {
     const world = ctx.world;
     const all = world.objects;
@@ -334,6 +341,12 @@ fn pickUp(ctx: Context, index: u16) void {
     objects.setPosition(&pod.object, &pod.drawn, cutaway_place);
     objects.setOrientation(&pod.object, &pod.drawn, math.identity);
     pod.state.eject.stage = .picked_up;
+    const fate_lines: []const []const u8 = switch (fate) {
+        .rescued => &rescued_lines,
+        .captured => &captured_lines,
+        else => &killed_lines,
+    };
+    videoreports.mooseSays(world, videoreports.pick(world, fate_lines), .queued, videoreports.no_expiry);
     const scene: PickupScene = switch (fate) {
         .rescued, .captured => .{
             .ship = if (fate == .rescued) .nanny else .antanov,
@@ -443,13 +456,14 @@ const full_roll: f32 = 1;
 const blow_up_after = 400;
 const blow_up_spread = 200;
 
+/// Moose's calls to eject (`0x004E3A0C`).
+const eject_calls = [_][]const u8{ "ejt_001.ut", "ejt_002.ut", "ejt_003.ut", "ejt_004.ut", "ejt_005.ut", "ejt_006.ut", "ejt_007.ut", "ejt_008.ut" };
+
 /// `order_eject_player_init` (`0x00416310`), as the player's ship's armour runs out: the ship
 /// drifts on unpowered for four to six seconds before it blows up, and the pilot has that long to
-/// eject (EJECT, `input.eject`). The display's eject marker flashes (`hud.State.ejected`), and the
-/// cockpit glows red (`main.cockpit.lightEmergency`).
-///
-/// Not ported: Moose's call to eject on the radio (`ejt_001` to `ejt_008`), which waits for the
-/// radio ([#48](https://github.com/vdmkenny/openreliant/issues/48)).
+/// eject (EJECT, `input.eject`). The display's eject marker flashes (`hud.State.ejected`), the
+/// cockpit glows red (`main.cockpit.lightEmergency`), and Moose calls the pilot to eject on the
+/// radio.
 pub fn playerInit(ctx: Context, index: u16) void {
     const slot = &ctx.world.objects.slots[index];
     const state = &slot.state.eject_player;
@@ -463,6 +477,7 @@ pub fn playerInit(ctx: Context, index: u16) void {
         display.eject_ticks = 0;
     }
     if (ctx.world.cockpit) |cockpit| @import("main.zig").cockpit.lightEmergency(cockpit);
+    videoreports.mooseSays(ctx.world, videoreports.pick(ctx.world, &eject_calls), .queued, videoreports.no_expiry);
 }
 
 /// `order_eject_player` (`0x00416450`): the player's controls run on until the ship's end, when it

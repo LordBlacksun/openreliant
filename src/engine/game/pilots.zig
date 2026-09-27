@@ -182,6 +182,11 @@ pub const Face = struct {
     name: u16,
     side: gameobj.Side(u16),
     films: [heads][]const u8,
+    /// The voice the pilot speaks in flying a hostile ship (`+0x06`, `videoreports.shipLine`).
+    voice: Voice = .rus,
+    /// The voice the pilot speaks in flying a friendly ship, by the pilot's number (`0x004538E0`);
+    /// none for a pilot the game gives none, whose lines are then left out.
+    allied_voice: ?AlliedVoice = null,
 
     pub const heads = 4;
 
@@ -191,13 +196,13 @@ pub const Face = struct {
         return if (index < heads) face.films[index] else null;
     }
 
-    /// The record as the payload lays it out, 24 bytes. **Unknown:** the halfwords at `+0x02`, 0x53
-    /// in every record, and at `+0x06`, 5 in most, 4 or 0 in a few.
+    /// The record as the payload lays it out, 24 bytes. **Unknown:** the halfword at `+0x02`, 0x53
+    /// in every record.
     pub const Record = extern struct {
         name: u16,
         _unknown_02: u16,
         side: gameobj.Side(u16),
-        _unknown_06: u16,
+        voice: Voice,
         films: [heads]Pointer(u8),
 
         comptime {
@@ -206,6 +211,56 @@ pub const Face = struct {
             assert(@sizeOf(Record) == 0x18);
         }
     };
+};
+
+/// The voice a pilot speaks in flying a hostile ship (`ship_line`, `0x00453710`): the start of the
+/// name of each of its lines. Every pilot of the game's table is `rus` but a few, of 0 or 4, which
+/// is none of these; their lines are left out.
+pub const Voice = enum(u16) {
+    rus = 5,
+    chn = 6,
+    arb = 7,
+    _,
+
+    /// The start of the names of the pilot's lines, where the voice is one of the game's.
+    pub fn prefix(voice: Voice) ?[]const u8 {
+        return switch (voice) {
+            _ => null,
+            inline else => |named| @tagName(named),
+        };
+    }
+
+    pub fn format(voice: Voice, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+        return writer.writeAll(voice.prefix() orelse "none");
+    }
+};
+
+/// The voice a pilot speaks in flying a friendly ship (`ship_line`'s cases, `0x00453884`): the
+/// start of the name of each of its lines, one for each of the pilots of the player's side who
+/// speak.
+pub const AlliedVoice = enum(u8) {
+    ban,
+    dic,
+    fre,
+    vip,
+    enq,
+    sil,
+    tak,
+    jor,
+    vix,
+    cut,
+    cla,
+    ski,
+    jui,
+    fac,
+    haw,
+    arr,
+    ner,
+    rhi,
+    sta,
+    fla,
+    wor,
+    ego,
 };
 
 /// Every pilot's face, by the pilot's number, one for each pilot `Table` holds

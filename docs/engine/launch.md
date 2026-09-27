@@ -66,7 +66,9 @@ then runs again with the push of its argument before it.
 with it (`object_destroyed_net`), save an escape pod leaving the Ulysses as it is lost. Once
 `StartLaunch` has it go, the launch waits a moment, up to 200 ticks, drawn from the ship's own
 numbers (`object_random15`), and then the style runs it from step 2. As the player's launch goes,
-the radio has its line (`0x00456E50`).
+the radio has its words (`radio_launch_line`, `0x00456E50`, [The radio](radio.md#remarks)): the
+flight instructor's in training, and otherwise those of the carrier's bridge officer, the
+Reliant's or the Yamato's.
 
 Each frame, `mission_frame`'s pass over the objects places a ship that rides its node (`0x00492C14`),
 where its current order is Launch and its carrier is not exploding: it stands on the node where its
@@ -199,8 +201,6 @@ Not ported:
 - The Kamov's LAUNCH MISSILE, which starts its torpedoes' launches
   ([#305](https://github.com/vdmkenny/openreliant/issues/305)), and a multiplayer game's
   ([#55](https://github.com/vdmkenny/openreliant/issues/55)).
-- The radio's line as the player's launch goes (`0x00456E50`,
-  [#48](https://github.com/vdmkenny/openreliant/issues/48)).
 - When the ship the player launched from explodes, the first Yamato among the objects takes its
   place (`mission_frame`, `0x004932D4`), which OpenReliant does; what reads it, the radio's
   speakers, is not ported.

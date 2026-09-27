@@ -469,14 +469,15 @@ pub fn controlsFrame(controls: Controls) void {
         .world = world,
         .all = all,
     });
-    // `mission_frame` runs the radio's queue after the controls; the film's timer turns with the
-    // game's clock.
+    // `mission_frame` runs the radio's queue after the controls, then its reports and its remarks;
+    // the film's timer turns with the game's clock.
     if (world.radio) |radio| if (world.hearing) |hearing| {
         const on_air: videoreports.Context = .{ .sound = hearing.sound, .windows = &controls.display.windows, .all = all, .frame_start = clock.frame_start };
         radio.runFilm(on_air, ticks);
         radio.frame(on_air);
         radio.stepReports(on_air, clock.game_ticks);
     };
+    videoreports.remarksFrame(world);
     const cockpit_input = if (controls.cockpit) |shown| shown.inputFor(slot, view.view) else null;
     const subject = camera.Subject.of(slot);
     const seen = if (view.object) |object| camera.Subject.of(&all.slots[object]) else subject;
@@ -1471,11 +1472,12 @@ const camera_marker_at: math.Vector = .{ 0, 0, -8000 };
 /// (`0x004934F0`), for the mission `image`, made in `gpa`, which the mission then owns, played as
 /// mission `number`. Returns the mission loaded for play, which the caller destroys once it ends.
 ///
-/// The loading readies the display's objectives and the launch's caption for the mission, and drops
-/// the flyback markers (`hud_init`), empties the effects' pools and the missiles in flight, puts a
-/// stand-in in every object's slot (`create.Objects.reset`), loads the Turret Flak's shell and the
-/// debris (`guns_load_shell`, `explosions_init`), and clears the mark of the player's ship jumping
-/// in (`jump_init`). Then the start:
+/// The loading readies the display's objectives and the launch's caption for the mission, drops the
+/// flyback markers, and empties the radio's queue, its reports and its remarks, the script's
+/// switches among them (`hud_init`, `radio_reset`), empties the effects' pools and the missiles in
+/// flight, puts a stand-in in every object's slot (`create.Objects.reset`), loads the Turret Flak's
+/// shell and the debris (`guns_load_shell`, `explosions_init`), and clears the mark of the player's
+/// ship jumping in (`jump_init`). Then the start:
 /// 1. ends the 3D sounds, has the mission play with everything shown, no ship the player launched
 ///    from, no primary target, the camera free in view 0 on the player's ship, in the cockpit mode
 ///    the options' setting picks, and the ejected pilot always picked up, and puts back the pilot's
@@ -1522,6 +1524,7 @@ pub fn startMission(gpa: Allocator, start: Start, image: []u8, number: u16) !*Lo
     if (world.atmospheres) |atmospheres| atmospheres.reset();
     if (world.escort_marker) |marker| marker.reset();
     if (world.radio) |radio| radio.reset(if (world.hearing) |hearing| hearing.sound else null);
+    world.player.remarks = .{};
     if (world.flash) |lit| lit.* = .{};
     start.display.interference = .{};
     start.display.caption = .{};

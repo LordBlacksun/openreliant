@@ -158,7 +158,7 @@ Some of the commands mission 1 runs:
 | `CommsFromShip` (`0x18`), `CommsFromShipOnce` (`0x29`) | The ship the first argument names says the speech file the third names, at once, its face moving as the second says, the film looping while the line plays; `Once` plays the film once, then the dead channel's while the line goes on ([Radio](radio.md)) |
 | `CommsFromPilot` (`0x19`), `CommsFromPilotOnce` (`0x2A`) | Likewise for a pilot of the pilots' table, the first argument |
 | `PlayMusic` (`0x23`) | Plays `music\` and the name the first argument points at, for ever at level 80, at once where the second is set, or once the music playing has faded out ([Sound](sound.md#music)) |
-| `DisableTaunts` (`0x27`), `DisableGenericComms` (`0x2E`) | Keep the enemy's taunts on the radio (`0x00529CB4`), and the remarks the radio makes by itself (`0x00529538`), quiet while the argument is set |
+| `DisableTaunts` (`0x27`), `DisableGenericComms` (`0x2E`) | Keep the enemy's taunts on the radio (`0x00529CB4`), and the remarks the radio makes by itself (`0x00529538`), quiet while the argument is set; a mission's start clears both (`radio_reset`) ([Radio](radio.md#remarks)) |
 | `UpdateEnvironmentFXState` (`0x38`) | Applies what the script asks of its space at once rather than at the next jump (`environment_update`), and aims the sun, the lights and the nebula again from the markers (`backdrop_place`) ([Backdrop](backdrop.md)) |
 | `SetEnvironmentFXNebula` (`0x3C`) | Asks for the nebula the argument numbers (`nebula_requested`, `0x0058A6B8`) |
 | `PlaySpeech` (`0x06`) | Plays the speech file the argument names at once, without the radio's window or a film ([Radio](radio.md#the-scripts-commands)) |

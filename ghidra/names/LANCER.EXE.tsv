@@ -457,8 +457,8 @@ address	kind	name	type	comment
 005d7c9c	data	arena_centre	Vec3	The middle of the multiplayer arena's sphere
 005d76ec	data	arena_radius	float	The radius of the multiplayer arena's sphere: the farthest reach of the objects it is sized round
 004b14f0	function	kills_add	void __fastcall (int slot, int count, bool report)	Adds count to a player's kills: skull_count for the local player, the per-player tally, and in a single player mission the mission's own
-00456bb0	function	radio_kill_remark	void __fastcall (int slot)	A line on the radio for the player's kill, by the class of what went down, at most once every 600 ticks and not while the radio is busy
-00456cf0	function	radio_ship_lost	void __fastcall (int slot)	A line on the radio for a ship lost, but the player's, while the radio is free
+00456bb0	function	radio_kill_remark	void __fastcall (int slot)	The radio's remark on the player's kill of the object in slot: a pilot's pod has Moose say enmejt_001 to 003 unless 0x00529538 is set. Anything else at most once in 600 game ticks (0x00529CB8), unless 0x00529538 is set, and then only while the radio is free: a fighter's pilot says its last words, dth_001 to 006 in its voice (ship_line), dying, and Moose plyrkl_001 to 009; a torpedo has Moose say trpkl_001 to 006
+00456cf0	function	radio_ship_lost	void __fastcall (int slot)	As a ship of the player's wing is lost, but the player's, while the radio is free and 0x00529538 clear: its pilot says dth_001 in its voice (ship_line), dying, once, and Moose npcdth_001 to 004
 0046c980	function	explode_blast	void __fastcall (GameObject *object)	A ship's blast at the end of Explode: the cloak dropped, the break-up, burning bits, two particle bursts, now and then a shockwave, a fireball, and explosion sound 11, on a sure voice within 20000 of the camera
 00471db0	function	explode_burst	void __fastcall (GameObject *object)	Style 1's blast: the cloak dropped, the break-up, burning bits, two particle bursts and 18 fireballs about it, and explosion sound 11; the player's sets the marker view 0x1B watches, drifting at a quarter of its velocity
 0046c550	function	explode_break_up	void __fastcall (GameObject *object, int kind, ModelNode *node)	Cuts each part node (kind 1) of the tree in four (model_slice, frame the root) and sends the pieces off as debris away from the ship: the first and fourth whole, turning up to 0.02 a tick, trailing smoke (0x00553358 for a blast, 0x00553354 for a burst) for 200 to 499 ticks; the second cut again in two and the third in four, turning up to cuts times 0.025 (blast) or 0.005 (burst), for up to 299 ticks (blast) or 300 to 599 (burst); then the node's children
@@ -733,7 +733,7 @@ address	kind	name	type	comment
 00412b20	function	player_jump	void (void)	JUMP DRIVE, while 0x00588394 is 0: when the mission has a jump or a warp ready (jump_ready, warp_ready), clears it and posts player_ready_to_jump or player_ready_to_warp
 00415370	function	player_ecm_set	void __fastcall (bool on)	Turns the player's ECM on or off, when the ship carries one (ecm_state not -1): object flag 0x4000000 and ecm_state
 004153e0	function	player_cloak_set	void __fastcall (bool on)	Cloaks or uncloaks the player's ship through object_set_cloak, outside a multiplayer game, when its model can cloak (header flag 2) and cloak_state is not -1
-00416310	function	order_eject_player_init	ObjectRoutine	The init of order 118, Eject Player: marks the ship ejected (object flags 0x808), sets mission_ending to 8, sets player_ejected and starts the eject marker's flash
+00416310	function	order_eject_player_init	ObjectRoutine	The init of order 118, Eject Player: marks the ship ejected (object flags 0x808), sets mission_ending to 8, sets player_ejected and starts the eject marker's flash; Moose calls the pilot to eject, ejt_001 to 008
 00428410	function	palette_to_vfx	void __thiscall (byte *palette, float brightness)	Makes VFX's global palette of a palette of 6-bit levels at a brightness, under the hardware renderers or on a pane of more than 8 bits: at a brightness of 1 each level is shifted up by two
 00482f50	function	hud_icon_lit	bool __fastcall (int icon)	Whether ShowHudIcon has an icon lit this frame: state 1 always, state 2 for the first 50 ticks of every 100, the count carrying what runs past 100 over
 00482fa0	function	hud_jump_prompt	void (void)	Flashes the warp icon (shape 0xC9) or else the jump icon (0xCE) above the middle of the screen while warp_ready or jump_ready says one is ready; the frame one becomes ready (1) it moves it to 2 and starts the flash
@@ -1266,7 +1266,7 @@ address	kind	name	type	comment
 005883d0	data	script_speech	void *	The speech file PlaySpeech plays
 005297e8	data	speech_heard	short	Set as a line of speech first plays in a mission, when sound_volumes_apply sets the volumes again, alike either way; cleared by radio_reset
 005373ea	data	comms_movie_said	short	Set by PlayCommsMovie; nothing reads it
-004560f0	function	radio_reset	void (void)	Empties the radio's queue and its delayed reports, and names nobody in the window
+004560f0	function	radio_reset	void (void)	As hud_init readies a mission: empties the radio's queue and its delayed reports, names nobody in the window, clears the remarks' timers and flags, and the script's DisableGenericComms (0x00529538) and DisableTaunts (0x00529CB4)
 004cb910	function	SR_CCB_quantize_color	byte __thiscall (void *ccb, float red, float green, float blue)	The palette entry of a colour table (CCB) nearest a colour of three levels from 0 to 1
 00471b20	function	explosion_spark	void __fastcall (Vec3 *at, Vec3 *velocity, float size)	Throws a small piece of debris into the next of explosion_bits, picked as explosion_bit picks one: at, flying at velocity a second, half to one and a half times size across, tumbling up to 0.05 a frame about each axis, for -100 to 300 ticks. particle_spark's, at size 0.1
 004942b0	function	mission_end	void (void)	A mission's end: among much else it frees the smoke's templates and pools (smoke_templates), the debris models, the radar's backing, the samples, the speech and the cockpit object, and ends the sounds and the music
@@ -1477,7 +1477,7 @@ address	kind	name	type	comment
 0045e500	function	object_loadout_by_tier	void __fastcall (GameObject *object, int tier)	Rack types for each missile attachment (kind 0) of the root's child parts: the attachment's id for the tier (+0x34 + 4 * tier); the player's ship in simulator mode 1 or missions 30 to 35 gets 5, 3, 1 in turn
 0045e1a0	function	object_fit_missiles	void __fastcall (GameObject *object, bool multiplayer_models)	Hangs each rack's pod or missile (attachment_models kind 0, the second model in multiplayer) on the missile attachments of the root's child parts, its count from the model table; a type below 0 leaves count 0 and stops the fitting there; fatal past 20
 00491320	function	lock_rings_free	void (void)	Frees the lock rings and their mesh
-00456a80	function	radio_missile_warning	void (void)	While a missile homes on the player's ship in action, at most every 1000 ticks, Moose says one of plck_001 to plck_008
+00456a80	function	radio_missile_warning	void (void)	While a missile homes on the player's ship in action, at most every 1000 ticks of frame_start (0x005297E4), Moose says one of plck_001 to plck_008 unless the radio is busy or 0x00529538 is set, dropped after 500
 0041a390	function	launch_torpedo_run	void __fastcall (int slot)	A torpedo's launch: at step 2 it lets go of its tube, heard (sound 0x18), boosting at throttle 2 by motion_plain from the carrier's velocity with a torpedo's trail; 200 ticks on it flies itself, its order popped, targetable and colliding again, Launched posted
 00461c40	function	camera_set_view_call	void __fastcall (int view, int object, bool force, bool unknown)	Calls camera_set_view
 00494e10	function	missiles_free	void (void)	Frees the missile and trail pools and clears missiles_initialised
@@ -1546,7 +1546,7 @@ address	kind	name	type	comment
 0051cf94	data	eject_flash_template	ParticleTemplate *	The flash of a pilot's ejection, which eject_separate bursts 100 of at the cockpit's eject point
 004156c0	function	eject_separate	void __fastcall (GameObject *object, int cockpit)	The root's child cockpit leaves the ship as the pilot's pod: the ship becomes a new object with Eject 106, tumbling, EJECT01 heard from it; the pod keeps the slot, unpowered, invulnerable, with no guns, shields or armour; a flash at the eject point, and the pod shoots out along it at 50
 00456250	function	radio_say_pilot	void __fastcall (int pilot, int head, char *speech, int mode, HudmovieFlags flags, int expiry)	radio_say for a pilot of pilot_faces, with its film for the head movement and the pilot's number from 0xFFFF for whose the line is, outside a multiplayer mission; the ejection's lines go through it
-00456d80	function	radio_wingman_ejected		A wingman's call on the radio as its pilot ejects, and the rescue's word a thousand ticks later
+00456d80	function	radio_wingman_ejected	void __fastcall (int slot)	As the pilot of a ship of the player's wing ejects, but the player's: its pod's slot goes to 0x00529590 and the rescue's words wait 1000 ticks (0x00529880, radio_rescue); unless 0x00529538 is set, the pilot says ejt_001 in its voice (ship_line) unless the radio is busy
 004598d0	function	cmd_SetRescueProbabilities		The mission's SetRescueProbabilities: sets rescue_odds_rescued, rescue_odds_captured and rescue_odds_killed
 0052a414	data	mission_over	int	Set to 1 as the camera has watched the mission's end long enough, or 270 ticks after the player's ship has landed, which ends the mission
 00587cd4	data	mission_showing	int	What the mission's scene shows: 0 everything, 2 a launch's cutaway without the ship launched from, 3 set by the landing orders, 4 the ejection's cutaway with only the player's pod and the cutaway slot's ship
@@ -1727,7 +1727,7 @@ address	kind	name	type	comment
 004566c0	function	pilot_says	void __fastcall (char *speech)	Plays the pilot's own line at once through the speech sample, without the radio's window, ending the line playing; nothing in a multiplayer mission
 00456050	function	radio_reports_frame	void (void)	Each frame after radio_frame: each report whose game tick has passed goes, and one of kind 1 that is neither nobody's, object 0x3E9's nor an exploding ship's is queued (radio_say, mode 1, flags 5), named by a ship's pilot record or the report's string
 004560d0	function	radio_report_free	int (void)	The first free report of radio_reports, or -1
-00529d48	data	radio_reports	RadioReport[5]	The reports waiting their time to go to the radio's queue: PERMISSION TO LAND's answer, the wingmen's and the kill remarks
+00529d48	data	radio_reports	RadioReport[5]	The reports waiting their time to go to the radio's queue: PERMISSION TO LAND's answer, and those of the wingmen's keys and the radio's menu
 005297f0	data	radio_report_film	char[50]	The film path bridge_line leaves for the report it makes
 00562f16	data	pilot_female	short	Whether the pilot is a woman, which the front end's new pilot screen sets: the pilot's own lines are fp's rather than mp's
 00453de0	function	permission_to_land	void __fastcall (int remote)	PERMISSION TO LAND, from frame_controls and the radio's menu with remote 0: heard once in 500 ticks, the pilot asks (pilot_says hud_012) and in 300 ticks the training's instructor clears the player's ship where landing_cleared is set, or the carrier's bridge answers (bridge_line), clearing it by a line mission_success picks or refusing it; a cleared ship lands on its carrier. With remote set, the bridge clears the ship whatever the script says (Land)
@@ -1802,3 +1802,24 @@ address	kind	name	type	comment
 0057c3bc	data	hudmovie_image	byte *	The window's copy of the frame, width by height pixels
 0057c3c0	data	hudmovie_timer_handle	void *	The film's timer
 0050276c	data	hudmovie_static	char[18]	pilots\static.fm8, the film of a dead channel, played once a line's film is over and the speech goes on
+00453710	function	ship_line	char * __fastcall (int slot, char *suffix)	The name of the line ending in suffix that the pilot of the ship in slot says, written into 0x00529CC0: for a friendly ship in the voice allied_voices gives its pilot, for a hostile one in rus, chn or arb by its pilot face's +0x06; null for a pilot with none. Any other side's leaves the buffer as it was
+004538e0	data	allied_voices	byte[186]	ship_line's case for each pilot up to 0xB9 flying a friendly ship: the voice its lines start with, 0 ban, 1 dic, 2 fre, 3 vip, 4 enq, 5 sil, 6 tak, 7 jor, 8 vix, 9 cut, 10 cla, 11 ski, 12 jui, 13 fac, 14 haw, 15 arr, 16 ner, 17 rhi, 18 sta, 19 fla, 20 wor, 21 ego, 22 none
+00456710	function	radio_landing_reminder	void (void)	Each frame, unless the player's ship is landing: while landing_cleared is set and mission_ending 0, the reminder runs (0x00529878). As it begins, in training the flight instructor says trnprm_001; otherwise every 4500 ticks of frame_start (0x00529D40) Moose says moolnd_001 to 003 unless 0x00529538 is set
+00456860	function	radio_jump_reminder	void (void)	Each frame: while jump_ready or warp_ready is set and mission_ending 0, the reminder runs (0x00529874). As it begins, the flight instructor in training says trnjmp_001, Moose otherwise jmp_001 to 004 or wrp_001 to 004. Outside training Moose then calls every 2000 game ticks (0x00529D44), moo_w1001 to moo_w4004, counted at 0x00529598, and 300 ticks after the fourth call player_jump
+00456b10	function	radio_rescue	void (void)	Each frame, once frame_start passes 0x00529880 after a wingman's pilot ejected (0x00529590): unless the pod explodes or 0x00529538 is set, the pilot of player_wing[5] says res_001 to 003 in its voice (ship_line) unless the radio is busy; 0x00529590 goes back to -1
+00456b90	function	radio_remarks_frame	void (void)	Each frame after radio_reports_frame: radio_landing_reminder, radio_jump_reminder, radio_missile_warning and radio_rescue
+00456dd0	function	radio_enemy_taunt	void __fastcall (int slot)	As the ship in slot hits the player's ship with damage of kind 0, 1 or 5: a hostile ship not listing components, at most once in 2000 ticks of frame_start (0x005297EC), says tnt_001 to 013 in its voice (ship_line) unless the radio is busy, 0x00529538 or 0x00529CB4 is set
+00456e50	function	radio_launch_line	void __fastcall (int carrier)	As the player's launch goes, unless 0x00529538 is set and while the radio is free: the flight instructor says trnlch_001 in training, and otherwise the Reliant's bridge officer (pilot 0x3C) relbdg_001 to 006 or the Yamato's (0x54) yambdg_001 to 005
+00529878	data	landing_reminded	int	Whether radio_landing_reminder has begun
+00529d40	data	landing_reminder_next	int	The frame_start past which radio_landing_reminder next speaks
+00529874	data	jump_reminded	int	Whether radio_jump_reminder has begun
+00529598	data	jump_calls	int	How many of Moose's calls to jump radio_jump_reminder has made
+00529d44	data	jump_call_next	int	The game tick from which radio_jump_reminder makes its next call
+005297e4	data	missile_warning_next	int	The frame_start past which radio_missile_warning may speak again
+00529590	data	ejected_wingman	int	The slot of the pod of the wingman who ejected last, until radio_rescue; -1 for none
+00529880	data	rescue_at	int	The frame_start past which radio_rescue says the rescue's words
+00529cb8	data	kill_remark_next	int	The game tick past which a kill draws radio_kill_remark's remark again
+005297ec	data	taunt_next	int	The frame_start past which radio_enemy_taunt may taunt again
+00529cc0	data	radio_line_buffer	char[128]	Where ship_line, bridge_line and pilot_line write the lines they name
+00529538	data	generic_comms_disabled	short	The script's DisableGenericComms: set, the radio's remarks but the jump reminder's are left unsaid; radio_reset clears it
+00529cb4	data	taunts_disabled	short	The script's DisableTaunts: set, radio_enemy_taunt says nothing; radio_reset clears it

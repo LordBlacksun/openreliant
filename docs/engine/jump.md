@@ -12,7 +12,8 @@ A mission's script gives the jumps with `SetAI`, most often to a flight group or
 numbered in turn among them ([Orders](orders.md#the-stack)): that number places it among the ships
 that jump with it. JUMP DRIVE, once the mission has a jump ready, posts PlayerReadyToJump
 ([Script VM](script-vm.md#events)), whose trigger has the script give the player's wing its Jump
-Out. `WaitForJumpOrLaunch` holds a script's thread while a ship it names is on a jump
+Out. Outside training, where the pilot waits, Moose calls four times on the radio, and then the
+ship jumps as though the key were pressed ([Remarks](radio.md#remarks)). `WaitForJumpOrLaunch` holds a script's thread while a ship it names is on a jump
 ([Launches](launch.md#how-a-launch-is-given)).
 
 The two orders share a state (`JumpState`):
