@@ -630,7 +630,7 @@ address	kind	name	type	comment
 00524976	data	loadout_ship_models	byte	Set while the loadout screen loads the ship models: mesh_build looks up their textures as g and the material's name
 00524977	data	loadout_weapon_models	byte	Set while the loadout screen loads the missile and gun models: mesh_build looks up their textures as r and the material's name
 005959f4	data	model_multiplayer_ship	byte	Set while model_load loads a ship type's model in a multiplayer mission, which then gets the cloak mesh sets
-00582e8c	data	multiplayer_mission	byte	Unverified: set for missions 81 to 85 and 87, which look like the multiplayer maps, and by the Zone launcher's status
+00582e8c	data	multiplayer_mission	byte	Set by mission_start where the mission is one of the multiplayer game's scenarios' maps (dm_scenario_mission: missions 81 to 85 and 87), and by the Zone launcher's status; hud_window_open then opens no missile display, window 9 or objectives, and the radio's menu offers no base
 004c78a0	function	sr_render	int __fastcall (void)	Draws a frame with sr_draw_layers, then counts it and its time
 004c7960	function	sr_draw_layers	int __fastcall (void)	Begins the scene; for each layer, runs each object through its pipeline and the device, then sorts and flushes the layer's blended polygons; ends the scene
 004c75c0	function	SR_meshpipe_init	int __fastcall (void *object)	Culls, projects and lights a mesh object's vertices for the frame; non-zero when nothing is left to draw
@@ -1238,6 +1238,27 @@ address	kind	name	type	comment
 005883dc	data	primary_target	short[2]	The mission's primary target, the object's index then its component, -1 in both for none: SetPrimaryTarget sets it, PRIMARY TARGET makes it the player's, and mission_start clears it
 00480c40	function	sprite_block	void * __fastcall (void *set, int index)	The address of block index of a loaded sprite set: its directory entry's offset from the set's start. hud_target hands palette_to_vfx the display's palette block this way
 00455d40	function	comms_menu_run	void (void)	Runs the radio's menu while its window is open, which hud_target_keys calls first: by the page at 0x00529530, sets the page's title string at 0x00529FB4 and runs its keys
+00453a70	function	comms_menu_draw	void __fastcall (void *pane, int x, int y)	The radio's menu in window 11, from x, y: COMMS in hud_font, then each item of the page from 0x18 below, 0xC apart, in font_new (comms_menu_draw_item)
+00453ad0	function	comms_menu_draw_item	void __fastcall (void *pane, int index, int x, int y)	An item of the radio's menu: its number and a full stop at x, y, and its words 0xD across, in font_new
+00453b50	function	comms_menu_add	void __fastcall (char *words, int page, short addressed)	An item more on the radio menu's page: its words, the page it leads to and whom that page is about (wingman_addressed)
+00453b90	function	comms_menu_top	void (void)	The radio menu's top page, COMMS: Target for the player's hostile target that can be aimed at and is a fighter, a capital ship or one between; Alpha Wing where the player's wing has a ship not exploding; Base but in a scenario's map; Multiplayer in a network game
+00453c80	function	comms_menu_pilots	void (void)	The radio menu's Alpha Pilots: each ship of the player's wing but the player's, not exploding, as its pilot's name and its place's call sign, then Alpha Wing for more than one
+00453d50	function	comms_menu_base	void (void)	The radio menu's Base: Permission to land (but in a network game with 0x00588735 clear) and Request backup
+00453da0	function	comms_menu_channels	void (void)	The radio menu's Open channels, which no item leads to: Open all channels and Close all channels (kill_credit_on)
+00454370	function	comms_menu_ship	void (void)	The radio menu's page for the ship wingman_addressed names, unless exploding: the five taunts for a hostile one; for one of the player's wing the commands, where the player's target is hostile, and What's your status?; then the scolding and the praise
+00454570	function	comms_menu_wing	void (void)	The radio menu's Alpha Wing: the three wingmen's commands to a wingman the game picks
+00454870	function	comms_taunt	void (void)	The radio menu's taunts (pages 6 to 10): the pilot says hud_007 to hud_011; a hostile fighter not to be disturbed otherwise, whose order has no priority and does not aim at the player already, turns on the player (Fight) and answers in 300 ticks, an ace in lines of its own
+00455720	function	comms_status	void (void)	The radio menu's What's your status?: the pilot says hud_004, and a wingman with a pilot's face and a second value above 0 answers in 250 ticks by how whole its armour is
+00455b00	function	comms_scold	void (void)	The radio menu's Come on... get your act together: the pilot says hud_005, and the ship answers in 300 ticks, _cmon_ lines; to another player of a multiplayer game by 0x004983A0
+00455c20	function	comms_praise	void (void)	The radio menu's Nice work. I owe you one: the pilot says hud_006, and the ship answers in 300 ticks, _iou_ lines; to another player of a multiplayer game by 0x004983A0
+004558d0	function	comms_request_backup	void (void)	REQUEST BACKUP: the pilot says hud_013; while backup_available is set and backup_called clear, the player's ship's PlayerWantsBackup and backup_called set, and the carrier's bridge answers that backup comes, otherwise that it refuses
+00529530	data	comms_menu_page	short	The radio menu's page, -1 the top, which comms_menu_run makes and the number keys move on
+00529540	data	comms_menu_items	byte[80]	The radio menu's page's items, ten of 8 bytes: the words, the page each leads to and whom that page is about
+00529cbc	data	comms_menu_count	short	How many items the radio menu's page has
+00529fb4	data	comms_menu_title	char *	The title each page of the radio's menu names, which nothing draws
+00529cb0	data	backup_called	int	Set as REQUEST BACKUP brings the mission's backup, so that only the first request does; radio_reset clears it
+004b2d30	function	dm_scenario_mission	bool (void)	Whether mission_number is the mission of one of dm_scenarios, which mission_start keeps as multiplayer_mission
+0050c798	data	dm_scenarios	byte[384]	The multiplayer game's six scenarios, 0x40 bytes each, the first field the mission each is played in: 85, 82, 81, 83, 84 and 87
 00474e00	function	player_friend_destroyed	void __fastcall (int told)	Sets +0x678 of the player's ship to 1, or to 2 and sends it in a multiplayer game when told is 1: object_armor_damage and component_damage call it as the player's shot destroys a friend or a friend's component
 00474c80	function	friendly_fire_warning	void (float damage)	Outside a multiplayer game, adds the player's damage to a friend to 0x00562CEC; past 800 (0x004DC5EC), at most once every 3000 game ticks (0x00562CE8), Moose warns the player with one of ff_001 to ff_004, drawn with rand. Its count at 0x00562CF0 is held at 1, so the second and third sets of lines (ff_005 on, ff_009 on) never play
 00491350	function	missile_lock_possible	bool (void)	Whether the armed missile of the ring can lock on the target: one is armed, not of type 6, the target can be aimed at, the player's missiles are not disabled, outside a multiplayer game the target is hostile and the type not 0, and the target's node is within the type's range (+0x1C of its stats) and ahead of the ship
@@ -1259,7 +1280,7 @@ address	kind	name	type	comment
 005009f4	data	rank_kills	short[9]	The kills each rank needs: 0, 35, 72, 115, 150, 200, 255, 275 and 300
 00562d24	data	skull_count_kept	int	skull_count as the last mission the player came through left it, which WinMain puts back before each single-player mission
 00562e64	data	mission_kills	short[28]	The pilot's kills in each mission of the campaign, by mission_number, which kills_add counts for the local player
-00529c6c	data	kill_credit_on	int	While set, explode_kill_credit credits kills and has their radio lines said. A mission's start sets it (0x004560F0), and the radio's states 0x14 and 0x15 set and clear it
+00529c6c	data	kill_credit_on	int	While set, explode_kill_credit credits kills and has their radio lines said. A mission's start sets it (0x004560F0), and the radio menu's pages 20 and 21 set and clear it
 004934f0	function	mission_start	void (void)	A mission's start, the first of main.cpp's code: among much else it sets the rescue odds to always picked up and fits the player's ship with its devices and its cockpit
 0051cf98	data	rescue_odds_rescued	int	The weight of an ejected pilot being picked up by a nanny ship, which order_eject draws from: 100 from a mission's start, and SetRescueProbabilities' first argument
 0051cf90	data	rescue_odds_captured	int	The weight of an ejected pilot being picked up by the enemy: 0 from a mission's start, and SetRescueProbabilities' second argument

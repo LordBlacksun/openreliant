@@ -186,8 +186,83 @@ fuller set of replies (`0x004539A0`, by the table at `0x004539D0`):
 **Fix:** the game copies the reply of a pilot with no voice from nowhere, and stops; OpenReliant
 leaves it out.
 
-Not ported: the radio's menu ([#99](https://github.com/vdmkenny/openreliant/issues/99)), and a
-multiplayer game's commands ([#55](https://github.com/vdmkenny/openreliant/issues/55)).
+Not ported: a multiplayer game's commands ([#55](https://github.com/vdmkenny/openreliant/issues/55)).
+
+## The menu
+
+The display's window 11, which COMMS WINDOW opens held ([Controls](controls.md)), and the script's
+`OpenInstrument` too, shows the radio's menu (`comms_menu_run`, `0x00455D40`): a page of numbered
+items. Opening the window starts the menu at its top page and runs it at once; while the window is
+open, `hud_target_keys` runs it each frame before its own keys. A run makes the page's items, ten
+at most (`0x00529540`, `0x00529CBC` of them), or does what the page is for and closes the window,
+held no more, still showing the page before. A page left with no items goes back to the top, which
+a page of none makes at once. Then the number keys choose an item, 1 the first and 0 the tenth,
+each press once (`key_pressed`), with the display's sound 0: the item's page comes next, about whom
+the item names (`wingman_addressed`, `0x00529596`). While the window is open, the keys 1 to 8 do
+nothing else. Each page also names a title (`0x00529FB4`), which nothing draws.
+
+| Page | Its items, or what it does |
+|---|---|
+| -1, COMMS (`0x00453B90`) | Target, to page 0 about the player's target, where it is a hostile ship that can be aimed at, and a fighter, a capital ship or one between by its type's class; Alpha Wing, to page 1, where a ship of the player's wing but the player's is not exploding; Base, to page 2, but in the maps of the multiplayer game's scenarios (`0x004B2D30`: missions 81 to 85 and 87) |
+| 0 and 4, a ship (`0x00454370`) | Nothing for a ship exploding. For a hostile ship, the five taunts, pages 6 to 10. For a ship of the player's wing, the three commands, pages 11 to 13, where the player's target is a hostile ship that can be aimed at, and What's your status?, page 14; then, for it and any other friend, Come on... get your act together and Nice work. I owe you one, pages 15 and 16. No item leads to page 4 |
+| 1, Alpha Pilots (`0x00453C80`) | Each ship of the player's wing but the player's, not exploding, by its pilot's name and the call sign of its place in the wing, Alpha 1 to Alpha 5 and Alpha Leader (`0x004EF7DC`), to page 0; then, for more than one, Alpha Wing, to page 5 for a wingman the game picks |
+| 2, Base (`0x00453D50`) | Permission to land, page 18, and Request backup, page 19 |
+| 3, Open channels (`0x00453DA0`) | Open all channels and Close all channels, pages 20 and 21. No item leads to page 3 |
+| 5, Alpha Wing (`0x00454570`) | The three commands, pages 11 to 13 |
+| 6 to 10 | A taunt (`0x00454870`) |
+| 11 to 13 | The command ([The wingmen's commands](#the-wingmens-commands)) |
+| 14 | What's your status? (`0x00455720`) |
+| 15 and 16 | Come on... get your act together (`0x00455B00`), and Nice work. I owe you one (`0x00455C20`) |
+| 17 | Nothing. No item leads to it |
+| 18 | PERMISSION TO LAND ([Reports](#reports)) |
+| 19 | REQUEST BACKUP (`0x004558D0`) |
+| 20 and 21 | Kills credited and remarked on, and no longer (`kill_credit_on`, `0x00529C6C`, which a mission's start sets) |
+| 22 to 28 | A multiplayer game's: the other players, messages and the commands to them, and another player's request |
+
+`0x00453A70` draws the menu from 2, 2 of the window's place in the view ahead: COMMS in the
+display's font, then from 24 below each item, 12 below the one before, in `newfont.fnt`: its
+number and a full stop, and 13 across what it says.
+
+A taunt: the pilot says `hud_007` to `hud_011`. Unless the ship is not to be disturbed, is not a
+fighter by its type's class, or its current order has a priority or aims at the player's ship
+already, it turns on the player's ship (Fight) and answers 300 ticks on, in its pilot's voice,
+`_res_001` to `_res_024`. Six aces answer in lines of their own, by the pilot's number: Black Sun
+(10, `hs_res_001` to `hs_res_007`), Ivan Petrov (15, `ip_res_001` to `ip_res_014`), Nicolai Petrov
+(16, `np_res_001` to `np_res_010`), Colonel McGann (50, `cm_res_001` to `cm_res_010`), the
+Saracens' leader (131, `al_res_001` to `al_res_011`) and the Golden Warriors' (133, `rd_res_001` to
+`rd_res_006`). Before it turns, the game draws a number it does nothing with for a pilot whose
+third value is 0 or 1.
+
+What's your status?: the pilot says `hud_004`, and a wingman whose pilot has a face and a second
+value (`pilot_stats`, `+0x1E`) above 0 answers 250 ticks on, by how whole its armour is: its four
+quadrants together over six times its type's armour class, the fraction dropped, less 1, held from
+0 to 2.
+
+| Armour | Answer | Fuller set |
+|---|---|---|
+| 0 | `_status_001` to `_status_004` | `_status_001` to `_status_007` |
+| 1 | `_status_005` to `_status_008` | `_status_008` to `_status_015` |
+| 2 | `_status_009` to `_status_011` | `_status_019` to `_status_024` |
+
+The scolding and the praise: the pilot says `hud_005` or `hud_006`, and the ship answers 300 ticks
+on, `_cmon_001` to `_cmon_004` or, in the fuller set, to `_cmon_012`; `_iou_001` to `_iou_004` or,
+in the fuller set, to `_iou_008`.
+
+REQUEST BACKUP: the pilot says `hud_013`. Where the script has set `backup_available` (variable 3,
+[The game's variables](script-vm.md#the-games-variables)) and the request has not brought backup
+yet this mission (`0x00529CB0`, which a mission's start clears), the player's ship has its
+PlayerWantsBackup, on which the script sends the backup, and the bridge of the carrier the ship
+launched from answers 300 ticks on that it comes, `_reqbk_001` to `_reqbk_007`; otherwise it
+refuses, `_reqbk_008` to `_reqbk_014`. The officer and the lines are PERMISSION TO LAND's.
+
+**Fix:** where the top page itself has no items, the game makes it again and again, and hangs;
+OpenReliant leaves the menu empty. The game reads the name of a wingman with no pilot through a null
+pointer; OpenReliant names it by its call sign alone. It reads the armour class of a ship with no
+type's stats through a null pointer for What's your status?, and the carrier for REQUEST BACKUP
+where the ship launched from none; OpenReliant makes no report.
+
+Not ported: a multiplayer game's pages and the chat line they type in (`0x00529FB8`)
+([#55](https://github.com/vdmkenny/openreliant/issues/55)).
 
 ## Remarks
 

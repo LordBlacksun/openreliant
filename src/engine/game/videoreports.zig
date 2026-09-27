@@ -7,7 +7,8 @@
 //! and the wingmen's replies to their commands (`wingmen`) queue them. The remarks (`Remarks`) are
 //! the lines the game has the pilots say by itself: the reminders to land and to jump, the warning
 //! of a missile, and the words on a kill, a ship lost, a pilot ejecting, a hit on the player and a
-//! launch. Not ported: the radio's menu ([#99](https://github.com/vdmkenny/openreliant/issues/99)).
+//! launch. The radio's menu (`menu`), which the display's window 11 shows, reaches the wingmen,
+//! the enemy and the base.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -26,11 +27,29 @@ const Windows = @import("hud/windows.zig").Windows;
 const input = @import("../input.zig");
 const mss = @import("../mss.zig");
 const vm = @import("../vm.zig");
+const events = @import("mission/events.zig");
 
 pub const wingmen = @import("videoreports/wingmen.zig");
+pub const menu = @import("videoreports/menu.zig");
 
 test {
     _ = wingmen;
+    _ = menu;
+}
+
+/// The lines `stem` numbered from `first` to `last`, as `_amt_001.ut`, as the radio's tables list
+/// them.
+pub fn numbered(comptime stem: []const u8, comptime first: u16, comptime last: u16) [last - first + 1][]const u8 {
+    var names: [last - first + 1][]const u8 = undefined;
+    for (&names, first..) |*name, number| name.* = std.fmt.comptimePrint("{s}{d:0>3}.ut", .{ stem, number });
+    return names;
+}
+
+test numbered {
+    const names = comptime numbered("_amt_", 9, 13);
+    try std.testing.expectEqual(5, names.len);
+    try std.testing.expectEqualStrings("_amt_009.ut", names[0]);
+    try std.testing.expectEqualStrings("_amt_013.ut", names[4]);
 }
 
 /// How long PERMISSION TO LAND goes unheard once heard, in the timer's ticks (`0x00453FC2`).
@@ -89,20 +108,63 @@ pub fn permissionToLand(world: gameobj.World, game_ticks: u32) void {
     playerSays(world, request_line);
     const cleared = variables.landing_cleared != 0;
     if (radio) |heard| {
-        const place = heard.freeReport() orelse return;
-        const suffix = pick(world, if (cleared) clearances(variables.mission_success) else &refusals);
-        var speech: [report_text_size]u8 = undefined;
-        const said = bridgeLine(&speech, all, carrier, suffix);
-        heard.reports[place] = .{
-            .object = if (all.slots[carrier].object.type == .yamato) yamato_bridge else reliant_bridge,
-            .about = all.player,
-            .name = bridge_name,
-            .due = game_ticks + report_delay,
-            .film = .of(said.film),
-            .speech = .of(said.speech),
-        };
+        const lines = if (cleared) clearances(variables.mission_success) else &refusals;
+        if (!reportBridge(world, heard, carrier, lines, game_ticks)) return;
     }
     if (cleared) land(world);
+}
+
+/// A report of the bridge of `carrier` to the player, said `report_delay` ticks after
+/// `game_ticks`: one of `lines`, as its officer says it (`bridgeLine`), under the name of the
+/// Yamato's officer where the carrier is a Yamato and the Reliant's otherwise. False where the
+/// radio's reports are all taken.
+fn reportBridge(world: gameobj.World, radio: *Radio, carrier: u16, lines: []const []const u8, game_ticks: u32) bool {
+    const place = radio.freeReport() orelse return false;
+    const all = world.objects;
+    var speech: [report_text_size]u8 = undefined;
+    const said = bridgeLine(&speech, all, carrier, pick(world, lines));
+    radio.reports[place] = .{
+        .object = if (all.slots[carrier].object.type == .yamato) yamato_bridge else reliant_bridge,
+        .about = all.player,
+        .name = bridge_name,
+        .due = game_ticks + report_delay,
+        .film = .of(said.film),
+        .speech = .of(said.speech),
+    };
+    return true;
+}
+
+/// The pilot's own line asking for backup (`0x004F0E98`).
+const backup_request_line = "hud_013.ut";
+
+/// The ends of the bridge's lines sending backup (`0x004EF7A4`) and refusing it (`0x004EF7C0`).
+const backup_lines = struct {
+    const sent = numbered("_reqbk_", 1, 7);
+    const refused = numbered("_reqbk_", 8, 14);
+};
+
+/// `comms_request_backup` (`0x004558D0`), the radio menu's REQUEST BACKUP: the pilot asks
+/// (`playerSays`, `hud_013`). Where the mission has backup to send (`vm.Variables.backup_available`)
+/// and REQUEST BACKUP has not brought it yet this mission (`Remarks.backup_called`), the player's
+/// ship has its PlayerWantsBackup, on which the script sends it (`events.wantsBackup`), and the
+/// bridge of the carrier the ship launched from answers that it comes; otherwise the bridge
+/// refuses. The bridge answers in `report_delay` ticks (`reportBridge`), unless the radio's reports
+/// are all taken.
+///
+/// **Fix:** the game reads through a null pointer where the player's ship launched from no
+/// carrier; OpenReliant makes no report.
+pub fn requestBackup(world: gameobj.World) void {
+    playerSays(world, backup_request_line);
+    const remarks = &world.player.remarks;
+    const available = if (world.variables) |variables| variables.backup_available != 0 else false;
+    const sent = available and !remarks.backup_called;
+    if (sent) {
+        events.wantsBackup(world);
+        remarks.backup_called = true;
+    }
+    const carrier = world.player.carrier orelse return;
+    const radio = world.radio orelse return;
+    _ = reportBridge(world, radio, carrier, if (sent) &backup_lines.sent else &backup_lines.refused, world.clock.game_ticks);
 }
 
 /// The player's ship lands on the carrier it launched from (`order_push`, Land).
@@ -214,6 +276,12 @@ pub const Remarks = struct {
     kill_next: u32 = 0,
     /// The frame's start past which an enemy may taunt again (`0x005297EC`).
     taunt_next: i32 = 0,
+    /// Whether REQUEST BACKUP has brought backup this mission (`0x00529CB0`, `requestBackup`).
+    backup_called: bool = false,
+    /// Whether a kill is credited and remarked on (`kill_credit_on`, `0x00529C6C`,
+    /// `aiexplode.killCredit`), which the radio menu's channels turn off and on again
+    /// (`menu.Page.close_channels`).
+    kill_credit: bool = true,
 };
 
 /// Who makes the squadron's remarks: Moose, pilot 2 of the pilots' table, the 45th Tigers', after
@@ -274,20 +342,41 @@ pub fn mooseSays(world: gameobj.World, speech: []const u8, mode: Mode, expiry: i
 /// **Fix:** the game copies the line of a pilot with no voice there from nowhere, and stops;
 /// OpenReliant makes no report.
 pub fn reportShip(world: gameobj.World, ship: u16, lines: []const []const u8) void {
+    reportShipIn(world, ship, .{ .voiced = lines }, report_delay);
+}
+
+/// The lines a ship's report picks from: the ends of lines in its pilot's voice (`shipLine`), or
+/// whole lines, as a few of the enemy's aces have their own.
+pub const Lines = union(enum) {
+    voiced: []const []const u8,
+    named: []const []const u8,
+
+    fn all(lines: Lines) []const []const u8 {
+        return switch (lines) {
+            inline else => |each| each,
+        };
+    }
+};
+
+/// `reportShip` of one of `lines`, said `delay` ticks after the game's tick.
+pub fn reportShipIn(world: gameobj.World, ship: u16, lines: Lines, delay: u32) void {
     const radio = world.radio orelse {
-        _ = pick(world, lines);
+        _ = pick(world, lines.all());
         return;
     };
     const place = radio.freeReport() orelse return;
-    const suffix = pick(world, lines);
+    const picked = pick(world, lines.all());
     const all = world.objects;
     var buffer: [ship_line_size]u8 = undefined;
-    const speech = shipLine(&buffer, all, ship, suffix) orelse return;
+    const speech = switch (lines) {
+        .voiced => shipLine(&buffer, all, ship, picked) orelse return,
+        .named => picked,
+    };
     var film: [film_path_size]u8 = undefined;
     radio.reports[place] = .{
         .object = ship,
         .about = all.player,
-        .due = world.clock.game_ticks + report_delay,
+        .due = world.clock.game_ticks + delay,
         .film = .of(filmPath(&film, pilots.faceOf(all.slots[ship].object.pilot), .talking)),
         .speech = .of(speech),
     };
@@ -1376,6 +1465,19 @@ pub const testing = struct {
             heard.place = .{};
         }
 
+        /// `init`, with the player's ship first in the player's wing and the wingman second, and
+        /// the player's ship targeting the enemy under its controls.
+        pub fn initWing(heard: *Heard) !gameobj.World {
+            try heard.init();
+            errdefer heard.deinit();
+            const all = heard.mission.objects;
+            all.wing[0] = 0;
+            all.wing[1] = heard.wingman;
+            all.slots[heard.enemy].object.flags.targetable = true;
+            _ = try aigeneric.pushShip(heard.mission.orders(), 0, .player_control, heard.enemy, aigeneric.Target.whole);
+            return heard.world();
+        }
+
         pub fn deinit(heard: *Heard) void {
             heard.radio.deinit(&heard.sound);
             heard.sound.shutdown();
@@ -1510,10 +1612,10 @@ test "the jump reminder calls the pilot to jump, then jumps" {
     var fixture: vm.machine.testing.Fixture = undefined;
     try fixture.init(gpa, &.{}, .{});
     defer fixture.deinit();
-    var events: @import("mission/events.zig").Events = .init(gpa, &fixture.machine);
-    defer events.deinit();
+    var queue: events.Events = .init(gpa, &fixture.machine);
+    defer queue.deinit();
     var world = heard.world();
-    world.events = &events;
+    world.events = &queue;
     world.variables = &fixture.machine.variables;
     const clock = &heard.mission.clock;
     const radio = &heard.radio;

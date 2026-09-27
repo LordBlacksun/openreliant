@@ -26,6 +26,7 @@ const hud = @import("../hud.zig");
 const language = @import("../language.zig");
 const math = @import("../../surrender/math.zig");
 const spr = @import("../../../formats/spr.zig");
+const videoreports = @import("../videoreports.zig");
 
 /// The windows, numbered as the game numbers their records.
 pub const Window = enum(u4) {
@@ -331,6 +332,8 @@ pub const Contents = struct {
     power: ?hud.power.Shown = null,
     /// Window 10's.
     objectives: ?hud.objectives_window.Shown = null,
+    /// Window 11's, the radio's menu.
+    comms: ?videoreports.menu.Shown = null,
     /// Windows 3 and 8's, the target display's two forms.
     target_display: ?hud.target_display.Scene = null,
     /// Window 13's.
@@ -422,8 +425,13 @@ pub const Canvas = struct {
 
     /// `words` at `at` in the display's font, aligned as `alignment` says.
     pub fn text(canvas: Canvas, words: []const u8, at: [2]i32, alignment: hud.Align) Allocator.Error!void {
+        try canvas.textIn(canvas.pen.font, words, at, alignment);
+    }
+
+    /// `words` at `at` in `font`, aligned as `alignment` says.
+    pub fn textIn(canvas: Canvas, font: *hud.Opened, words: []const u8, at: [2]i32, alignment: hud.Align) Allocator.Error!void {
         const pen = canvas.pen;
-        _ = try hud.drawText(pen.font, pen.gpa, pen.target, canvas.inside.place(at), words, pen.colour, alignment, canvas.inside.size);
+        _ = try hud.drawText(font, pen.gpa, pen.target, canvas.inside.place(at), words, pen.colour, alignment, canvas.inside.size);
     }
 
     /// The game's string `id`, where it has one.
@@ -433,8 +441,13 @@ pub const Canvas = struct {
 
     /// `args` written out as `format` says.
     pub fn print(canvas: Canvas, comptime format: []const u8, args: anytype, at: [2]i32, alignment: hud.Align) Allocator.Error!void {
+        try canvas.printIn(canvas.pen.font, format, args, at, alignment);
+    }
+
+    /// `args` written out in `font` as `format` says.
+    pub fn printIn(canvas: Canvas, font: *hud.Opened, comptime format: []const u8, args: anytype, at: [2]i32, alignment: hud.Align) Allocator.Error!void {
         var buffer: [32]u8 = undefined;
-        try canvas.text(std.fmt.bufPrint(&buffer, format, args) catch return, at, alignment);
+        try canvas.textIn(font, std.fmt.bufPrint(&buffer, format, args) catch return, at, alignment);
     }
 
     /// `hud_text_wrapped` (`0x00480FD0`): `words` broken into lines at most `width` of the display's
@@ -490,6 +503,7 @@ fn draw(windows: *Windows, pen: Pen, screen: [2]u32, window: Window, shown: Show
         .damage => if (contents.damage) |damage| try hud.damage.draw(damage, canvas),
         .power => if (contents.power) |power| try hud.power.draw(power, canvas),
         .objectives => if (contents.objectives) |objectives| try hud.objectives_window.draw(objectives, canvas),
+        .comms => if (contents.comms) |comms| try videoreports.menu.draw(comms, canvas),
         .wing_status => if (contents.wing_status) |wing| try hud.wing_status.draw(wing, canvas),
         else => if (hud.target_display.Form.of(window)) |form| if (contents.target_display) |scene| {
             try scene.draw(form, phase == .closing, canvas);

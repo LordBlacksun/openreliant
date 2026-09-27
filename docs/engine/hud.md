@@ -24,7 +24,7 @@ The display's elements as the game's manual names them, with where the code that
 | Gunnery display | foot, left | G | the gun's name, the ship as a wire frame with the gun lit, the rounds left for a gun that fires them, and whether the guns fire together or in turn. G picks the next gun, F fires them all, CTRL and G switches the two ways of firing them all | [Window](#the-windows) 1, [The gunnery display](#the-gunnery-display) |
 | Damage display | top, right | D | a segmented bar each for the weapons, the engines and the shields, shortening with damage | [Window](#the-windows) 4, [The damage display](#the-damage-display) |
 | Power distribution | left | P | the guns, the shields and the engines round a ball, each with its share of the power, a third each at first. P held with the stick moves power toward one; U, I and O give all of it to the guns, the engines or the shields, and `[` shares it out again | [Window](#the-windows) 7, [The power distribution](#the-power-distribution) |
-| Communications | top, left | C | the units in range, numbered, which the number keys call. Landing, rearming and a nanny ship are asked of the base ship | [Window](#the-windows) 11, which draws the radio's menu with `0x00453A70`. The frame is ported; what it shows is not |
+| Communications | top, left | C | the units in range, numbered, which the number keys call. Landing, rearming and a nanny ship are asked of the base ship | [Window](#the-windows) 11: the radio's menu ([The menu](radio.md#the-menu)) |
 | Wing status | right | X | the fighters of the player's wing in a grid, the player first, each with a bar for its damage | [Window](#the-windows) 13, [The wing status](#the-wing-status) |
 | Readouts | top, right of middle | | the seconds of afterburner fuel, the pilot's kills under a skull, and the countermeasures left | [The readouts](#the-readouts) |
 | Status lights | top, left of middle | | the systems that are on: match speed, blind fire, smart targeting, which makes any ship fired on the target, reverse thrust, the spectral shields and the cloak with a bar for the time left, the ECM | [The status lights](#the-status-lights) |
@@ -368,9 +368,12 @@ that starts the line as far down the screen as its middle is across, so the mark
 on the side edges than the target lies, and the more the wider the window. OpenReliant starts the
 line at the arrow's tip. `--original` starts it where the game does.
 
-Not ported: the players' names over their ships in a multiplayer game;
-and what `hud_target_keys` does while the radio's menu is open, or while `0x00529FB8` is set,
-which leaves out every key after the search under the reticle. The keys' sounds are in
+Between the search under the reticle and its keys, while the radio's window is open,
+`hud_target_keys` runs the radio's menu ([The menu](radio.md#the-menu)).
+
+Not ported: the players' names over their ships in a multiplayer game; and what `hud_target_keys`
+does while a multiplayer game's chat line is typed (`0x00529FB8`), which leaves out every key after
+the radio's menu. The keys' sounds are in
 [The display's sounds](#the-displays-sounds).
 
 ### The flyback markers
@@ -620,9 +623,6 @@ OpenReliant plays it as the key is pressed.
 a warning playing as the view changes loops until the player looks ahead again. OpenReliant runs it
 in every view, the light counting as out in the others.
 
-Not yet ported: the radio's menu ([#99](https://github.com/vdmkenny/openreliant/issues/99)), with
-its sounds.
-
 ## The jump prompt, the eject marker and the scanner
 
 The block for the view ahead draws three more shapes about the middle of the screen, each placed
@@ -679,9 +679,8 @@ the pieces of its frame (`+0x0C` their count, from `+0x0E` their numbers), the t
 closes (`+0x18`), the ticks it stays (`+0x1C`), how far it has opened (`+0x20`) and whether it is
 held open (`+0x24`). A mission's script opens a window with `OpenInstrument` (command `0x40`),
 held open, and closes it with `CloseInstrument` (`0x41`); opening the objectives closes the wing
-status window where it is up, and opening the radio's menu starts it afresh (`comms_menu_run`, not
-ported, [#99](https://github.com/vdmkenny/openreliant/issues/99)). **Unknown:** the byte after the
-hold (`+0x25`), which both clear.
+status window where it is up, and opening the radio's menu starts it afresh (`comms_menu_run`,
+[The menu](radio.md#the-menu)). **Unknown:** the byte after the hold (`+0x25`), which both clear.
 
 | Window | Place | Stays | Shows |
 | --- | --- | --- | --- |

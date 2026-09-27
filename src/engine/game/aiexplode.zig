@@ -364,9 +364,11 @@ fn shipInit(ctx: Context, index: u16) void {
 /// its loss (`videoreports.shipLost`). Meanwhile the ship is not marked exploding, so that its
 /// pilot may speak (`videoreports.Radio.sayShip`).
 ///
-/// Not ported: the other players' kills in a multiplayer game; and `0x00529C6C`, which a mission's
-/// start sets and two of the radio's states set and clear, and without which it does nothing.
+/// It does nothing while the radio's channels are closed (`videoreports.Remarks.kill_credit`).
+///
+/// Not ported: the other players' kills in a multiplayer game.
 pub fn killCredit(world: gameobj.World, index: u16) void {
+    if (!world.player.remarks.kill_credit) return;
     const all = world.objects;
     const slot = &all.slots[index];
     const object = &slot.object;

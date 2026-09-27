@@ -2,10 +2,10 @@
 //! which the player gives by their keys (`input.frameKeys`) or the radio's menu (`give`).
 //! **Unverified:** the code lies among the radio's, as PERMISSION TO LAND's does.
 //!
-//! Not ported: the radio's menu, which names the wingman
-//! ([#99](https://github.com/vdmkenny/openreliant/issues/99)), or sends the command to another
-//! player of a multiplayer game (`0x004BA040`, `0x004BA080`, `0x004BA0C0`)
-//! ([#55](https://github.com/vdmkenny/openreliant/issues/55)).
+//! The radio's menu (`videoreports.menu`) names the wingman, or the whole wing.
+//!
+//! Not ported: the command sent to another player of a multiplayer game (`0x004BA040`,
+//! `0x004BA080`, `0x004BA0C0`) ([#55](https://github.com/vdmkenny/openreliant/issues/55)).
 
 const std = @import("std");
 
@@ -49,6 +49,7 @@ const Replies = struct {
 /// `0x004EF380`), BACK OFF's (`0x004EF434`, `0x004EF444`; `0x004EF3CC`, `0x004EF3E4`) and HELP
 /// ME's (`0x004EF4CC`, `0x004EF4DC`; `0x004EF464`, `0x004EF47C`).
 const replies = struct {
+    const numbered = videoreports.numbered;
     const most = std.EnumArray(Command, Replies).init(.{
         .attack_my_target = .{ .busy = &numbered("_amt_", 1, 4), .done = &numbered("_amt_", 5, 8) },
         .back_off = .{ .busy = &numbered("_bkoff_", 1, 4), .done = &numbered("_bkoff_", 5, 9) },
@@ -59,13 +60,6 @@ const replies = struct {
         .back_off = .{ .busy = &numbered("_bkoff_", 1, 6), .done = &numbered("_bkoff_", 7, 15) },
         .help_me = .{ .busy = &numbered("_hlpme_", 1, 6), .done = &numbered("_hlpme_", 7, 14) },
     });
-
-    /// The lines `stem` numbered from `first` to `last`, as `_amt_001.ut`.
-    fn numbered(comptime stem: []const u8, comptime first: u8, comptime last: u8) [last - first + 1][]const u8 {
-        var names: [last - first + 1][]const u8 = undefined;
-        for (&names, first..) |*name, number| name.* = std.fmt.comptimePrint("{s}{d:0>3}.ut", .{ stem, number });
-        return names;
-    }
 };
 
 /// Who a command goes to (`0x00529596`): a wingman the game picks, or the wingman in a slot, as the
@@ -153,12 +147,17 @@ fn setAside(world: gameobj.World, wingman: u16) void {
 }
 
 /// The wingman in slot `wingman`'s reply to `command`, as it cannot now or as it does it
-/// (`0x004539A0` picks the set).
+/// (`fullReplies` picks the set).
 fn answer(world: gameobj.World, wingman: u16, command: Command, reply: Standing) void {
-    const face = pilots.faceOf(world.objects.slots[wingman].object.pilot);
-    const full = if (face) |found| found.full_replies else false;
-    const said = (if (full) replies.full else replies.most).get(command);
+    const said = (if (fullReplies(world.objects, wingman)) replies.full else replies.most).get(command);
     videoreports.reportShip(world, wingman, if (reply == .busy) said.busy else said.done);
+}
+
+/// `pilot_full_replies` (`0x004539A0`): whether the pilot of the ship in slot `index` answers from
+/// the fuller set of replies (`pilots.Face.full_replies`); a pilot past the table does not.
+pub fn fullReplies(all: *const create.Objects, index: u16) bool {
+    const face = pilots.faceOf(all.slots[index].object.pilot) orelse return false;
+    return face.full_replies;
 }
 
 /// What the game does before a wingman takes a command: for a pilot whose third value
@@ -243,18 +242,6 @@ fn attackers(all: *create.Objects, out: *[most_attackers]u16) ?[]const u16 {
     return out[0..1];
 }
 
-/// A world for the commands' tests: the player's ship targeting the enemy, and the wingman in the
-/// player's wing.
-fn testWorld(heard: *videoreports.testing.Heard) !gameobj.World {
-    try heard.init();
-    const all = heard.mission.objects;
-    all.wing[0] = 0;
-    all.wing[1] = heard.wingman;
-    all.slots[heard.enemy].object.flags.targetable = true;
-    _ = try aigeneric.pushShip(heard.mission.orders(), 0, .player_control, heard.enemy, aigeneric.Target.whole);
-    return heard.world();
-}
-
 /// Whether the report waiting first is the wingman's, one of `lines` in Bandit's voice.
 fn expectReply(heard: *const videoreports.testing.Heard, lines: []const []const u8) !void {
     const report = heard.radio.reports[0] orelse return error.TestUnexpectedResult;
@@ -270,7 +257,7 @@ fn expectReply(heard: *const videoreports.testing.Heard, lines: []const []const 
 
 test hostileTarget {
     var heard: videoreports.testing.Heard = undefined;
-    _ = try testWorld(&heard);
+    _ = try heard.initWing();
     defer heard.deinit();
     const all = heard.mission.objects;
     try std.testing.expectEqual(heard.enemy, hostileTarget(all).?);
@@ -284,7 +271,7 @@ test hostileTarget {
 
 test "ATTACK MY TARGET" {
     var heard: videoreports.testing.Heard = undefined;
-    const world = try testWorld(&heard);
+    const world = try heard.initWing();
     defer heard.deinit();
     const all = heard.mission.objects;
     const wingman = &all.slots[heard.wingman];
@@ -312,7 +299,7 @@ test "ATTACK MY TARGET" {
 
 test "BACK OFF" {
     var heard: videoreports.testing.Heard = undefined;
-    const world = try testWorld(&heard);
+    const world = try heard.initWing();
     defer heard.deinit();
     const all = heard.mission.objects;
     const wingman = &all.slots[heard.wingman];
@@ -337,7 +324,7 @@ test "BACK OFF" {
 
 test "HELP ME" {
     var heard: videoreports.testing.Heard = undefined;
-    const world = try testWorld(&heard);
+    const world = try heard.initWing();
     defer heard.deinit();
     const all = heard.mission.objects;
     const wingman = &all.slots[heard.wingman];

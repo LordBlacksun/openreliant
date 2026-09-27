@@ -21,6 +21,7 @@ pub const cloak = @import("game/cloak.zig");
 pub const collision = @import("game/collision.zig");
 pub const create = @import("game/create.zig");
 pub const deathmatch = @import("game/deathmatch.zig");
+pub const dmscenarios = @import("game/dmscenarios.zig");
 pub const environfx = @import("game/environfx.zig");
 pub const erayfx = @import("game/erayfx.zig");
 pub const explode = @import("game/explode.zig");
