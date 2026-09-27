@@ -1038,8 +1038,8 @@ fn fitTurn(ship: gameobj.Type) math.Axis {
 /// **Improvement:** the pod is drawn on between the ticks as it is carried onto the component
 /// (`create.Slot.glide`); the game draws it where each tick places it.
 ///
-/// **Unknown:** what keeps a Mammoth's cargo slots hidden until then; OpenReliant shows them from
-/// the start ([#324](https://github.com/vdmkenny/openreliant/issues/324)).
+/// The slots stay hidden until then as the mission's script hides them, disabling the components
+/// as it makes the ship (`DisableObject`, on a squad of them in mission 1).
 pub fn attach(ctx: Context, index: u16) void {
     const world = ctx.world;
     const all = world.objects;
