@@ -815,8 +815,8 @@ pub const GameObject = extern struct {
     /// How many Fight orders have taken it as their target.
     fought_by: u32,
     /// A target Find New Target does not pick to fight until `game_ticks` pass `set_aside_until`,
-    /// which the radio's menu sets to the player's target for 3000 ticks (`0x0045517F`); none when
-    /// created.
+    /// which BACK OFF sets to the player's target for 3000 ticks (`0x0045517F`,
+    /// `videoreports.wingmen`); none when created.
     set_aside: Slot,
     set_aside_until: u32,
     /// What `avoidance_scan` finds the ship could hit, for the avoidance code: the objects that

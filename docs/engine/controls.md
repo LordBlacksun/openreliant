@@ -196,9 +196,13 @@ While the player asks for either, a warning sounds when fewer than 20 seconds of
 another when it is out, each at most once every 1000 ticks, ten seconds; `fuel_warning_tick`
 (`0x5799C0`) holds the tick before which neither sounds again.
 
-`frame_controls` reads PERMISSION TO LAND once for each press outside a multiplayer mission, which
-asks the carrier the player launched from to clear the ship to land
-([Landing](orders.md#landing)).
+`frame_controls` reads ATTACK MY TARGET, BACK OFF and HELP ME once for each press, outside a
+multiplayer mission, outside the front end's simulator (`0x0057E044`) and where the game's mode
+(`0x00524FE4`) is 0, and only while the player's target is a hostile ship that can be aimed at:
+each gives its command to a wingman the game picks
+([The wingmen's commands](radio.md#the-wingmens-commands)). It reads PERMISSION TO LAND next, once
+for each press outside a multiplayer mission, which asks the carrier the player launched from to
+clear the ship to land ([Landing](orders.md#landing)).
 
 `player_controls` also reads FIRE LASERS, LAUNCH MISSILE, CLOAK SHIP, JUMP DRIVE, EJECT and
 COUNTERMEASURES, all but FIRE LASERS once for each press. LAUNCH MISSILE and COUNTERMEASURES are in

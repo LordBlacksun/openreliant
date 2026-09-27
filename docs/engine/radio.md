@@ -112,9 +112,9 @@ each):
 |---|---|
 | `+0x00` | In use |
 | `+0x04` | Whose it is, as a line's |
-| `+0x08` | **Unknown.** Whom it concerns: PERMISSION TO LAND puts the player's ship there, and nothing reads it |
+| `+0x08` | **Unknown.** Whom it concerns: PERMISSION TO LAND and the wingmen's replies put the player's ship there, and nothing reads it |
 | `+0x0C` | **Unknown.** Its kind: only kind 1 is said |
-| `+0x10` | The string that names a pilot of the pilots' table who says it |
+| `+0x10` | The string that names a pilot of the pilots' table who says it; a ship's report is named by its pilot's face |
 | `+0x14` | The game tick past which it is said |
 | `+0x18` | The film's path, 50 bytes |
 | `+0x4A` | The speech file's name, 50 bytes |
@@ -143,8 +143,51 @@ answer 300 ticks on:
   from `_lnd_017` to `_lnd_024` for any other; refusing it, from `_lnd_den_01` to `_lnd_den_04`.
   It also writes "DEBUG: Mission is flagged as a" and the rating's name into a line nothing shows.
 
-Not ported: the reports the wingmen's keys and the radio's menu queue
-([#99](https://github.com/vdmkenny/openreliant/issues/99)).
+## The wingmen's commands
+
+ATTACK MY TARGET (`0x00454C20`), BACK OFF (`0x00454FA0`) and HELP ME (`0x00455330`) go to the
+wingman `0x00529596` names: -1, as the keys give them ([Controls](controls.md)), for one the game
+picks; a slot, as the radio's menu names one; or -2 and -3, which send the command to another
+player of a multiplayer game. The pilot asks first, `hud_001`, `hud_002` and `hud_003`.
+
+ATTACK MY TARGET and BACK OFF are about the player's target (`player_control_entry`), and do
+nothing without one. HELP ME is about its attackers: the hostile ships that can be aimed at whose
+current order is Fight aimed at the player's ship, or with none, the player's target where it is a
+hostile ship that can be aimed at; without either it does nothing.
+
+How a wingman stands to a command:
+
+| Command | Busy | Done already | Free |
+|---|---|---|---|
+| ATTACK MY TARGET (`0x00454B80`) | not to be disturbed, or its current order has a priority | its current order aimed at the player's target | otherwise |
+| BACK OFF (`0x00454F40`) | not to be disturbed | its current order not Fight aimed at the player's target, or none | its current order Fight aimed at the player's target |
+| HELP ME (`0x00455280`) | not to be disturbed, or its current order has a priority | its current order Fight aimed at an attacker | otherwise |
+
+The game picks from the ships of the player's wing but the player, not exploding and free: for
+BACK OFF one at random (`rand` over their number); for the others one the likelier the farther it
+is from the player's ship, a `rand` over 32767 times the sum of their distances falling among the
+running sums. A wingman free, or the one picked, takes the command: it fights the player's target
+(Fight, order 105); it pops its current order and leaves the player's target be for 3000 game
+ticks, which Find New Target then passes over (`+0x6AC`, `+0x6B0`); or it fights one of the
+attackers at random. Before it, the game draws a number it does nothing with for a pilot whose
+third value (`pilot_stats`, `+0x20`) is 0, 1 or 2. A wingman named that is busy only answers so;
+one that has it in hand only answers, BACK OFF's leaving the target be all the same.
+
+The answer is a report, from the wingman to the player, 300 ticks on, its line in the pilot's voice
+(`ship_line`) and the film of its face talking. Bandit, Diceman, Viper, Enriquez and Hawkeye have a
+fuller set of replies (`0x004539A0`, by the table at `0x004539D0`):
+
+| Command | Busy | Done | Busy, fuller set | Done, fuller set |
+|---|---|---|---|---|
+| ATTACK MY TARGET | `_amt_001` to `_amt_004` | `_amt_005` to `_amt_008` | `_amt_005` to `_amt_008` | `_amt_009` to `_amt_013` |
+| BACK OFF | `_bkoff_001` to `_bkoff_004` | `_bkoff_005` to `_bkoff_009` | `_bkoff_001` to `_bkoff_006` | `_bkoff_007` to `_bkoff_015` |
+| HELP ME | `_hlpme_001` to `_hlpme_004` | `_hlpme_005` to `_hlpme_008` | `_hlpme_001` to `_hlpme_006` | `_hlpme_007` to `_hlpme_014` |
+
+**Fix:** the game copies the reply of a pilot with no voice from nowhere, and stops; OpenReliant
+leaves it out.
+
+Not ported: the radio's menu ([#99](https://github.com/vdmkenny/openreliant/issues/99)), and a
+multiplayer game's commands ([#55](https://github.com/vdmkenny/openreliant/issues/55)).
 
 ## Remarks
 
