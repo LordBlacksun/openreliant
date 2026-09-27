@@ -459,6 +459,11 @@ and the Stalag lacks, it reads the grab point's height past the table's end. Ope
 first and takes the entry, ends the order for the second, and stands 2500 above the component for
 the third.
 
+**Improvement:** the beams' orders place what they carry once a tick, and the game draws it there;
+OpenReliant draws it on between the ticks, as far as a tick of the step would take it
+(`create.Slot.glide`), as the target is drawn in (steps 4 and 6) and as the pod is carried onto the
+component. `--no-smooth-motion` leaves it where each tick places it.
+
 ### Picking a fight
 
 Find New Target's walk visits each ship with `0x0040AE90`, which passes over one the ship cannot aim

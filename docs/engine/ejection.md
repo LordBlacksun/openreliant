@@ -135,6 +135,11 @@ its point. `tractor_beam_aim` (`0x0041CE00`), in stages 3 to 5, turns it to the 
 the ribbons' far corners to reach it. `tractor_beam_fade` (`0x0041CED0`) sets each quad's near
 corners clear and its far ones green at an alpha from 0 to 1.
 
+**Improvement:** a beam glows: three more ribbons, 300 across, stand halfway round between the
+beam's own over the same texture, reach as far, and fade with it at 0.35 of its alpha, so that the
+beam reads at a distance and at high resolutions. The Ripper's beams, the same mesh
+([Orders](orders.md)), glow alike. `--original` draws them as thin as the original.
+
 The bubble (`shield_bubble_object`, `0x0049E370`) is the shields' finest sphere with colours of its
 own, its texture laid on by each vertex's X and Y, hanging from the pod. `tractor_bubble_glow`
 (`0x0041CF80`) runs green waves round it: vertex `n` takes `(sin(0.3 n + 3 t) + 1)` times the

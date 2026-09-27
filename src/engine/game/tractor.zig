@@ -40,6 +40,8 @@ pub const Tractors = struct {
     gpa: Allocator,
     slots: [capacity]?*Tractor = @splat(null),
     image: *srtexture.Image,
+    /// How the beams are drawn.
+    glow: Glow = .halo,
 
     pub const capacity = 5;
 
@@ -144,7 +146,33 @@ const beam_ribbons = 3;
 const beam_length: f32 = 400;
 const beam_span: [2][2]f32 = .{ .{ 0.04, 0.04 }, .{ 0.99, 0.99 } };
 const beam_quads = 1 + beam_ribbons;
-const beam_corners = beam_quads * guns.blade_corners;
+
+/// How far a beam's glow reaches either side of its axis, as a share of the beam's own width, and
+/// how solid it is beside the beam. Not the game's.
+const glow_width: f32 = 3;
+const glow_share: f32 = 0.35;
+
+/// How a tractor's beam is drawn.
+pub const Glow = enum {
+    /// **Improvement:** with a soft glow along it: three more ribbons, three times as wide and
+    /// fainter, set between the beam's own over the same texture, so that it reads at a distance
+    /// and at high resolutions.
+    halo,
+    /// As thin as the original draws it.
+    none,
+
+    /// The quads of a beam drawn so: its square and ribbons, and the glow's ribbons.
+    fn quads(glow: Glow) usize {
+        return switch (glow) {
+            .halo => beam_quads + beam_ribbons,
+            .none => beam_quads,
+        };
+    }
+};
+
+/// The most quads a beam has, and corners.
+const most_quads = Glow.halo.quads();
+const most_corners = most_quads * guns.blade_corners;
 
 /// A tractor's beam (`tractor_beam_mesh`, `0x0041CBC0`, "TractorBeam_Mesh"): a square across its
 /// emitter and three ribbons crossing on its axis, a star's blades (`guns.blade`), over `laser2`,
@@ -154,7 +182,9 @@ pub const Beam = struct {
     mesh: srapiext.Mesh,
     level: [1]srapiext.Level,
     object: srapiext.MeshObject,
-    colours: [beam_corners][4]f32 = @splat(@splat(0)),
+    /// How many quads it has (`Glow.quads`), whose corners' colours `colours` begins with.
+    quads: usize,
+    colours: [most_corners][4]f32 = @splat(@splat(0)),
     /// The ship it comes from, the part it hangs from, and where on the part it stands.
     ship: u16,
     part: usize,
@@ -163,29 +193,34 @@ pub const Beam = struct {
     turn: math.Matrix = math.identity,
 
     /// The game draws the square in one group of polygons and the ribbons in another, of the same
-    /// material; OpenReliant draws them in one.
-    pub fn create(gpa: Allocator, image: *srtexture.Image, ship: u16, part: usize, point: Vector) Allocator.Error!*Beam {
-        var corners: [beam_corners]Vector = undefined;
+    /// material; OpenReliant draws them in one, with the glow's ribbons where `glow` has them.
+    pub fn create(gpa: Allocator, image: *srtexture.Image, glow: Glow, ship: u16, part: usize, point: Vector) Allocator.Error!*Beam {
+        var corners: [most_corners]Vector = undefined;
         corners[0..guns.blade_corners].* = .{
             .{ -beam_half, -beam_half, 0 }, .{ beam_half, -beam_half, 0 },
             .{ beam_half, beam_half, 0 },   .{ -beam_half, beam_half, 0 },
         };
         for (0..beam_ribbons) |ribbon| {
             corners[(1 + ribbon) * guns.blade_corners ..][0..guns.blade_corners].* = guns.blade(ribbon, beam_ribbons, beam_half, .{ 0, beam_length });
+            // The glow's ribbons stand halfway between the beam's.
+            corners[(beam_quads + ribbon) * guns.blade_corners ..][0..guns.blade_corners].* = guns.blade(2 * ribbon + 1, 2 * beam_ribbons, beam_half * glow_width, .{ 0, beam_length });
         }
-        var faces: [beam_quads][guns.blade_corners]u16 = undefined;
-        var uv: [beam_corners][2]f32 = undefined;
+        var faces: [most_quads][guns.blade_corners]u16 = undefined;
+        var uv: [most_corners][2]f32 = undefined;
         for (&faces, 0..) |*face, quad| {
             face.* = guns.quadFace(quad);
             uv[quad * guns.blade_corners ..][0..guns.blade_corners].* = guns.bladeCorners(beam_span);
         }
+        const quads = glow.quads();
+        const used = quads * guns.blade_corners;
         const material: srapiext.Material = .onePass(.{ .coordinates = .mesh, .lit = true, .blend = .add_alpha });
         const beam = try gpa.create(Beam);
         errdefer gpa.destroy(beam);
         beam.* = .{
-            .mesh = try guns.meshOf(guns.blade_corners, gpa, &corners, &faces, &uv, material, image),
+            .mesh = try guns.meshOf(guns.blade_corners, gpa, corners[0..used], faces[0..quads], uv[0..used], material, image),
             .level = undefined,
             .object = undefined,
+            .quads = quads,
             .ship = ship,
             .part = part,
             .point = point,
@@ -196,7 +231,7 @@ pub const Beam = struct {
             .position = @splat(0),
             .radius = beam.mesh.radius,
             .levels = &beam.level,
-            .baked = &beam.colours,
+            .baked = beam.colours[0..used],
         };
         return beam;
     }
@@ -207,13 +242,17 @@ pub const Beam = struct {
     }
 
     /// `tractor_beam_fade` (`0x0041CED0`): the beam as solid as `alpha`, from nothing to whole:
-    /// each quad clear at its near corners and green, that solid, at its far ones.
+    /// each quad clear at its near corners and green, that solid, at its far ones; the glow's
+    /// `glow_share` as solid.
     pub fn fade(beam: *Beam, alpha: f32) void {
         const solid = std.math.clamp(alpha, 0, 1);
-        for (&beam.colours, 0..) |*colour, corner| switch (corner % guns.blade_corners) {
-            1, 2 => colour.* = .{ 0, 1, 0, solid },
-            else => colour[3] = 0,
-        };
+        for (beam.colours[0 .. beam.quads * guns.blade_corners], 0..) |*colour, corner| {
+            const own = if (corner / guns.blade_corners < beam_quads) solid else solid * glow_share;
+            switch (corner % guns.blade_corners) {
+                1, 2 => colour.* = .{ 0, 1, 0, own },
+                else => colour[3] = 0,
+            }
+        }
     }
 
     /// `tractor_beam_aim` (`0x0041CE00`): the beam from its point on a part standing at `part`,
@@ -225,7 +264,7 @@ pub const Beam = struct {
         beam.object.position = from;
         beam.object.orientation = orientation;
         const reach = math.distance(pod, from);
-        for (1..beam_quads) |ribbon| {
+        for (1..beam.quads) |ribbon| {
             for (beam.mesh.positions[ribbon * guns.blade_corners + 1 ..][0..2]) |*far| far[2] = reach;
         }
         srapi.findBoundingBox(&beam.mesh);
@@ -621,7 +660,7 @@ fn makeBeams(world: gameobj.World, index: u16, pod: u16, tractor: *Tractor) void
     const hull = model.partNamed(hullName(slot.object.type)) orelse return;
     const points = (hull.data() orelse return).pointList(.tractor) orelse return;
     for (&tractor.beams, points.points[0..@min(points.points.len, tractor.beams.len)]) |*beam, point| {
-        beam.* = Beam.create(tractors.gpa, tractors.image, index, hull.index, gameobj.vector(point.position)) catch null;
+        beam.* = Beam.create(tractors.gpa, tractors.image, tractors.glow, index, hull.index, gameobj.vector(point.position)) catch null;
     }
     const shields = world.shields orelse return;
     tractor.bubble = Bubble.create(tractors.gpa, shields, all.slots[pod].object.radius * bubble_scale) catch null;
@@ -709,7 +748,7 @@ test Tractors {
     try std.testing.expectEqual(null, tractors.take(9));
     try std.testing.expectEqual(light_reach, tractors.slots[0].?.light.kind.point.range);
     // One let go frees its place, with its beams.
-    tractors.slots[2].?.beams[0] = try Beam.create(gpa, tractors.image, 0, 0, @splat(0));
+    tractors.slots[2].?.beams[0] = try Beam.create(gpa, tractors.image, .halo, 0, 0, @splat(0));
     tractors.free(2);
     try std.testing.expectEqual(2, tractors.take(7).?);
     tractors.reset();
@@ -727,7 +766,7 @@ test "Tractors.draw" {
     const tractors = &built.tractors;
     const tractor = tractors.slots[tractors.take(pod).?].?;
     // A beam from a ship with no model to hang it from, which is left out.
-    tractor.beams[0] = try Beam.create(gpa, tractors.image, pod, 0, @splat(0));
+    tractor.beams[0] = try Beam.create(gpa, tractors.image, .halo, pod, 0, @splat(0));
     var scene: srcore.Scene = .{};
     defer scene.deinit(gpa);
 
@@ -750,10 +789,11 @@ test Beam {
     const gpa = std.testing.allocator;
     var built: testing.Built = try .init(gpa);
     defer built.deinit(gpa);
-    const beam = try Beam.create(gpa, built.tractors.image, 3, 1, .{ 0, 10, 0 });
+    const beam = try Beam.create(gpa, built.tractors.image, .none, 3, 1, .{ 0, 10, 0 });
     defer beam.destroy(gpa);
     // A square across the emitter and three ribbons along its axis.
-    try std.testing.expectEqual(beam_corners, beam.mesh.positions.len);
+    try std.testing.expectEqual(beam_quads * guns.blade_corners, beam.mesh.positions.len);
+    try std.testing.expectEqual(beam_quads * guns.blade_corners, beam.object.baked.?.len);
     try std.testing.expectEqual(beam_length, beam.mesh.positions[guns.blade_corners + 1][2]);
 
     // Faded, each quad is clear at its near corners and green at its far ones.
@@ -776,6 +816,26 @@ test Beam {
     beam.hang(moved);
     try std.testing.expect(math.dot(math.forward(beam.object.orientation), along) > 0.9999);
     try std.testing.expectApproxEqAbs(50, beam.object.position[2] - (math.Place{ .position = beam.point }).within(part).position[2], 1e-3);
+}
+
+test "a beam's glow" {
+    const gpa = std.testing.allocator;
+    var built: testing.Built = try .init(gpa);
+    defer built.deinit(gpa);
+    const beam = try Beam.create(gpa, built.tractors.image, .halo, 3, 1, @splat(0));
+    defer beam.destroy(gpa);
+    // Three more ribbons, three times as wide, halfway round between the beam's.
+    const first_glow = beam_quads * guns.blade_corners;
+    try std.testing.expectEqual(first_glow + beam_ribbons * guns.blade_corners, beam.mesh.positions.len);
+    const near = beam.mesh.positions[first_glow];
+    try std.testing.expectApproxEqAbs(beam_half * glow_width, math.length(near), 1e-3);
+    try std.testing.expect(@abs(near[0]) > 1 and @abs(near[1]) > 1);
+    // Fainter than the beam, and reaching as far.
+    beam.fade(1);
+    try std.testing.expectEqual(glow_share, beam.colours[first_glow + 1][3]);
+    try std.testing.expectEqual(1, beam.colours[guns.blade_corners + 1][3]);
+    beam.aim(.{ .position = @splat(0), .orientation = math.identity }, .{ 0, 0, 2000 });
+    try std.testing.expectApproxEqAbs(2000, beam.mesh.positions[first_glow + 1][2], 1e-2);
 }
 
 test Bubble {
