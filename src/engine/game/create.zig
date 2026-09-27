@@ -47,6 +47,7 @@ pub const models = @import("create/models.zig");
 pub const flight_stats = @import("create/flight.zig");
 pub const combat_stats = @import("create/combat.zig");
 pub const library = @import("create/library.zig");
+pub const atmosphere = @import("create/atmosphere.zig");
 
 /// Ship types: the records of `shipstats.bin`, and the entries of the tables they index. Types
 /// above the last, markers and nav points among them, have no stats.
@@ -558,7 +559,8 @@ pub const Objects = struct {
     /// no ship type has objects or a model loaded. OpenReliant lets go of the objects' nodes as
     /// well, which the game frees as the mission before ends.
     ///
-    /// Not ported: the planets' atmospheres, whose texture it loads and whose table it empties.
+    /// The planets' atmospheres, whose texture it loads and whose table it empties, are
+    /// `atmosphere.Atmospheres`.
     pub fn reset(all: *Objects, random: *libcmt.Rand) void {
         for (&all.slots) |*slot| {
             slot.release(all.gpa);

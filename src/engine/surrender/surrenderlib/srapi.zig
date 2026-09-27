@@ -239,6 +239,17 @@ pub fn calcPolyNormals(mesh: *srapiext.Mesh) void {
     }
 }
 
+/// Each vertex's normal (`SR_mesh_calc_vertex_normals`, `0x004C3E30`): the normals of the planes
+/// of the polygons it corners, added up and made one long (`math.normalize`), so that one no
+/// polygon corners points forward, tiny.
+pub fn calcVertexNormals(mesh: *srapiext.Mesh) void {
+    @memset(mesh.normals, @splat(0));
+    for (mesh.polygons, mesh.planes) |polygon, plane| {
+        for (mesh.indices[polygon.first..][0..polygon.count]) |index| mesh.normals[index] += plane.normal;
+    }
+    for (mesh.normals) |*normal| normal.* = math.normalize(normal.*);
+}
+
 /// The mesh's bounding box, and its farthest vertex's distance from the origin
 /// (`SR_mesh_find_bounding_box`, `0x004C3F10`); all zero without vertices.
 pub fn findBoundingBox(mesh: *srapiext.Mesh) void {

@@ -14,6 +14,7 @@ const std = @import("std");
 pub const files = @import("engine/files.zig");
 pub const game = @import("engine/game.zig");
 pub const input = @import("engine/input.zig");
+pub const interface = @import("engine/interface.zig");
 pub const libcmt = @import("engine/libcmt.zig");
 pub const mss = @import("engine/mss.zig");
 pub const profile = @import("engine/profile.zig");

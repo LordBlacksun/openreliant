@@ -156,7 +156,7 @@ Some of the commands mission 1 runs:
 | `SetObjective` (`0x43`) | Sets the state of one of the mission's objectives ([Display](hud.md#the-objectives)) |
 | `SetShipAvoidance` (`0x49`) | Each ship the first argument names, unless a stand-in, keeps clear of others no more while the second is set (`no_avoidance`, [Orders](orders.md#avoidance)) |
 | `MultiplayerScriptSync` (`0x56`) | In a multiplayer game, holds the players' scripts in step; in a game of one, runs on |
-| `DestroyFlightGroup` (`0x04`) | Each ship of the flight group leaves the mission at once, a stand-in in its place (`object_retire`), a planet's atmosphere let go of with it |
+| `DestroyFlightGroup` (`0x04`) | Each ship of the flight group leaves the mission at once, a stand-in in its place (`object_retire`), a planet's atmosphere let go of with it ([Backdrop](backdrop.md#planet-atmospheres)) |
 | `ClearAI` (`0x0C`) | Each ship the argument names, past the players' slots, drops its orders, where its current one gives way (`orders_clear`, [Orders](orders.md)) |
 | `StartShipAnimation` (`0x11`), `StartShipAnimationReverse` (`0x3D`) | Each part of the ship the first argument names plays its track the second names, in the track's own mode, at 4 a step from its start, or at -4 from where it stands (`node_play_named`) |
 | `DisableObject` (`0x1C`) | Each ship the first argument names is disabled while the second is set, which leaves it out of the mission's work, or enabled again; for the component `push_component` named, its assembly shows its damaged model instead, or its own again |
