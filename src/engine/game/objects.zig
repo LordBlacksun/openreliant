@@ -997,10 +997,12 @@ pub fn lightMask(model_lists_components: bool) u32 {
     return if (model_lists_components) components_light_mask else whole_light_mask;
 }
 
-/// How far the launch's hangar's two beacons reach (`Model.reachFarther`).
+/// How far the launch's hangar's two beacons light what stands in it (`Model.reachFarther`,
+/// `Model.bounceLights`).
 pub const HangarBeacons = enum {
-    /// **Improvement:** twice their own reach, so that their flash lights the ship on the retainer
-    /// and its cockpit, which their own falls short of by about a quarter.
+    /// **Improvement:** twice their own reach, and a share of their flash thrown back off the red
+    /// walls, so that it lights the ship on the retainer and its cockpit: their own light falls
+    /// short of the ship by about a quarter, and on its nose, which the cutaways don't show.
     to_the_ship,
     /// Their own reach, as the original has it.
     own,
@@ -1078,6 +1080,9 @@ pub const Model = struct {
         /// casts one: the loader bakes a steady light into the meshes instead
         /// (`static_lights_bake`). Its place is set as it is drawn.
         cast: ?srlight.Light,
+        /// OpenReliant's: what it throws back off the walls round it while it shines, lighting
+        /// evenly what stands there, as an ambient light (`Model.bounceLights`); null for none.
+        bounce: ?srlight.Light = null,
 
         /// A light's sprites and what they are drawn with.
         pub const Sprites = struct {
@@ -1753,6 +1758,18 @@ pub const Model = struct {
         };
     }
 
+    /// **Improvement:** the model's blinking lights throw `share` of their light back off the
+    /// walls round them while they shine, lighting evenly what stands there, by `mask`, which the
+    /// model's parts keep out from then on, so that the walls take their light alone
+    /// (`Light.bounce`). The launch's hangar's beacons flash on the ship in it so
+    /// (`HangarBeacons`).
+    pub fn bounceLights(model: *Model, share: f32, mask: u32) void {
+        for (model.parts) |*part| part.object.light_mask |= mask;
+        for (model.lights) |*light| if (light.cast) |cast| {
+            light.bounce = .{ .mask = mask, .intensity = cast.intensity * share, .colour = cast.colour, .kind = .ambient };
+        };
+    }
+
     /// One glow for each attachment of kind `engine_glow` a part carries, at its place in the model
     /// (`node_mount_glow`). A model carries none while the glows' meshes are not built.
     fn createGlows(gpa: Allocator, model: *const shp.Model, glows: ?*const environfx.Glows) Allocator.Error![]Glow {
@@ -2173,6 +2190,7 @@ pub const Model = struct {
                 cast.kind.point.position = world;
                 try xtrabits.sceneAdd(gpa, scene, .{ .light = cast }, layer);
             }
+            if (light.bounce) |*bounce| try xtrabits.sceneAdd(gpa, scene, .{ .light = bounce }, layer);
         }
         for (model.glows) |*glow| {
             if (!view.glows) break;
@@ -2811,6 +2829,23 @@ test "a model's lights: their sprites, and the light a blinking one casts" {
     try std.testing.expectEqual(100, built.lights[1].cast.?.kind.point.range);
     try std.testing.expectEqual(null, built.lights[0].cast);
     try std.testing.expectEqual(null, built.lights[2].cast);
+
+    // Throwing its flash back, the blinking one adds an even light of its colour, a share as
+    // bright, by a mask the model's parts keep out, while it shines; the others throw nothing.
+    built.bounceLights(0.25, 0x40);
+    const bounce = built.lights[1].bounce.?;
+    try std.testing.expectEqual(srlight.Light.Kind.ambient, bounce.kind);
+    try std.testing.expectEqual(0.5, bounce.intensity);
+    try std.testing.expectEqual([3]f32{ 1, 0, 0 }, bounce.colour);
+    try std.testing.expectEqual(null, built.lights[0].bounce);
+    for (built.parts) |part| try std.testing.expect(!bounce.reaches(part.object.light_mask));
+    try std.testing.expect(bounce.reaches(lightMask(false)));
+    scene.clear();
+    try built.draw(gpa, &scene, .world, .{});
+    try std.testing.expectEqual(2, scene.lights.items.len);
+    scene.clear();
+    try built.draw(gpa, &scene, .world, .{ .frame_start = 150 });
+    try std.testing.expectEqual(0, scene.lights.items.len);
 }
 
 test "an engine glow burns with the throttle" {
