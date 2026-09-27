@@ -43,11 +43,14 @@ The frames are 120 by 100, made of blocks of 4 by 4 pixels. The game looks throu
 the colour it draws see-through, red 255, green 0 and blue 216, or red 254, green 0 and blue 215
 or 216, and converts the entries for the display's colour depth.
 
-**Unknown:** ten films (`51stWL_Plt`, `51stWL_Plt_d`, `BuccnrsWL_Plt`, `CougerWL_Plt`,
-`CougerWL_Plt_d`, `StingerWL_Plt_D`, `StingerWL_Plt_L`, `STINGWL`, `Victorious_Brdge_Off_D` and
-`test`) are 100 by 120, hold their palette's count and first entry the other way about, and carry
-696 more bytes in each delta frame than the layout below holds; the game's decoder reads their
-pixels from the palette, so they cannot be what it plays. OpenReliant leaves their frames out.
+Ten films come from earlier versions of the tool that made them: `51stWL_Plt`, `51stWL_Plt_d`,
+`BuccnrsWL_Plt`, `CougerWL_Plt`, `CougerWL_Plt_d`, `StingerWL_Plt_D`, `StingerWL_Plt_L`,
+`STINGWL`, `Victorious_Brdge_Off_D` and `test`. Their key frames hold the width before the height
+and the first entry before the entries, and their delta frames their counts in other orders
+(below). No pilot record names them, and the game's decoder, reading them in its own order, would
+draw their pixels from the palette. OpenReliant reads them by their layout: a key frame whose
+entries are fewer than its first entry has the earlier order, and a delta frame the first order
+whose counts lay out a chunk of its size.
 
 ## Delta frames
 
@@ -61,6 +64,15 @@ block:
 | 12 | 2 | How many motion vectors there are |
 | 14 | 2 | How many blocks are drawn in four colours |
 | 16 | 4 | **Unknown:** zero in every shipped film |
+
+The earlier tools wrote the counts in other orders, the whole blocks' always second: the vectors,
+the whole blocks, the patterns, the bits (eight of the ten films above); or the patterns, the
+whole blocks, the bits, the vectors (`BuccnrsWL_Plt` and `test`).
+
+The rest of a delta frame:
+
+| Offset | Size | Field |
+|---|---|---|
 | 20 | | The vectors: two 10-bit numbers each, least significant bit first, the top bit the sign, packed on to whole words (`talkie_unpack_vectors`, `0x004A6520`) |
 | | 16 each | The blocks given whole, their pixels row by row |
 | | 8 each | The patterns: four palette entries, then a word of two bits a pixel, the highest bits the first pixel's (`talkie_patterns`, `0x004A6590`) |

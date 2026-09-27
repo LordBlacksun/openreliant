@@ -36,6 +36,9 @@ pub const block_pixels = block * block;
 pub const vector_bits = 10;
 pub const pattern_size = 4 + block_pixels / 4;
 
+/// The most bits a map's entry takes, which `field` reads.
+pub const max_map_bits = 16;
+
 /// What every chunk starts with.
 pub const Header = extern struct {
     id: [4]u8,
@@ -77,6 +80,17 @@ pub const KeyHeader = extern struct {
     first: u16,
     _unknown_10: u32,
 
+    /// The header's fields as the game reads them; or, where the entries are fewer than the
+    /// first, as an earlier tool wrote them, the width before the height and the first entry
+    /// before the entries, which the ten unused films in `pilots.hog` have and the game misreads
+    /// (`Order`).
+    pub fn fields(header: KeyHeader) Fields {
+        if (header.entries >= header.first) return .{ .width = header.width, .height = header.height, .entries = header.entries, .first = header.first };
+        return .{ .width = header.height, .height = header.width, .entries = header.first, .first = header.entries };
+    }
+
+    pub const Fields = struct { width: u16, height: u16, entries: u16, first: u16 };
+
     comptime {
         assert(@offsetOf(KeyHeader, "height") == 0x08);
         assert(@offsetOf(KeyHeader, "width") == 0x0A);
@@ -86,10 +100,23 @@ pub const KeyHeader = extern struct {
     }
 };
 
+/// The orders a delta frame's header holds its four counts in: the game's, and two earlier
+/// tools', which the ten unused films in `pilots.hog` have. The whole blocks' count is second in
+/// all three; a chunk's order is told from its size (`DeltaHeader.order`).
+pub const Order = enum {
+    /// The bits, the whole blocks, the vectors, the patterns: what the game reads.
+    bits_first,
+    /// The vectors, the whole blocks, the patterns, the bits.
+    vectors_first,
+    /// The patterns, the whole blocks, the bits, the vectors.
+    patterns_first,
+};
+
 /// A delta frame's header (`talkie_delta`, `0x004A66F0`): how many bits the map takes for each
 /// block, how many blocks are given whole, how many motion vectors there are, and how many blocks
-/// are drawn in four colours. After it, the vectors, the whole blocks, the patterns, and the map.
-/// **Unknown:** the last word, zero in every shipped film.
+/// are drawn in four colours, in the game's order (`Order.bits_first`). After it, the vectors, the
+/// whole blocks, the patterns, and the map. **Unknown:** the last word, zero in every shipped
+/// film.
 pub const DeltaHeader = extern struct {
     chunk: Header,
     bits: u16,
@@ -97,6 +124,41 @@ pub const DeltaHeader = extern struct {
     vectors: u16,
     patterns: u16,
     _unknown_10: u32,
+
+    /// The counts as `order` has them.
+    pub fn counts(header: DeltaHeader, held: Order) Counts {
+        return switch (held) {
+            .bits_first => .{ .bits = header.bits, .whole = header.whole, .vectors = header.vectors, .patterns = header.patterns },
+            .vectors_first => .{ .vectors = header.bits, .whole = header.whole, .patterns = header.vectors, .bits = header.patterns },
+            .patterns_first => .{ .patterns = header.bits, .whole = header.whole, .bits = header.vectors, .vectors = header.patterns },
+        };
+    }
+
+    /// The first order, the game's first, whose counts lay out a chunk of `size` bytes for a
+    /// frame of `blocks` blocks (`Counts.size`), with bits enough for every entry; or null.
+    pub fn order(header: DeltaHeader, size: usize, blocks: usize) ?Order {
+        for (std.enums.values(Order)) |candidate| {
+            const found = header.counts(candidate);
+            if (found.bits > max_map_bits) continue;
+            const entries = @as(usize, found.whole) + found.vectors + found.patterns;
+            if (found.size(blocks) == size and (@as(usize, 1) << @intCast(found.bits)) >= entries) return candidate;
+        }
+        return null;
+    }
+
+    pub const Counts = struct {
+        bits: u16,
+        whole: u16,
+        vectors: u16,
+        patterns: u16,
+
+        /// The bytes a chunk with these counts takes for a frame of `blocks` blocks: the header,
+        /// the vectors and the map each packed on to whole words, the whole blocks and the
+        /// patterns.
+        pub fn size(these: Counts, blocks: usize) usize {
+            return @sizeOf(DeltaHeader) + wordBytes(@as(usize, these.vectors) * 2 * vector_bits) + @as(usize, these.whole) * block_pixels + @as(usize, these.patterns) * pattern_size + wordBytes(blocks * these.bits);
+        }
+    };
 
     comptime {
         assert(@offsetOf(DeltaHeader, "bits") == 0x08);
@@ -239,7 +301,7 @@ pub const Film = struct {
     /// depth, which OpenReliant leaves to the drawing, and looks for the see-through colour among
     /// them (`transparent`).
     fn keyFrame(film: *Film, bytes: []const u8) Error!void {
-        const header = layout.view(KeyHeader, bytes) catch return error.BadChunk;
+        const header = (layout.view(KeyHeader, bytes) catch return error.BadChunk).fields();
         const width: usize = header.width;
         const height: usize = header.height;
         if (width == 0 or height == 0 or width % block != 0 or height % block != 0) return error.BadChunk;
@@ -276,18 +338,20 @@ pub const Film = struct {
     /// before, the two swapped first: the vectors unpacked into how far each moves a block from
     /// (`offsets`), the whole blocks copied and the patterns drawn after them (`blocks`,
     /// `drawPatterns`), the map unpacked, and the frame assembled (`assemble`). The vectors take
-    /// a whole number of words, and so does the map.
+    /// a whole number of words, and so does the map. The header's counts are read in whichever
+    /// order lays the chunk out (`DeltaHeader.order`), where the game reads its own alone.
     ///
     /// The game keeps a table of the rows' starts to add a vector's rows by, which for more rows
     /// than the frame has reads beside it; OpenReliant works the offset out.
     fn deltaFrame(film: *Film, bytes: []const u8) Error!void {
         const header = layout.view(DeltaHeader, bytes) catch return error.BadChunk;
         if (film.width == 0) return error.BadChunk;
-        const bits = std.math.cast(u5, header.bits) orelse return error.BadChunk;
-        if (bits > 16) return error.BadChunk;
-        const vectors: usize = header.vectors;
-        const whole: usize = header.whole;
-        const patterns: usize = header.patterns;
+        const order = header.order(bytes.len, film.map.len) orelse return error.BadChunk;
+        const counts = header.counts(order);
+        const bits: u5 = @intCast(counts.bits);
+        const vectors: usize = counts.vectors;
+        const whole: usize = counts.whole;
+        const patterns: usize = counts.patterns;
         film.shown ^= 1;
         film.offsets = try growTo(i32, film.gpa, film.offsets, vectors);
         film.blocks = try growTo(u8, film.gpa, film.blocks, (whole + patterns) * block_pixels);
@@ -499,6 +563,57 @@ test Film {
     unscramble(delta_chunk);
     chunks = .{ .bytes = delta_chunk };
     try std.testing.expectError(error.BadChunk, fresh.decode(chunks.next().?));
+}
+
+test "the earlier tools' orders" {
+    const gpa = std.testing.allocator;
+    // A key frame written width first and first entry first decodes as the game's would.
+    var palette: Palette = @splat(0);
+    var pixels: [32]u8 = undefined;
+    for (&pixels, 0..) |*pixel, i| pixel.* = @intCast(i);
+    const released = try testing.keyPayload(gpa, 8, 4, &palette, &pixels);
+    defer gpa.free(released);
+    const early = try gpa.dupe(u8, released);
+    defer gpa.free(early);
+    std.mem.writeInt(u16, early[0..2], 8, .little);
+    std.mem.writeInt(u16, early[2..4], 4, .little);
+    std.mem.writeInt(u16, early[4..6], 0, .little);
+    std.mem.writeInt(u16, early[6..8], 256, .little);
+    const early_chunk = try testing.chunk(gpa, "fYEK", early);
+    defer gpa.free(early_chunk);
+    var film: Film = .init(gpa);
+    defer film.deinit();
+    var chunks: Chunks = .{ .bytes = early_chunk };
+    try std.testing.expect(try film.decode(chunks.next().?));
+    try std.testing.expectEqual(8, film.width);
+    try std.testing.expectEqualSlices(u8, &pixels, film.frame());
+
+    // A delta's order is told from its size: one whole block and no vectors or patterns, at two
+    // bits an entry, the counts as each order has them.
+    const orders = [_]struct { Order, [4]u16 }{
+        .{ .bits_first, .{ 2, 1, 0, 0 } },
+        .{ .vectors_first, .{ 0, 1, 0, 2 } },
+        .{ .patterns_first, .{ 0, 1, 2, 0 } },
+    };
+    for (orders) |case| {
+        const order, const fields = case;
+        var delta: std.ArrayList(u8) = .empty;
+        defer delta.deinit(gpa);
+        for (fields) |value| try delta.appendSlice(gpa, &std.mem.toBytes(value));
+        try delta.appendSlice(gpa, &[_]u8{ 0, 0, 0, 0 });
+        try delta.appendSlice(gpa, &([_]u8{7} ** 16));
+        try delta.appendSlice(gpa, &[_]u8{ 0b0000_0000, 0, 0, 0 });
+        const header: DeltaHeader = .{ .chunk = .{ .id = "fLED".*, .size = 0 }, .bits = fields[0], .whole = fields[1], .vectors = fields[2], .patterns = fields[3], ._unknown_10 = 0 };
+        try std.testing.expectEqual(order, header.order(delta.items.len + @sizeOf(Header), 2).?);
+        const chunk = try testing.chunk(gpa, "fLED", delta.items);
+        defer gpa.free(chunk);
+        chunks = .{ .bytes = chunk };
+        try std.testing.expect(try film.decode(chunks.next().?));
+        try std.testing.expectEqualSlices(u8, &([_]u8{ 7, 7, 7, 7, 7, 7, 7, 7 } ** 4), film.frame());
+    }
+    // Counts that lay out no chunk of the size are bad.
+    const wrong: DeltaHeader = .{ .chunk = .{ .id = "fLED".*, .size = 0 }, .bits = 2, .whole = 5, .vectors = 0, .patterns = 0, ._unknown_10 = 0 };
+    try std.testing.expectEqual(null, wrong.order(40, 2));
 }
 
 test field {
