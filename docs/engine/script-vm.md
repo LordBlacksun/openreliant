@@ -177,7 +177,7 @@ Some of the commands mission 1 runs:
 | `SetTargetable` (`0x22`) | Each ship the first argument names can be targeted, where its type allows, or not; for the component `push_component` named, whether it can be picked as a subtarget |
 | `SetActionCentre` (`0x25`) | The action sphere ([Maneuvers](maneuvers.md)) centres on the object the first argument names, its radius the second, or 220000 for none |
 | `DisableGuns` (`0x2F`) | Each ship the first argument names fires no guns while the second is set, its turrets resting too |
-| `SetEscortPoint` (`0x31`) | Each ship the first argument names takes the object the second names as its escort point (`+0x724`), whose marker the display shows for the player's ship (`escort_marker_frame`, `0x00468D00`) |
+| `SetEscortPoint` (`0x31`) | Each ship the first argument names takes the object the second names as its escort point (`+0x724`), whose marker the player's ship shows ([The escort point's marker](missions.md#the-escort-points-marker)) |
 | `SetPrimaryTarget` (`0x39`) | The ship the argument names, or its component, becomes the mission's primary target, which PRIMARY TARGET makes the player's ([Display](hud.md#picking-a-target)) |
 | `SnapToPoint` (`0x3E`) | The ship the first argument names, unless it is exploding, ejected or out of a multiplayer game, is put where the object the second names will stand next, turned as it will be, and stopped |
 | `IsShipThisPlayer` (`0x45`) | 1 where the argument names the player's ship, 2 otherwise |

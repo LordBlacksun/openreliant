@@ -1614,9 +1614,9 @@ address	kind	name	type	comment
 005023d6	data	mission_dates	short[29]	The language string of each mission's date, which the launch types out: 0 for mission 0, then missions 1 to 28
 004e3c98	data	launch_styles		The launch styles' routines, 24 bytes a style: init, update, two nulls, 0x00515D70 and a null
 0052a1e0	data	wait_still_moving	byte	Set by WaitForJumpOrLaunch's walk where a ship still jumps, warps or launches
-00468920	function	escort_marker_init	void (void)	Builds the escort point's marker as a mission runs: its mesh (escort_marker_mesh) and scene object (escort_marker)
+00468920	function	escort_marker_init	void (void)	Builds the escort point's marker as a mission runs: its mesh (escort_marker_mesh), Dockring mesh, of four rings of lines about its Z axis 640 apart, each a square of side 1280 with its corners cut, and twelve chevrons between them pointing along it, all red and added; its scene object (escort_marker), never culled and coloured by its own colours; and its clock at 0
 00468ce0	function	escort_marker_free	void (void)	Frees the escort point's marker as the mission ends
-00468d00	function	escort_marker_frame	void (void)	Once a frame, where the player's ship has an escort point (+0x724, SetEscortPoint): places the marker on it, drawn no farther from the camera than a set reach, pulses its colours in bands over 300 ticks, and shows it in the cockpit views
+00468d00	function	escort_marker_frame	void (void)	Once a frame, where the player's ship has an escort point (+0x724, SetEscortPoint): places the marker on it, drawn no farther from the camera than a set reach, pulses the red of each ring but the first and each place of chevrons in a band that runs along it every 300 ticks, and adds it to the world's layer in views 0 to 3
 0054d100	data	escort_marker_clock	int	The ticks the escort point's marker pulses by, 0 to 299
 0054d104	data	escort_marker_mesh	void *	The escort point's marker's mesh
 0054d108	data	escort_marker	void *	The escort point's marker's scene object

@@ -327,6 +327,9 @@ pub const Frame = struct {
     /// The planets' atmospheres, which go into the background layer after the backdrop, lit by its
     /// sun and as bright as its lens flares, their planets turning.
     atmospheres: ?*create.atmosphere.Atmospheres = null,
+    /// The escort point's marker, which goes into the world's layer after the backdrop and before
+    /// the sky, from the cockpit's views, while the player's ship has an escort point.
+    escort_marker: ?*create.escort.Marker = null,
     /// The screen's flash, which goes into the overlay's layer, and the ticks the frame spans
     /// (`frame_duration`), which it counts down.
     flash: ?*flash.Flash = null,
@@ -780,6 +783,7 @@ pub fn drawFrame(gpa: Allocator, arena: Allocator, scene: *srcore.Scene, context
     frame.space.shortenDust(frame.jumping_in);
     try frame.space.frame(gpa, scene, context, frame.view, frame.cockpit_mode);
     if (frame.atmospheres) |atmospheres| try atmospheres.frame(gpa, scene, frame.objects, context.camera.position, frame.space.sun_direction, context.hardware, frame.space.flare_brightness, frame.attachments.frame_start);
+    if (frame.escort_marker) |marker| try marker.frame(gpa, scene, frame.objects, context.camera.position, frame.view, frame.ticks);
     if (context.hardware) try frame.sky.frame(gpa, scene, context);
     if (frame.view == .cockpit and frame.cockpit_mode == .cockpit and context.hardware) {
         // The backing, then the hands, then the cockpit, all over the world, sorted by depth.
@@ -1519,6 +1523,7 @@ pub fn startMission(gpa: Allocator, start: Start, image: []u8, number: u16) !*Lo
     if (world.tractors) |tractors| tractors.reset();
     if (world.rippers) |rippers| rippers.reset();
     if (world.atmospheres) |atmospheres| atmospheres.reset();
+    if (world.escort_marker) |marker| marker.reset();
     if (world.radio) |radio| radio.reset(if (world.hearing) |hearing| hearing.sound else null);
     if (world.flash) |lit| lit.* = .{};
     start.display.interference = .{};

@@ -151,6 +151,25 @@ yet takes the place of its slot's stand-in.
 `mission_over` (`0x0052A414`), one of the script's variables, ends the mission: `mission_frame`
 sets it once the camera has watched the player's end, and a script may set it itself.
 
+## The escort point's marker
+
+A ship's escort point (`+0x724`) is an object the script names for it to fly by
+(`SetEscortPoint`). Where the player's ship has one, a marker stands on it: four rings about the
+point's Z axis, 640 apart from -960 to 960, each drawn as lines along a square of side 1280 whose
+corners are cut off 320 in from each corner, the middle 320 of each side left open; and between
+the rings, at -640, 0 and 640, four chevrons a quarter turn apart, each a triangle of radius 100
+standing 640 out from the axis, its point toward positive Z. `escort_marker_init` (`0x00468920`)
+builds it as a mission runs, all red, untextured and added, and `escort_marker_free`
+(`0x00468CE0`) frees it as the mission ends.
+
+`escort_marker_frame` (`0x00468D00`), each frame after the missile lock, stands the marker where
+the escort point is drawn, turned as it is. A clock (`escort_marker_clock`, `0x0054D100`) moves on
+by the frame's ticks and comes round every 300. Each ring but the first, and each place of
+chevrons, takes its red from it: full as a band passes, falling by 0.01 a tick either side of the
+band's middle, to 0.25 at least. The band reaches the next ring or place of chevrons along the axis
+50 ticks later, 320 farther on. The marker is drawn along the line from the camera no farther than
+50000, and only in the views from the cockpit, 0 to 3.
+
 ## In OpenReliant
 
 `game.main.startMission` ([`main.zig`](../../src/engine/game/main.zig)) is the loading and
@@ -160,6 +179,9 @@ clock ticking once for each 100 of the game's ticks the pause does not hold. The
 [`executor.zig`](../../src/engine/game/executor.zig). Until the loadout screen is ported
 ([#44](https://github.com/vdmkenny/openreliant/issues/44)), `openreliant` chooses the loadout's ship,
 `--ship` or the test keys, and where it chooses none the player's record's kind stands.
+
+`create.escort` ([`escort.zig`](../../src/engine/game/create/escort.zig)) is the escort point's
+marker.
 
 The orders reach the mission's records through the world (`gameobj.World.mission`), for an order
 aimed at a flight group or a squad ([Orders](orders.md#targets-that-name-several-ships)).
