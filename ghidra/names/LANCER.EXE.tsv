@@ -1534,7 +1534,7 @@ address	kind	name	type	comment
 00456250	function	radio_say_pilot		Has a pilot say a line on the radio, from the pilot's speech file (msspeech.hog), outside a multiplayer game; the ejection's lines go through it
 00456d80	function	radio_wingman_ejected		A wingman's call on the radio as its pilot ejects, and the rescue's word a thousand ticks later
 004598d0	function	cmd_SetRescueProbabilities		The mission's SetRescueProbabilities: sets rescue_odds_rescued, rescue_odds_captured and rescue_odds_killed
-0052a414	data	mission_over	int	Set to 1 as the camera has watched the mission's end long enough, which ends the mission
+0052a414	data	mission_over	int	Set to 1 as the camera has watched the mission's end long enough, or 270 ticks after the player's ship has landed, which ends the mission
 00587cd4	data	mission_showing	int	What the mission's scene shows: 0 everything, 2 a launch's cutaway without the ship launched from, 3 set by the landing orders, 4 the ejection's cutaway with only the player's pod and the cutaway slot's ship
 00539a44	data	camera_cutaway	Vec3	Where the ejection's views stand off from what they watch, set by camera_set_view: view 7 the object's X axis times 5000, 0x1C half the way from the object to the player's ship, 0x1D the way from the player's ship to the object
 0041bb90	function	tractors_init	void (void)	As a mission loads: no tractors in use, and tractor_texture laser2
@@ -1700,3 +1700,15 @@ address	kind	name	type	comment
 005458f8	data	planet_atmosphere_count	int	How many of planet_atmospheres are in use
 005458fc	data	planet_atmosphere_texture	void *	atmos, which objects_reset loads and the atmospheres are drawn over
 00595bc0	data	planets_turned_at	int	The frame_start the planets with an atmosphere last turned at, in backdrop_frame
+004e1fe8	data	land_styles	uint[12]	Land's two styles, the Yamato's and the Reliant's: init, update, exit, 0, name and 0 each
+0040eb60	function	land_yamato_init	void __fastcall (int slot)	The init of Land's Yamato style
+0040ebc0	function	land_yamato_cutaway	void __fastcall (int slot)	The cutaway of the Yamato's landing: the hangar, type 0xD5, made in the cutaway slot, the player's ship stood in it, and view 0x0E or 0x25
+0040ee80	function	land_yamato_update	void __fastcall (int slot)	The update of Land's Yamato style, which sets the scene to the landing's
+0040f5c0	function	land_reliant_init	void __fastcall (int slot)	The init of Land's Reliant style: the first step, due in 700 ticks, or at once for a ship sent home for its friendly fire
+0040f600	function	land_reliant_cutaway	void __fastcall (int slot)	The cutaway of the Reliant's landing: view 0x23 or 0x26, the carrier moved to (0, -1000000, 0), the middle of its first launch tube, and the ship stood 20000 ahead of it and 5000 above
+0040f940	function	land_reliant_update	void __fastcall (int slot)	The update of Land's Reliant style: the cutaway, the approach over the first launch tube, the sink into it through its upper door, and the mission's end 270 ticks after the ship is down
+00453de0	function	permission_to_land	void __fastcall (int remote)	PERMISSION TO LAND, from frame_controls and the radio's menu with remote 0: heard once in 500 ticks, the training's instructor or the carrier clears the player's ship where landing_cleared is set, which then lands on its carrier (Land)
+0052987c	data	permission_heard_from	int	The game_ticks from which PERMISSION TO LAND is heard again
+0052a418	data	landing_cleared	int	Script variable 10: whether PERMISSION TO LAND clears the player's ship to land
+0052a428	data	mission_success	int	Script variable 14: how the script rates the mission, -1 a total failure to 4 a success with a bonus, which picks the carrier's clearance
+00474b40	function	friendly_fire_send_home	void __fastcall (int slot)	Outside a multiplayer game, for the player's ship: the mission's ending 6, or 7 where +0x678 is 3, and Friendly Fire pushed; for another player's slot, Jump Out

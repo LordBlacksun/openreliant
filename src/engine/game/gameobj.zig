@@ -1447,6 +1447,8 @@ pub const World = struct {
     difficulty: collision.Difficulty = .medium,
     /// How far the launch's hangar's beacons reach.
     hangar_beacons: objects.HangarBeacons = .to_the_ship,
+    /// How the Reliant's landing brings the ship down.
+    touchdown: @import("ailand.zig").Touchdown = .level,
     view: camera.View,
     shake: *f32,
     /// The runtime's numbers (`libcmt.Rand`), which the guns' step draws a damaged gun's misfire
@@ -1505,6 +1507,9 @@ pub const World = struct {
     /// The mission's events, which the game's code posts as they happen for the script's triggers
     /// (`mission.events`); null where no mission runs, as in a test.
     events: ?*@import("mission/events.zig").Events = null,
+    /// The game's variables the mission's script reads and writes (`vm.Variables`); null where no
+    /// mission runs, as in a test.
+    variables: ?*@import("../vm.zig").Variables = null,
 
     /// The ship types' stats and their models.
     pub const Spawn = struct {

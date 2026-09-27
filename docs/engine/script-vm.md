@@ -70,8 +70,12 @@ exact one rounded to a float. `push_percent n` pushes the top value times `n` ti
 `select_array`, `select_global` and `select_argument` make a place the store target
 (`vm_store_target`) and push its value; `assign` and the compound stores write it and pop both. The
 array is a block of the game's variables from `jump_ready` (`0x0052A3F0`) on, which scripts use by
-number: 0 is `jump_ready`, 1 `warp_ready`, 4 `player_missiles_left` and 9 `mission_over`.
-**Unknown:** most of the others, and where the block ends; the shipped missions use the first 38.
+number: 0 is `jump_ready`, 1 `warp_ready`, 4 `player_missiles_left`, 9 `mission_over`, 10
+`landing_cleared`, which lets PERMISSION TO LAND land the player's ship
+([Landing](orders.md#landing)), and 14 `mission_success`, how the script rates the mission: -1 a
+total failure, then failure, partial failure, partial success, success, and 4 success with a
+bonus, as the game's debug line names them. **Unknown:** most of the others, and where the block
+ends; the shipped missions use the first 38.
 
 The loop also serves a script debugger. With one attached, it can stop a thread at a byte that
 section 10, one flag per script byte, marks, and report the position. **Unknown:** the debugger's

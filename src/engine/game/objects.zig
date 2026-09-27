@@ -1417,6 +1417,21 @@ pub const Model = struct {
         return &model.parts[child];
     }
 
+    /// The bounds of the level the part at `child` in the root's child list (`rootChild`) drew
+    /// last, in its own frame; null where there is no such part, or it has no level.
+    pub fn levelBounds(model: *const Model, child: usize) ?[2]Vector {
+        const part = model.rootChild(child) orelse return null;
+        const levels = part.object.levels;
+        if (part.object.level >= levels.len) return null;
+        return levels[part.object.level].mesh.bounds;
+    }
+
+    /// The middle of those bounds (`levelBounds`).
+    pub fn boundsMiddle(model: *const Model, child: usize) ?Vector {
+        const bounds = model.levelBounds(child) orelse return null;
+        return (bounds[1] + bounds[0]) * @as(Vector, @splat(0.5));
+    }
+
     /// The parts in an order that puts each after the one it hangs from, so that placing them in
     /// it needs only one pass: by how far each stands from the root, which a part's parent is
     /// always nearer than. A part whose parents run in a circle is taken as standing at the root,
@@ -1634,6 +1649,10 @@ pub const Model = struct {
             }
         }
     }
+
+    /// A time below zero, which `play` and `playNamed` take as the time the track has now: a track
+    /// played again, as backwards to undo it, goes on from where it stands.
+    pub const keep_time: f32 = -1;
 
     /// `node_play` (`0x0049A2D0`): plays on part `index`'s node the track the loader filed under
     /// `slot`, from `time` unless that is below zero, in `mode`, or the track's own where null, at

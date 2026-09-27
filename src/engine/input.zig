@@ -958,6 +958,7 @@ const hog_snd = @import("game/hog_snd.zig");
 const betty = hog_snd.betty;
 const ai = @import("game/ai.zig");
 const aigeneric = @import("game/aigeneric.zig");
+const videoreports = @import("game/videoreports.zig");
 const objects = @import("game/objects.zig");
 const missiles = @import("game/missiles.zig");
 const cloak = @import("game/cloak.zig");
@@ -995,6 +996,9 @@ pub const Player = struct {
     /// `player_carrier` (`0x0057E05C`): the ship the player's ship launched from, which the
     /// launch's cutaway leaves out, and none from the mission's start until a launch names it.
     carrier: ?u16 = null,
+    /// `0x0052987C`: the timer's tick from which PERMISSION TO LAND is heard again
+    /// (`videoreports.permissionToLand`).
+    permission_heard_from: u32 = 0,
     /// The cutaway the player's launch from the Reliant shows.
     cutaway: @import("game/launch/reliant.zig").Cutaway = .none,
     /// `0x005E82F0`: set while the player's ship jumps in, which cuts the dust's streaks shorter
@@ -1874,6 +1878,8 @@ const cloak_said: Said = .{ .on = .cloak_on, .off = .cloak_off };
 /// The keys `frame_controls` reads after the targeting's, in its order, each with the display's
 /// sound (`hud.Beep`): most with `done`, a device turning on or off with `on` or `off`.
 ///
+/// - PERMISSION TO LAND, outside a multiplayer mission, asks the carrier to clear the player's
+///   ship to land (`videoreports.permissionToLand`), with no sound of the display's.
 /// - TOGGLE BLINDFIRE flips blind fire on a ship that carries it, and Betty says which, with no
 ///   sound of the display's.
 /// - COMMS WINDOW opens the radio's window held, and closes it once it is open.
@@ -1917,6 +1923,9 @@ pub fn frameKeys(keys: FrameKeys) void {
     const object = &slot.object;
     const windows = &display.windows;
     const groups = slot.groupCount();
+    if (devices.active(.permission_to_land, true) and !multiplayer) {
+        if (keys.world) |world| videoreports.permissionToLand(world, keys.game_ticks);
+    }
     if (devices.active(.toggle_blindfire, true) and display.blind_fire_fitted) {
         display.blind_fire = !display.blind_fire;
         betty.sayIn(keys.world, blind_fire_said.of(display.blind_fire));

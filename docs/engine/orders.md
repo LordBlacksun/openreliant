@@ -252,6 +252,7 @@ set from C's `rand()` when the object is created, that steps as `seed * 0x343FD 
 | Ship Follow Curve (17) | Flies the path of the mission's curves from the curve in its data ([Following a path](#following-a-path)). |
 | Ship Follow Curve Backwards (119) | Flies that path backwards, from its end to its start. |
 | Dock (109) | Docks at a port of its target ([Docking](#docking)). |
+| Land (8) | The player's ship lands on its carrier, which ends the mission ([Landing](#landing)). |
 | Slow Rotate (18) | Zero throttle, yaw input 0.1. |
 | Random Spin Slow, Medium, Fast (22 to 24) | On starting, zero throttle and each turning input 0.1 plus a random number times 0.3, 0.5 or 0.9. Its update does nothing. |
 | Match Speed (32) | Sets the throttle to the target's speed over the ship's cruise speed. Pops when the target is no longer valid. |
@@ -376,6 +377,64 @@ ends, where the game stops.
 
 Not ported: the Nanny's, the limpet car's and the limpet pod's styles
 ([#320](https://github.com/vdmkenny/openreliant/issues/320)).
+
+### Landing
+
+Land (8) brings the player's ship down on its carrier, and ends the mission. PERMISSION TO LAND
+gives it (`permission_to_land`, `0x00453DE0`), which `frame_controls` calls outside a multiplayer
+mission: heard at most once in 500 of the timer's ticks (`0x0052987C`), it aims Land at the ship
+the player launched from (`player_carrier`). In a training mission (30 to 35), the flight instructor
+clears the ship to land where the script's variable 10 (`landing_cleared`, `0x0052A418`) is set. In
+any other, unless the ship is landing already, the carrier refuses it, or clears it where variable
+10 is set. Mission 1's script sets it as the Reliant jumps in. A report on the radio goes with each,
+which OpenReliant has not ported yet ([#99](https://github.com/vdmkenny/openreliant/issues/99)).
+
+The init (`order_land_init`, `0x0040EAC0`) picks a style by the carrier's type, from a table of an
+init and an update each (`land_styles`, `0x004E1FE8`): the Reliant's (1) and the Yamato's (0). Any
+other stops the game with "Cannot land on %s". The state's first word holds the style. The
+Reliant's init (`0x0040F5C0`) sets the first step, due in 700 ticks, or at once where the ship is
+being sent home for its friendly fire (ending 6 or 7). Its update (`0x0040F940`) keeps its state
+as:
+
+| Offset | What it holds |
+|---|---|
+| `+0x00` | The style |
+| `+0x04` | The frame's tick the step waits for |
+| `+0x0C` | The step |
+| `+0x10` | The middle of the tube the ship lands in |
+
+| Step | What it does |
+|---|---|
+| 0 | Until the step is due, the player flies on (`player_controls`). Then the cutaway: the scene becomes the landing's (`0x00587CD4` = 3), every object but the ship and its carrier is disabled (flag `0x400`) and those two enabled, the ship flies by its nose (`motion_plain`) and passes through everything, and the upper door of the carrier's first launch tube, part 6, plays `opendoor2` at 1.23 with the door's sound (`0x35`, `dooropen`) where it stands |
+| 1 | The ship steers at a point 3000 over the tube's middle (`ai_steer`, no flags), its throttle 0.0001 for each unit it has to go, at most 0.5. Within 200 of it, it stops, its turns nothing, for 50 ticks |
+| 2 | It sinks along its own Y axis, which points below it (`motion_downward`) |
+| 3 | Its throttle is its distance from the tube's middle over 15000. Once it is less than 100 over it, along the carrier's Y axis, it stops, with the landing's sound (`0x3E`, `shipland`), for 270 ticks |
+| 4 | The mission is over (`mission_over`) |
+
+The cutaway (`0x0040F600`) switches to one of the [landing's views](camera.md#the-landings-views)
+at random, and moves the carrier to (0, -1000000, 0), turned as the world is. The ship lands in the
+carrier's first launch tube, the one the launch drops ships out of through its lower door
+([Launches](launch.md#the-reliants-launch)): its middle is halfway between the middles of the
+tube's lower door, part 0, and its upper door, part 6, each the middle of the bounds of the level
+its part drew last. The ship stands 20000 ahead of it and 5000 above in the carrier's frame,
+looking at the point 3000 over it, stopped, its power shared evenly. The carrier's orders are all
+popped, and it stops. The approach leaves the ship pitched about 6 degrees nose down, as it looked
+at the point over the tube from where it started, and it sinks along its own Y axis, so that it
+comes to rest ahead of the tube's middle, tilted as it came.
+
+**Improvement:** the ship levels out as it approaches: the point it steers at rises from the
+game's height to the ship's own as it nears the tube, eased in and out over the way it comes, so
+that it arrives level. It stops dead over the tube, and sinks straight down it, coming to rest
+level. Once its top is below the underside of the tube's upper door, the door closes over it, its
+opening played back at 2 a step, with the game's sound of a door closing (`0x36`, `doorclos`).
+`--original` lands it as the game does, and leaves the door open.
+
+**Fix:** a landing on a ship that nothing lands on ends at once, where the game stops, and
+PERMISSION TO LAND does nothing where the player's ship launched from no carrier, where the game
+reads through a null pointer.
+
+Not ported: the Yamato's style, whose landing OpenReliant lets go of at once
+([#349](https://github.com/vdmkenny/openreliant/issues/349)).
 
 ### The Ripper
 

@@ -91,7 +91,7 @@ const start_shake: f32 = 0.1;
 
 /// The door parts of a tube: its upper door is part `gate + door_step` of the Reliant's root's
 /// child list, its lower door part `gate`.
-const door_step = 6;
+pub const door_step = 6;
 
 /// How far across a tube's middle lies from its doors', in their frames: to the right for a gate
 /// of even number, to the left for an odd (`0x004DC5A8`).
@@ -188,11 +188,7 @@ fn tube(reliant: *const create.Slot, gate: i16) ?math.Vector {
     const across: f32 = if (@mod(gate, 2) == 0) tube_offset else -tube_offset;
     var sum: math.Vector = @splat(0);
     for ([_]usize{ lower, lower + door_step }) |door| {
-        const part = model.rootChild(door) orelse return null;
-        const levels = part.object.levels;
-        if (part.object.level >= levels.len) return null;
-        const bounds = levels[part.object.level].mesh.bounds;
-        var middle = (bounds[1] + bounds[0]) * @as(math.Vector, @splat(0.5));
+        var middle = model.boundsMiddle(door) orelse return null;
         middle[0] += across;
         sum += model.frameAt(door, reliant.drawn).point(middle);
     }
@@ -285,7 +281,7 @@ pub fn run(ctx: aigeneric.Context, index: u16) void {
             moveOn(state, .lower, now);
         },
         .release => {
-            if (player) playOnHangar(all, hangar_retainer, deploy_track, keep_time, -retainer_speed);
+            if (player) playOnHangar(all, hangar_retainer, deploy_track, objects.Model.keep_time, -retainer_speed);
             state.attached = false;
             moveOn(state, .release, now);
         },
@@ -365,9 +361,6 @@ fn tubeDoor(all: *create.Objects, slot: *const create.Slot, step: usize) ?struct
     if (part >= model.parts.len) return null;
     return .{ .model = model, .part = part };
 }
-
-/// The time a track keeps as it is played again (`node_play_named` with a time below zero).
-const keep_time: f32 = -1;
 
 /// The hangar's model, where the hangar stands in the cutaway slot.
 fn hangarModel(all: *create.Objects) ?*objects.Model {
