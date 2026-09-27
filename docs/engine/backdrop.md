@@ -26,6 +26,8 @@ Each row of quads is one strip of triangles, split along the diagonal from each 
 
 A patch of 11 by 11 vertices on a sphere of radius 5000 (`sky_patch_create`, `0x00498EA0`), 90 degrees across each way, or 72 for nebula 5, with the texture across it once. Across the columns a vertex turns evenly from -45 to 45 degrees about `X`, down the rows about `Y`; `u = c / 10`, `v = r / 10`. Each quad is two triangles, split along the diagonal from column `c`, row `r` to column `c + 1`, row `r + 1`, and none is culled. Its orientation is the nebula marker's, or a yaw of -90 degrees without one, which faces it toward `-X`.
 
+**Improvement:** a nebula's texture, 256 texels across in 16-bit colour, spans the patch, about eight pixels a texel at 1080p. OpenReliant magnifies it with a smooth cubic filter rather than the sharp one it gives the other textures, so that the texels' grid gives way to soft cloud ([Renderer](../port/renderer.md)); `--filter original` and `--original` magnify it bilinearly, as the original does.
+
 A script picks the nebula with `SetEnvironmentFXNebula` (0 to 6), which takes effect at the next jump or on `UpdateEnvironmentFXState` (`nebula_select`, `0x00498D00`). Each nebula also colours the fill lights:
 
 | Nebula | Texture | Fill light |

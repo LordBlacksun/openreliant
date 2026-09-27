@@ -131,7 +131,7 @@ pub const State = struct {
 
 /// Which shadows a draw's pixels take, which the layer sets: none, the world's cascades, or the
 /// cockpit's map (`srshadow`).
-pub const Receives = enum(u32) {
+pub const Receives = enum(u8) {
     nothing = 0,
     world = 1,
     cockpit = 2,

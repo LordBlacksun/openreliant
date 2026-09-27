@@ -38,6 +38,13 @@ pub const nebulae = [7]Nebula{
 /// The nebula `nebula_create` shows until a script picks one.
 pub const default_nebula = 0;
 
+/// Marks a nebula's texture to be magnified smoothly, stretched as it is over a patch of the sky
+/// (`srtexture.Image.Magnify`).
+fn softened(image: *srtexture.Image) *srtexture.Image {
+    image.magnify = .smooth;
+    return image;
+}
+
 /// The nebula shown on the smaller patch.
 pub const small_patch_nebula = 5;
 
@@ -213,7 +220,7 @@ pub const Sky = struct {
             .levels = &sky.dome_levels,
             .baked = &sky.dome_colours,
         };
-        const texture = try matmanager.textureRequire(textures, nebulae[default_nebula].texture);
+        const texture = softened(try matmanager.textureRequire(textures, nebulae[default_nebula].texture));
         var made: usize = 0;
         errdefer for (sky.patch_meshes[0..made]) |mesh| mesh.deinit(gpa);
         for (&sky.patch_meshes, &sky.patch_levels, &sky.patches, patch_half_angles) |*mesh, *levels, *patch, half_angle| {
@@ -244,7 +251,7 @@ pub const Sky = struct {
         lights.getPtr(.fill_02).colour = nebulae[nebula].fill;
         lights.getPtr(.fill_10).colour = nebulae[nebula].fill;
         sky.shown = @intFromBool(nebula == small_patch_nebula);
-        sky.patch_meshes[sky.shown].surfaces[0].textures[0] = .{ .image = try matmanager.textureRequire(textures, nebulae[nebula].texture) };
+        sky.patch_meshes[sky.shown].surfaces[0].textures[0] = .{ .image = softened(try matmanager.textureRequire(textures, nebulae[nebula].texture)) };
         sky.nebula = nebula;
     }
 
@@ -327,9 +334,12 @@ test Sky {
     defer sky.destroy(gpa);
     var lights = backdrop.initialLights();
 
-    // Nebula 5 shows on the small patch and colours both fill lights.
+    // Nebula 5 shows on the small patch and colours both fill lights; its texture, as each
+    // patch's, is magnified smoothly.
+    try std.testing.expectEqual(.smooth, sky.patch_meshes[0].surfaces[0].textures[0].image.magnify);
     try sky.select(&textures.table, small_patch_nebula, &lights);
     try std.testing.expectEqual(1, sky.shown);
+    try std.testing.expectEqual(.smooth, sky.patch_meshes[1].surfaces[0].textures[0].image.magnify);
     try std.testing.expectEqual(nebulae[small_patch_nebula].fill, lights.get(.fill_10).colour);
     try std.testing.expectError(error.InvalidNebula, sky.select(&textures.table, nebulae.len, &lights));
 

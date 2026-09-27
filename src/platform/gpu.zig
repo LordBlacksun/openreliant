@@ -103,11 +103,23 @@ const Vertex = extern struct {
     view: [3]f32,
     normal: [3]f32,
     light_mask: u32,
-    /// The shadows its pixels take (`device.Receives`).
-    receives: device.Receives,
+    /// What its pixels take besides their lights and colours.
+    shading: Shading,
 
     comptime {
         std.debug.assert(@sizeOf(Vertex) == 64);
+    }
+};
+
+/// A draw's shading as the shader reads it from each vertex, one word: the shadows its pixels take
+/// in the low byte, and whether its texture is magnified smoothly in the next bit.
+const Shading = packed struct(u32) {
+    receives: device.Receives,
+    magnify: srtexture.Image.Magnify,
+    _unused: u23 = 0,
+
+    fn of(state: device.State) Shading {
+        return .{ .receives = state.receives, .magnify = if (state.texture) |image| image.magnify else .sharp };
     }
 };
 
@@ -612,7 +624,7 @@ pub const Gpu = struct {
             .view = v.view,
             .normal = v.normal,
             .light_mask = v.light_mask,
-            .receives = state.receives,
+            .shading = .of(state),
         });
         const first: u32 = @intCast(gpu.indices.items.len);
         try appendList(gpu.gpa, &gpu.indices, primitive, base, vertices.len, indices);
@@ -965,7 +977,7 @@ pub const Gpu = struct {
             .{ .location = 4, .buffer_slot = 0, .format = c.SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, .offset = @offsetOf(Vertex, "view") },
             .{ .location = 5, .buffer_slot = 0, .format = c.SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, .offset = @offsetOf(Vertex, "normal") },
             .{ .location = 6, .buffer_slot = 0, .format = c.SDL_GPU_VERTEXELEMENTFORMAT_UINT, .offset = @offsetOf(Vertex, "light_mask") },
-            .{ .location = 7, .buffer_slot = 0, .format = c.SDL_GPU_VERTEXELEMENTFORMAT_UINT, .offset = @offsetOf(Vertex, "receives") },
+            .{ .location = 7, .buffer_slot = 0, .format = c.SDL_GPU_VERTEXELEMENTFORMAT_UINT, .offset = @offsetOf(Vertex, "shading") },
         };
         const buffer: c.SDL_GPUVertexBufferDescription = .{ .slot = 0, .pitch = @sizeOf(Vertex), .input_rate = c.SDL_GPU_VERTEXINPUTRATE_VERTEX };
         var colour = std.mem.zeroes(c.SDL_GPUColorTargetDescription);
@@ -1129,6 +1141,16 @@ fn decoded(channel: f32) f32 {
 
 /// A white texel, which runs with no texture bind.
 const blank_levels = [1]srtexture.Level{.{ .width = 1, .height = 1, .rgba = &.{ 0xFF, 0xFF, 0xFF, 0xFF } }};
+
+test Shading {
+    // The shadows in the low byte and the smooth magnification in the next bit, as the shader
+    // reads them.
+    var image: srtexture.Image = .{ .levels = &.{}, .magnify = .smooth };
+    const smooth: u32 = @bitCast(Shading.of(.{ .texture = &image, .depth = undefined, .blend = null, .receives = .cockpit }));
+    try std.testing.expectEqual(0x102, smooth);
+    const plain: u32 = @bitCast(Shading.of(.{ .texture = null, .depth = undefined, .blend = null, .receives = .world }));
+    try std.testing.expectEqual(0x001, plain);
+}
 
 test appendList {
     const gpa = std.testing.allocator;

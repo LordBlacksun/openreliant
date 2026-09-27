@@ -26,6 +26,17 @@ pub const Image = struct {
     /// display's power ball, which is drawn afresh every frame. The driver sends the pixels up
     /// again and clears it.
     changed: bool = false,
+    /// OpenReliant's: how a device that filters its textures magnifies it.
+    magnify: Magnify = .sharp,
+
+    /// How a device that filters its textures magnifies one, where its filter magnifies at all.
+    pub const Magnify = enum(u1) {
+        /// By the device's own filter.
+        sharp,
+        /// **Improvement:** with a smooth cubic filter, which neither rings nor sharpens, for a
+        /// soft image stretched far, as the nebulae are.
+        smooth,
+    };
 
     /// An image of one level, `across` by `down` pixels of `rgba`, which it takes: `deinit` frees
     /// them with the level.
