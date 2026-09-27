@@ -149,8 +149,9 @@ const nav_point_kind = 999;
 /// A nav point or a marker is a `gameobj.Type.marker` at its place, turned by its record
 /// (`mission.recordOrientation`).
 ///
-/// Any other ship is an object of its kind (`shipType`), fitted by its loadout tier, at its place.
-/// It gets its first order: Player Control for the player's ship, whose view the camera takes (view
+/// Any other ship is an object of its kind (`shipType`), fitted by its loadout tier, at its place,
+/// with its atmosphere where it is a planet that has one (`atmosphere.Atmospheres.made`), and set
+/// up as a planet where it is one (`create.planetMade`). It gets its first order: Player Control for the player's ship, whose view the camera takes (view
 /// 0), Multiplayer Control for another player's, and Do Nothing for the rest. It is turned by its
 /// record. A ship that launches gets a Launch order through the gate it names of the first of the
 /// mission's ships of the kind it launches from, which starts at once (`aigeneric.objectOrders`),
@@ -178,6 +179,7 @@ pub fn createShip(game: aigeneric.Context, bound: *const mission.Mission, index:
         return;
     };
     if (game.world.atmospheres) |atmospheres| atmospheres.made(all, made);
+    create.planetMade(all, made);
     const first: Order = if (made >= all.players) .do_nothing else if (made == all.player) .player_control else .multiplayer_control;
     _ = aigeneric.push(game, made, first, .none) catch |err| log.warn("mission ship {d} takes no order: {s}", .{ index, @errorName(err) });
     if (made == all.player) if (game.world.camera) |view| {

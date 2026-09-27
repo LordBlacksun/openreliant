@@ -113,6 +113,19 @@ count again; then come the guns' charge and rounds, their groups and the gun mod
 `targetable`, where the type allows it. Capital ships, planets, gates,
 asteroids and a few other types get more set up for their kind.
 
+The planets, types `0x5F` to `0x69` and `0xC9` to `0xD3`, first make their atmosphere where they
+have one ([Backdrop](backdrop.md#planet-atmospheres)); then each planet is set up alike
+(`0x00467BAB`). The object's flags gain `components`, `no_collisions` and `frozen`. Each node hanging
+from the root has its scene object's flags set to `0x101100`, lit, always drawn and bit 20, and
+its light mask to `0x37`, so that only the second key light, mask `0x08`, reaches it, and its
+offset from the root (`+0x3C`) cleared, so that it stands at the object's origin. Each of its
+levels is moved to stand on the middle of its vertices, their sum over their count, and its
+polygons' planes, its vertices' normals and its bounds are worked out again; the node takes the
+radius of its last level. A planet's part stands off its model's origin, Neptune's some 218000 back
+along Z, and none has a mass to move the origin to, so it is this that brings each sphere to its
+object's place. Titan's parts, `0x63` and `0xCD`, are also given the routine of the environment
+effect Planet Bombard (`0x0046A300`). **Unknown:** what bit 20 of the flags does.
+
 The words of each `ship_combat_stats` entry from `+0x1C` on come from the executable rather than
 from `shipstats.bin`: the gun groups, which the gun code fills in at run time (`gun_groups_build`,
 `0x004667F0`), then whether the type can be targeted, the string that names it, its class and its
@@ -140,8 +153,10 @@ the guns; the guns and their groups, the loadout and its pods
 ([#131](https://github.com/vdmkenny/openreliant/issues/131),
 [#38](https://github.com/vdmkenny/openreliant/issues/38),
 [#39](https://github.com/vdmkenny/openreliant/issues/39)); the shield's effect
-([#133](https://github.com/vdmkenny/openreliant/issues/133)); the special types; the ship a player
-chose for the mission; and the multiplayer cases.
+([#133](https://github.com/vdmkenny/openreliant/issues/133)); the special types but the wrecks and
+the planets, which `planetMade` sets up once the mission has made the planet and its atmosphere,
+and Titan's Planet Bombard ([#233](https://github.com/vdmkenny/openreliant/issues/233)); the ship a
+player chose for the mission; and the multiplayer cases.
 
 ## Flags
 
