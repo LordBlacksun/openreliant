@@ -1,6 +1,6 @@
 //! The cockpit a mission's start (`0x004934F0`) makes for the player's ship: its frame model,
 //! read from the game's archive and made into an object of its own (`Cockpit`, `create`), which
-//! hangs from the camera's frame (`place`) and moves with the ship's turns (`input`).
+//! hangs from the camera's frame (`place`) and moves with the ship's turns (`Cockpit.Shown.inputFor`).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -9,8 +9,10 @@ const shp = @import("../../../formats/shp.zig");
 const math = @import("../../surrender/math.zig");
 const srapiext = @import("../../surrender/surrenderlib/srapiext.zig");
 const srtexture = @import("../../surrender/surrenderlib/srtexture.zig");
+const ai = @import("../ai.zig");
 const bigfile = @import("../bigfile.zig");
 const camera = @import("../camera.zig");
+const Slot = @import("../create.zig").Slot;
 const gameobj = @import("../gameobj.zig");
 const main = @import("../main.zig");
 const objects = @import("../objects.zig");
@@ -29,6 +31,21 @@ pub const Cockpit = struct {
         /// The frame model as read, whose eye and hands the camera moves the cockpit by.
         source: *const shp.Model,
         model: objects.Model,
+
+        /// What `camera_frame` reads to move the cockpit (`input`) for the player's ship in
+        /// `slot`, seen in `view`: the ship's rates of turn, each over its flight model's full
+        /// rate, and its speed over its cruise speed (`ai.cruiseSpeed`). A ship without flight
+        /// stats leaves the cockpit still, as none the player flies is.
+        pub fn inputFor(shown: *const Shown, slot: *const Slot, view: camera.View) ?camera.Cockpit.Input {
+            const flight = slot.flight orelse return null;
+            const live = &slot.object;
+            const rates: [3]f32 = .{
+                live.pitch_rate / flight.pitch_rate,
+                live.yaw_rate / flight.yaw_rate,
+                live.roll_rate / flight.roll_rate,
+            };
+            return input(&shown.model, shown.source, rates, live.speed / ai.cruiseSpeed(live, flight, view));
+        }
     };
 
     /// Loads the cockpit of `ship_type`, a ship the player can fly (`main.playerShip`), in place
@@ -171,6 +188,28 @@ test input {
     // A model without hands has nothing to move.
     model.parts = parts[0..1];
     try std.testing.expectEqual(null, input(&model, &source, @splat(0), 0));
+}
+
+test "Shown.inputFor" {
+    var data: [2]shp.PartData = @splat(objects.testing.part());
+    const source: shp.Model = .{ .header = std.mem.zeroes(shp.Header), .parts = &data, .trailing_bytes = 0 };
+    var parts = [_]objects.Model.Part{
+        .{ .hidden = false, .parent = null, .origin = @splat(0), .object = .{ .flags = .{}, .position = @splat(0), .radius = 1, .levels = &.{} } },
+        .{ .hidden = false, .parent = null, .origin = @splat(0), .object = .{ .flags = .{}, .position = @splat(0), .radius = 1, .levels = &.{} } },
+    };
+    const shown: Cockpit.Shown = .{ .source = &source, .model = .{ .parts = &parts, .order = &.{ 0, 1 }, .lights = &.{}, .glows = &.{}, .mounts = &.{} } };
+    var slot: Slot = .{ .object = gameobj.testing.object(), .flight = &gameobj.testing.flight };
+    slot.object.pitch_rate = 1;
+    slot.object.yaw_rate = -1.5;
+    slot.object.roll_rate = 0.75;
+    slot.object.speed = 240;
+    // Each rate over the flight model's, and the speed over the cruise speed, 320.
+    const moved = shown.inputFor(&slot, .chase).?;
+    try std.testing.expectEqual([3]f32{ 0.5, -1, 0.25 }, moved.rates);
+    try std.testing.expectEqual(0.75, moved.speed);
+    // Without flight stats, nothing moves it.
+    slot.flight = null;
+    try std.testing.expectEqual(null, shown.inputFor(&slot, .chase));
 }
 
 test place {

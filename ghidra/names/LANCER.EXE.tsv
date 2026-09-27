@@ -333,7 +333,8 @@ address	kind	name	type	comment
 00539a34	data	camera_view	short	
 00539a8c	data	camera_object	short	The object the view shows
 00539a9c	data	cockpit_mode	int	What the cockpit view shows: 0 no cockpit, 1 the cockpit's model, 2 the chase view; the cockpit key cycles it
-005d5a78	data	cockpit_mode_setting	int	The options' cockpit setting: 0 the cockpit's model, 1 the chase view, 2 no cockpit
+005d5a78	data	cockpit_mode_setting	int	The options' cockpit setting: 0 the cockpit's model, 1 the chase view, 2 no cockpit. WinMain reads it from View in the Device section of the settings, default 0
+005d6080	data	device_gamma	int	Gamma in the Device section of the settings, default 100: the brightness in hundredths, which the renderer opens with
 00539acc	data	camera_locked	char	Set while a script holds the camera; the camera keys do nothing
 00539a38	data	camera_bars	float	How much of the screen each cinematic bar covers, up to 0.1
 00539a50	data	camera_bar_speed	float	

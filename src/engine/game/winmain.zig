@@ -13,6 +13,7 @@ const input = @import("../input.zig");
 const camera = @import("camera.zig");
 const hog_snd = @import("hog_snd.zig");
 const hudoptions = @import("hudoptions.zig");
+const Profile = @import("../profile.zig").Profile;
 const Sound = hog_snd.Sound;
 
 /// The window's activation, as the pump follows it.
@@ -93,6 +94,44 @@ test followActivation {
     try main.pause(pausing, false);
     try std.testing.expect(!clock.paused and !menu.isOpen());
     try std.testing.expectEqual(mss.Status.playing, driver.sampleStatus(sound.voices[v].sample));
+}
+
+/// What `WinMain` reads of the settings' `[Device]` as the game starts (`0x004A8FB3`) that
+/// OpenReliant goes by. **Not ported:** the rest it reads there for the renderer (`Device`, `Xres`,
+/// `Yres`, `Windowed`, `Tdetail`, `Gdetail`, `Transitions` and `Lmaps`), where OpenReliant's
+/// options stand in.
+pub const Device = struct {
+    /// The options' cockpit setting (`View`, `cockpit_mode_setting`, `0x005D5A78`), 0 where the
+    /// file has none.
+    view: camera.CockpitSetting,
+    /// The brightness, which the file keeps in hundredths (`Gamma`, `device_gamma`, `0x005D6080`),
+    /// 100 where it has none: the renderer opens with it (`0x004A8600`), and the pause menu's video
+    /// screen changes it.
+    brightness: f32,
+
+    const video = hudoptions.screens.Video;
+    /// The key `WinMain` reads the brightness from (`0x00509948`); the video screen writes it as
+    /// `gamma`, which is the same key, as a key's case does not matter.
+    const gamma_key = "Gamma";
+    const default_gamma = 100;
+
+    pub fn read(profile: Profile) Device {
+        return .{
+            .view = @enumFromInt(profile.int(video.section, video.view_key, 0)),
+            .brightness = @as(f32, @floatFromInt(profile.int(video.section, gamma_key, default_gamma))) / video.gamma_scale,
+        };
+    }
+};
+
+test "Device.read" {
+    // Without the file, the cockpit's view, at the renderer's own brightness.
+    const none: Device = .read(.empty);
+    try std.testing.expectEqual(.cockpit, none.view);
+    try std.testing.expectEqual(1, none.brightness);
+    // As the video screen writes them.
+    const saved: Device = .read(.{ .text = "[Device]\nView=2\ngamma=150\n" });
+    try std.testing.expectEqual(.none, saved.view);
+    try std.testing.expectEqual(1.5, saved.brightness);
 }
 
 /// The longest name `missionPath` makes; the game's buffer is far larger.
