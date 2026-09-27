@@ -48,6 +48,7 @@ pub const flight_stats = @import("create/flight.zig");
 pub const combat_stats = @import("create/combat.zig");
 pub const library = @import("create/library.zig");
 pub const atmosphere = @import("create/atmosphere.zig");
+pub const escort = @import("create/escort.zig");
 
 /// Ship types: the records of `shipstats.bin`, and the entries of the tables they index. Types
 /// above the last, markers and nav points among them, have no stats.

@@ -1480,6 +1480,8 @@ pub const World = struct {
     rippers: ?*@import("airipper.zig").Rippers = null,
     /// The planets' atmospheres (`create.atmosphere`); null where no planet has one drawn.
     atmospheres: ?*@import("create/atmosphere.zig").Atmospheres = null,
+    /// The escort point's marker (`create.escort`), whose pulse each mission starts again.
+    escort_marker: ?*@import("create/escort.zig").Marker = null,
     /// The screen's flash (`main.cpp`); null where nothing flashes.
     flash: ?*@import("main/flash.zig").Flash = null,
     /// The force feedback the player's controller plays; null where it plays none.
