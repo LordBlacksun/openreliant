@@ -167,18 +167,11 @@ pub const Atmospheres = struct {
 
     /// An atmosphere: its ring, how fast its planet turns, and the planet's slot (`+0x00`, `+0x04`
     /// and `+0x20` of the table's entries). The table also keeps where the planet stood as it was
-    /// made (`+0x14`), which nothing reads. OpenReliant keeps the middle of the planet's sphere in
-    /// its model's frame, the middle of its first part's finest mesh (`frame`).
+    /// made (`+0x14`), which nothing reads.
     pub const Entry = struct {
         ring: *Ring,
         spin: f32,
         planet: u16,
-        middle: Vector,
-
-        /// Where the planet's sphere stands, the planet at `place`.
-        fn sphereAt(entry: Entry, place: math.Place) Vector {
-            return place.point(entry.middle);
-        }
     };
 
     /// As `objects_reset` (`0x00466630`) loads `atmos`, with no atmospheres.
@@ -217,9 +210,7 @@ pub const Atmospheres = struct {
             log.warn("the atmosphere of object {d} is left out: {s}", .{ index, @errorName(err) });
             return;
         };
-        const bounds = if (part.levels.len > 0) part.levels[0].mesh.bounds else [2]Vector{ @splat(0), @splat(0) };
-        const middle = (bounds[0] + bounds[1]) * @as(Vector, @splat(0.5));
-        atmospheres.entries[atmospheres.count] = .{ .ring = ring, .spin = spin, .planet = index, .middle = middle };
+        atmospheres.entries[atmospheres.count] = .{ .ring = ring, .spin = spin, .planet = index };
         atmospheres.count += 1;
         if (atmospheres.style == .haze) {
             for (model.parts) |*each| each.object.soft_terminator = true;
@@ -232,24 +223,19 @@ pub const Atmospheres = struct {
     /// atmosphere stands where the planet does, turned to face the camera at `camera`, as solid as
     /// the lens flares' `brightness` (`backdrop.flareBrightness`), or a haze as `Ring.fade` has it
     /// with the sun along `sun`, and goes on the background layer.
-    ///
-    /// **Fix:** the planets' models stand their spheres off their origins, about a sixth of their
-    /// radius along Z, and the game stands the ring round the planet's position and turns the
-    /// planet about it, so that the ring stands off to one side and the sphere swings round;
-    /// OpenReliant turns the planet about its sphere's middle, and stands the ring there.
+    /// The planet's parts stand at its origin (`create.planetMade`), so it turns in place, and the
+    /// ring stands round it.
     pub fn frame(atmospheres: *Atmospheres, gpa: Allocator, scene: *srcore.Scene, all: *create.Objects, camera: Vector, sun: Vector, hardware: bool, brightness: f32, now: i32) Allocator.Error!void {
         const ticks: f32 = @floatFromInt(now - atmospheres.turned_at);
         defer atmospheres.turned_at = now;
         const toward = math.normalize(sun);
         for (atmospheres.entries[0..atmospheres.count]) |entry| {
             const planet = &all.slots[entry.planet];
-            const sphere = entry.sphereAt(planet.drawn);
             planet.drawn.orientation = math.turned(planet.drawn.orientation, .y, ticks * entry.spin);
-            planet.drawn.position += sphere - entry.sphereAt(planet.drawn);
             if (planet.model) |*model| model.place(planet.drawn.position, planet.drawn.orientation);
             if (!hardware or planet.object.flags.disabled) continue;
             const object = &entry.ring.object;
-            object.position = sphere;
+            object.position = planet.drawn.position;
             object.orientation = math.lookAt(camera - object.position);
             entry.ring.fade(atmospheres.style, brightness, toward);
             try xtrabits.sceneAdd(gpa, scene, .{ .mesh = object }, .background);
@@ -377,7 +363,7 @@ test Atmospheres {
     try std.testing.expectEqual(capacity - 1, atmospheres.count);
 }
 
-test "an atmosphere round a planet's sphere, turning in place" {
+test "an atmosphere round its planet, turning in place" {
     const gpa = std.testing.allocator;
     var mission: gameobj.testing.Mission = undefined;
     try mission.init(gpa);
@@ -393,19 +379,16 @@ test "an atmosphere round a planet's sphere, turning in place" {
     all.slots[planet].object.type = .uranus_lo;
     atmospheres.made(all, planet);
     try std.testing.expectEqual(2 * round_segments, atmospheres.entries[0].ring.mesh.positions.len);
-    // A sphere off its model's origin along Z, as the planets' are.
-    atmospheres.entries[0].middle = .{ 0, 0, 200 };
-    const sphere = atmospheres.entries[0].sphereAt(all.slots[planet].drawn);
 
-    // Turning, the planet keeps its sphere where it stands, and the ring stands round it.
+    // Turning, the planet stays where it stands, turned about its own Y, and the ring stands round
+    // it.
     var scene: srcore.Scene = .{};
     defer scene.deinit(gpa);
+    const before = all.slots[planet].drawn.orientation;
     try atmospheres.frame(gpa, &scene, all, .{ 0, 0, -5000 }, .{ 1, 0, 0 }, true, 0.5, 1000);
-    const now = atmospheres.entries[0].sphereAt(all.slots[planet].drawn);
-    try std.testing.expectApproxEqAbs(0, math.distance(sphere, now), 1e-2);
-    try std.testing.expect(math.distance(all.slots[planet].drawn.position, .{ 1000, 0, 0 }) > 1);
-    const ring_at = atmospheres.entries[0].ring.object.position;
-    try std.testing.expectApproxEqAbs(0, math.distance(sphere, ring_at), 1e-2);
+    try std.testing.expectEqual(Vector{ 1000, 0, 0 }, all.slots[planet].drawn.position);
+    try std.testing.expect(!std.meta.eql(before, all.slots[planet].drawn.orientation));
+    try std.testing.expectEqual(all.slots[planet].drawn.position, atmospheres.entries[0].ring.object.position);
 }
 
 test "a haze, brighter toward the sun" {
@@ -431,7 +414,7 @@ test "a haze, brighter toward the sun" {
     // toward the sun, and as its night on the side away, its outer circle as its inner.
     var scene: srcore.Scene = .{};
     defer scene.deinit(gpa);
-    const sphere = atmospheres.entries[0].sphereAt(all.slots[planet].drawn);
+    const sphere = all.slots[planet].drawn.position;
     try atmospheres.frame(gpa, &scene, all, sphere + Vector{ 0, 0, -5000 }, .{ 3, 0, 0 }, true, 0, 0);
     const colours = &atmospheres.entries[0].ring.colours;
     var least: f32 = 1;

@@ -720,6 +720,75 @@ pub fn wreckMade(world: gameobj.World, index: u16) void {
     explode.burnPart(world, index, wreck.part, .{ .forever = true, .flickers = true, .lights = true });
 }
 
+/// The planets' types, whose objects `create_object` sets up as planets (`planetMade`): Neptune to
+/// Venus, and their models of less detail.
+const planet_types = [_][2]u32{ .{ 0x5F, 0x69 }, .{ 0xC9, 0xD3 } };
+
+/// Whether `ship_type` is a planet's (`planet_types`).
+pub fn isPlanet(ship_type: gameobj.Type) bool {
+    const number = ship_type.number();
+    for (planet_types) |range| {
+        if (number >= range[0] and number <= range[1]) return true;
+    }
+    return false;
+}
+
+/// What each part hanging from a planet's root is drawn with (`0x00467BE9`): lit, always drawn,
+/// and bit 20, in place of whatever its model gave it.
+const planet_part_flags: @import("../surrender/surrenderlib/srapiext.zig").ObjectFlags = .{ .lit = true, .always_drawn = true, ._unknown_20 = true };
+
+/// The lights that do not reach a planet's parts (`0x00467BF0`): all but the second key light,
+/// mask `0x08`, which alone lights them.
+const planet_light_mask: u32 = 0x37;
+
+/// The part of `create_object` for a planet (`0x00467BAB`), once its atmosphere is made, for those
+/// that have one (`atmosphere.Atmospheres.made`): the object lists components, collides with
+/// nothing and is frozen. Each part hanging from its root is drawn with `planet_part_flags`, lit
+/// by the second key light alone (`planet_light_mask`), and stands at the root's origin; each of
+/// its levels is moved to stand on the middle of its vertices (`recentreMesh`), and the part
+/// takes the radius of its last.
+///
+/// **Unknown:** what bit 20 of the parts' flags does. Not ported: Titan's Planet Bombard, which
+/// the game hangs on its models' parts as it makes them (`0x0046841D`)
+/// ([#281](https://github.com/vdmkenny/openreliant/issues/281)).
+pub fn planetMade(all: *Objects, index: u16) void {
+    const slot = &all.slots[index];
+    if (!isPlanet(slot.object.type)) return;
+    const object = &slot.object;
+    object.flags.components = true;
+    object.flags.no_collisions = true;
+    object.flags.frozen = true;
+    const model = if (slot.model) |*live| live else return;
+    const loaded = (slot.type orelse return).loaded;
+    for (model.parts, loaded.parts) |*part, *made| {
+        if (part.parent != null) continue;
+        part.object.flags = planet_part_flags;
+        part.object.light_mask = planet_light_mask;
+        part.origin = @splat(0);
+        for (made.meshes) |*mesh| {
+            recentreMesh(mesh);
+            part.object.radius = mesh.radius;
+        }
+    }
+}
+
+/// `0x00467C43`: a planet's level moved to stand on the middle of its vertices, their positions
+/// summed and scaled by one over their count; then its polygons' planes, its vertices' normals and
+/// its bounds are worked out again (`SR_mesh_calc_poly_normals`, `SR_mesh_calc_vertex_normals`,
+/// `SR_mesh_find_bounding_box`). The models' levels are shared by every object of the type, so a
+/// second planet of a type moves them by what is left, next to nothing.
+fn recentreMesh(mesh: *@import("../surrender/surrenderlib/srapiext.zig").Mesh) void {
+    const srapi = @import("../surrender/surrenderlib/srapi.zig");
+    if (mesh.positions.len == 0) return;
+    var middle: Vector = @splat(0);
+    for (mesh.positions) |position| middle += position;
+    middle *= @splat(1 / @as(f32, @floatFromInt(mesh.positions.len)));
+    for (mesh.positions) |*position| position.* -= middle;
+    srapi.calcPolyNormals(mesh);
+    srapi.calcVertexNormals(mesh);
+    srapi.findBoundingBox(mesh);
+}
+
 /// `create_object` (`0x00466C10`): fills slot `wanted`, or the next where null, with an object of
 /// `ship_type` at `at`, facing along the world's Z axis, and returns the slot. Types above the
 /// last ship type are stand-ins for markers and nav points: `Flags.standing_in` and a sphere of
@@ -734,8 +803,9 @@ pub fn wreckMade(world: gameobj.World, index: u16) void {
 /// the afterburner's fuel for each fuel pod. Given a player's slot, it makes the type the loadout
 /// chose (`Objects.slotType`).
 ///
-/// Not ported: the components (#40); what it does for capital ships, planets, gates and other
-/// single types but the wrecks (#233, `wreckMade`); for a player's slot, the missiles the player
+/// Not ported: the components (#40); what it does for capital ships, gates and other single types
+/// but the wrecks and the planets (#233, `wreckMade`, `planetMade`); for a player's slot, the
+/// missiles the player
 /// chose on the loadout screen (#44), where OpenReliant fits a player's ship by the tier as the
 /// game does when the briefing is skipped; and what differs in a multiplayer game.
 pub fn createObject(all: *Objects, tables: *Stats, types: Types, wanted: ?u16, asked: gameobj.Type, tier: i32, at: Vector, random: *libcmt.Rand) Error!u16 {
@@ -1306,6 +1376,45 @@ pub fn retire(ctx: aigeneric.Context, index: u16) void {
     object.flags.exploding = true;
     object.flags.targetable = false;
     aigeneric.popAll(ctx, index);
+}
+
+test planetMade {
+    const gpa = std.testing.allocator;
+    var mission: gameobj.testing.Mission = undefined;
+    try mission.init(gpa);
+    defer mission.deinit();
+    var hull: testing.Model = undefined;
+    try hull.init(gpa);
+    defer hull.deinit(gpa);
+    // Its one level stands off the part's origin by 50 along Z.
+    hull.loaded_parts[0].meshes = (&hull.mesh)[0..1];
+    for (hull.mesh.positions) |*position| position.* += Vector{ 0, 0, 50 };
+    const all = mission.objects;
+
+    // Only a planet is set up as one.
+    const ship = try createObject(all, &mission.tables, hull.types(), null, .predator, 0, @splat(0), &mission.random);
+    planetMade(all, ship);
+    try std.testing.expect(!all.slots[ship].object.flags.no_collisions);
+    try std.testing.expectEqual(50, hull.mesh.positions[0][2]);
+
+    const planet = try createObject(all, &mission.tables, hull.types(), null, @enumFromInt(0x60), 0, @splat(0), &mission.random);
+    const slot = &all.slots[planet];
+    slot.model.?.parts[0].origin = .{ 0, 0, 7 };
+    planetMade(all, planet);
+    const flags = slot.object.flags;
+    try std.testing.expect(flags.components and flags.no_collisions and flags.frozen);
+    const part = &slot.model.?.parts[0];
+    try std.testing.expectEqual(planet_part_flags, part.object.flags);
+    try std.testing.expectEqual(planet_light_mask, part.object.light_mask);
+    try std.testing.expectEqual(Vector{ 0, 0, 0 }, part.origin);
+    // Its level stands on the middle of its vertices, its normals and bounds worked out again.
+    try std.testing.expectEqual(0, hull.mesh.positions[0][2]);
+    try std.testing.expectEqual(Vector{ -100, -100, 0 }, hull.mesh.bounds[0]);
+    try std.testing.expectEqual(hull.mesh.radius, part.object.radius);
+    try std.testing.expectApproxEqAbs(@sqrt(2.0) * 100, part.object.radius, 1e-3);
+    // Lit by the second key light alone.
+    try std.testing.expect(!@import("backdrop.zig").initialLights().get(.key_01).reaches(part.object.light_mask));
+    try std.testing.expect(@import("backdrop.zig").initialLights().get(.key_08).reaches(part.object.light_mask));
 }
 
 test wreckMade {
