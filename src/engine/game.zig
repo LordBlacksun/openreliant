@@ -51,6 +51,7 @@ pub const shockwave = @import("game/shockwave.zig");
 pub const sparks = @import("game/sparks.zig");
 pub const srofiles = @import("game/srofiles.zig");
 pub const table = @import("game/table.zig");
+pub const talkie = @import("game/talkie.zig");
 pub const tractor = @import("game/tractor.zig");
 pub const voice = @import("game/voice.zig");
 pub const videoreports = @import("game/videoreports.zig");

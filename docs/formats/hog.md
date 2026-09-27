@@ -59,7 +59,7 @@ record, rather than trusting the count.
 | Archive | Compressed | Contents |
 |---|---|---|
 | `resource.hog` | Almost every member | Models, sprites, images, missions, stat tables, sound banks, fonts |
-| `pilots.hog` | No | `.fm8` pilot files |
+| `pilots.hog` | No | `.fm8` face films ([face films](fm8.md)) |
 | `msspeech.hog` | No | Speech, one member per line, no extensions ([speech files](speech.md)) |
 | `CD1.HOG` | A few members | Bink video, MP3 music, sprites |
 | `CD2.HOG` | No | Bink video, MP3 music, sprites |

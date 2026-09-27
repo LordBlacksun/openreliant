@@ -8,6 +8,7 @@ const files = @import("openreliant").engine.files;
 const cd = @import("cd.zig");
 const dte = @import("dte.zig");
 const fat = @import("fat.zig");
+const fm8 = @import("fm8.zig");
 const fnt = @import("fnt.zig");
 const hog = @import("hog.zig");
 const render = @import("render.zig");
@@ -58,6 +59,7 @@ const Command = union(enum) {
     cd: cd.Command,
     dte: dte.Command,
     fat: fat.Command,
+    fm8: fm8.Command,
     fnt: fnt.Command,
     hog: hog.Command,
     render: render.Command,
@@ -73,7 +75,7 @@ const Command = union(enum) {
         \\
         \\commands:
         \\
-    ++ cd.Command.usage ++ dte.Command.usage ++ fat.Command.usage ++ fnt.Command.usage ++ hog.Command.usage ++ render.Command.usage ++ shp.Command.usage ++ speech.Command.usage ++ spr.Command.usage ++ stats.Command.usage ++ tcache.Command.usage ++
+    ++ cd.Command.usage ++ dte.Command.usage ++ fat.Command.usage ++ fm8.Command.usage ++ fnt.Command.usage ++ hog.Command.usage ++ render.Command.usage ++ shp.Command.usage ++ speech.Command.usage ++ spr.Command.usage ++ stats.Command.usage ++ tcache.Command.usage ++
         \\  help                            show this text
         \\
     ;

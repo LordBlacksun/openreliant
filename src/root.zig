@@ -15,6 +15,7 @@ pub const fnt = @import("formats/fnt.zig");
 pub const frc = @import("formats/frc.zig");
 pub const hog = @import("formats/hog.zig");
 pub const refpack = @import("formats/refpack.zig");
+pub const scramble = @import("formats/scramble.zig");
 pub const shp = @import("formats/shp.zig");
 pub const spr = @import("formats/spr.zig");
 pub const stats = @import("formats/stats.zig");
