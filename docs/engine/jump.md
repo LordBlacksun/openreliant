@@ -167,6 +167,11 @@ ship's model's width across (`+0x5AC` less `+0x5A0`).
 
 `0x00417E20`, which Jump Out calls with the ship's root as it goes and as it ends, does nothing.
 
+**Improvement:** the flare casts a point light while it shows, in `jflare`'s own colour, as bright
+as the share of it that shows, reaching ten times the ship's width, two and a half times the
+flare's length as a muzzle flash's light does ([Guns](guns.md)); a ship lights up as it flashes in,
+and so does whatever stands by. `--original` leaves it out.
+
 In OpenReliant ([`jump/effect.zig`](../../src/engine/game/jump/effect.zig)), the meshes the records
 share are built once. Jump Out's burst, which the game never draws, is left out. A ship with more
 trails or lights than the records hold keeps the first, and a jump for which no record is free goes

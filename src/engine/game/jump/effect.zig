@@ -22,10 +22,12 @@ const Matrix = math.Matrix;
 const srapi = @import("../../surrender/surrenderlib/srapi.zig");
 const srapiext = @import("../../surrender/surrenderlib/srapiext.zig");
 const srcore = @import("../../surrender/surrenderlib/srcore.zig");
+const srlight = @import("../../surrender/surrenderlib/srlight.zig");
 const srtexture = @import("../../surrender/surrenderlib/srtexture.zig");
 const loadout = @import("../../interface/loadout/loadout.zig");
 const airipper = @import("../airipper.zig");
 const create = @import("../create.zig");
+const flash = @import("../guns/flash.zig");
 const gameobj = @import("../gameobj.zig");
 const matmanager = @import("../matmanager.zig");
 const objects = @import("../objects.zig");
@@ -70,6 +72,21 @@ const images = struct {
     const burst_software = "ddheat";
 };
 
+/// Whether a jump's flare lights what stands round it.
+pub const Lighting = enum {
+    /// **Improvement:** the flare casts a point light while it shows, in its own colour
+    /// (`jflare`'s, as `flash.flareColour` works a muzzle flash's out), as bright as the share of
+    /// it that shows, and reaching `flare_reach` times the ship's width, so that a ship lights up
+    /// as it flashes in, and so does whatever stands by.
+    flare,
+    /// As the original: the flare lights nothing, its glow being in its texture alone.
+    none,
+};
+
+/// How far the flare's light reaches, for each unit of the ship's width: two and a half times the
+/// flare's length, which is four times the width, as a muzzle flash's reaches.
+const flare_reach: f32 = 10;
+
 /// What a jump's update adds to the scene this frame, which the frame then draws (`draw`): the
 /// game adds them from the update itself.
 pub const Shown = packed struct(u8) {
@@ -96,6 +113,9 @@ pub const Effects = struct {
     light_going_image: *srtexture.Image,
     /// Whether the burst glows as the hardware renderers draw it, rather than the software one.
     hardware: bool,
+    /// Whether the flare lights what stands round it, and in what colour.
+    lighting: Lighting = .flare,
+    flare_colour: [3]f32,
     records: [max_records]?*Effect = @splat(null),
 
     /// `jump_init` (`0x00416490`): the flare's mesh, a square 4 by 2 over the whole of `jflare`,
@@ -131,6 +151,7 @@ pub const Effects = struct {
             .light_image = light_image,
             .light_going_image = light_going_image,
             .hardware = hardware,
+            .flare_colour = flash.flareColour(&.{.{ .image = flare_image }}),
         };
         effects.flare_level = .{.{ .mesh = &effects.flare_mesh, .until = std.math.inf(f32) }};
         for (&effects.trail_levels, &effects.trail_meshes) |*level, *mesh| level.* = .{.{ .mesh = mesh, .until = std.math.inf(f32) }};
@@ -209,6 +230,15 @@ pub const Effects = struct {
             };
             if (effect.shown.flare) if (effect.flare) |*flare| {
                 try xtrabits.sceneAdd(gpa, scene, .{ .mesh = &flare.object }, .world);
+                if (effects.lighting == .flare and flare.share > 0) {
+                    flare.light = .{
+                        .mask = 0,
+                        .intensity = flare.share,
+                        .colour = effects.flare_colour,
+                        .kind = .{ .point = .{ .position = flare.object.position, .range = flare.width * flare_reach } },
+                    };
+                    try xtrabits.sceneAdd(gpa, scene, .{ .light = &flare.light }, .world);
+                }
             };
         }
     }
@@ -282,7 +312,7 @@ pub const Effects = struct {
     /// `jump_flare_object` (`0x00418120`): the flare, standing at `at` in the world, as wide as
     /// `width`, which the jump's steps change.
     pub fn startFlare(effects: *Effects, effect: *Effect, at: math.Place, width: f32) void {
-        effect.flare = .{ .object = .{
+        effect.flare = .{ .width = width, .object = .{
             .flags = .{ .not_culled = true, .baked_object = true },
             .position = at.position,
             .orientation = at.orientation,
@@ -378,9 +408,20 @@ const Burst = struct {
     colours: [burst_vertices][4]f32 = @splat(.{ 0, 0, 0, 0 }),
 };
 
-const Flare = struct {
+pub const Flare = struct {
     object: srapiext.MeshObject,
     colours: [4][4]f32 = @splat(.{ 0, 0, 0, 0 }),
+    /// The ship's width, which it is scaled by, and how much of it shows, from nothing to 1, which
+    /// its light is as bright as (`Lighting.flare`).
+    width: f32,
+    share: f32 = 0,
+    light: srlight.Light = undefined,
+
+    /// Scaled to `share` of the ship's width across, and as much of it shows.
+    pub fn grow(flare: *Flare, share: f32) void {
+        flare.object.scale = flare.width * share;
+        flare.share = share;
+    }
 };
 
 /// The points of `kind` on each part that hangs from the ship's model's root, in the ship's frame
@@ -664,6 +705,54 @@ test "Effect.chargeLights" {
     try std.testing.expectEqual(&going, effect.lights[3].?.set.surface.textures[0].image);
     try std.testing.expectEqual(@as([3]f32, @splat(0)), effect.lights[1].?.sprite[0].colour);
     try std.testing.expectEqual(@as([3]f32, @splat(0.5)), effect.lights[2].?.sprite[0].colour);
+}
+
+test "the flare lights what stands round it as it shows" {
+    const gpa = std.testing.allocator;
+    var mission: gameobj.testing.Mission = undefined;
+    try mission.init(gpa);
+    defer mission.deinit();
+    const ship = try mission.add(.predator, @splat(0));
+    var effects: Effects = .{
+        .gpa = gpa,
+        .flare_mesh = try loadout.squareMesh(gpa, false, flare_size[0], flare_size[1]),
+        .flare_level = undefined,
+        .trail_meshes = undefined,
+        .trail_levels = undefined,
+        .burst_mesh = undefined,
+        .burst_level = undefined,
+        .light_image = undefined,
+        .light_going_image = undefined,
+        .hardware = true,
+        .flare_colour = .{ 0.5, 0.7, 1 },
+    };
+    defer effects.flare_mesh.deinit(gpa);
+    effects.flare_level = .{.{ .mesh = &effects.flare_mesh, .until = std.math.inf(f32) }};
+    const place = (try effects.alloc(ship)).?;
+    defer effects.free(place);
+    const record = effects.get(place).?;
+    effects.startFlare(record, .{ .position = .{ 0, 0, 100 } }, 50);
+    record.flare.?.grow(0.5);
+    record.shown = .{ .flare = true };
+    var scene: srcore.Scene = .{};
+    defer scene.deinit(gpa);
+    // Half of it shows, 25 across, its light half as bright and reaching ten times the ship's width.
+    try effects.draw(gpa, &scene, mission.objects);
+    try std.testing.expectEqual(25, record.flare.?.object.scale);
+    try std.testing.expectEqual(1, scene.layers.get(.world).items.len);
+    try std.testing.expectEqual(1, scene.lights.items.len);
+    try std.testing.expectEqual(0.5, scene.lights.items[0].intensity);
+    try std.testing.expectEqual(500, scene.lights.items[0].kind.point.range);
+    // As the original, it lights nothing.
+    scene.clear();
+    effects.lighting = .none;
+    try effects.draw(gpa, &scene, mission.objects);
+    try std.testing.expectEqual(0, scene.lights.items.len);
+    // Nothing is shown until an update says so again.
+    effects.beginFrame();
+    scene.clear();
+    try effects.draw(gpa, &scene, mission.objects);
+    try std.testing.expectEqual(0, scene.layers.get(.world).items.len);
 }
 
 test {

@@ -156,7 +156,7 @@ pub const Looks = struct {
 };
 
 /// A stretch of a texture a flash draws from, from `low` to `high` in texture coordinates.
-const Region = struct {
+pub const Region = struct {
     image: *const srtexture.Image,
     low: [2]f32 = .{ 0, 0 },
     high: [2]f32 = .{ 1, 1 },
@@ -165,7 +165,7 @@ const Region = struct {
 /// OpenReliant's: the colour of a flash's light, what its flare adds over `regions` brought up to
 /// full brightness, so that the light is the flare's own colour. White, for a flare that adds
 /// nothing.
-fn flareColour(regions: []const Region) [3]f32 {
+pub fn flareColour(regions: []const Region) [3]f32 {
     var sum: Vector = @splat(0);
     for (regions) |region| {
         const level = region.image.levels[0];

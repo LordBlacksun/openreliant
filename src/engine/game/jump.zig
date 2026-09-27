@@ -366,9 +366,7 @@ pub fn outUpdate(ctx: aigeneric.Context, index: u16) void {
         },
         .gone => {
             const fx = effectOf(world, state);
-            if (fx) |record| if (record.flare) |*flare| {
-                flare.object.scale = width(object) * (1 - state.progress);
-            };
+            if (fx) |record| if (record.flare) |*flare| flare.grow(1 - state.progress);
             state.progress += dt * flare_rate;
             show(fx, .{ .flare = true, .trails = true, .lights = true });
             if (state.progress >= 1) {
@@ -629,8 +627,10 @@ pub fn inUpdate(ctx: aigeneric.Context, index: u16) void {
             if (index == all.player) world.shake.* = math.lerp(@as(f32, 1), 0, state.progress);
             state.progress += dt * fly_rate;
             if (state.progress < flare_squash) if (fx) |record| if (record.flare) |*flare| {
-                flare.object.scale = width(object);
-                const stretch: math.Matrix = .{ 1 + state.progress * flare_stretch, 0, 0, 0, 1 - state.progress / flare_squash + flare_thinnest, 0, 0, 0, 1 };
+                const height = 1 - state.progress / flare_squash + flare_thinnest;
+                flare.grow(1);
+                flare.share = height;
+                const stretch: math.Matrix = .{ 1 + state.progress * flare_stretch, 0, 0, 0, height, 0, 0, 0, 1 };
                 flare.object.orientation = math.product(record.flare_turn, stretch);
                 show(fx, .{ .flare = true });
             };
@@ -673,9 +673,7 @@ fn flash(world: gameobj.World, slot: *create.Slot, dt: f32) void {
     const object = &slot.object;
     const state = &slot.state.jump;
     const fx = effectOf(world, state);
-    if (fx) |record| if (record.flare) |*flare| {
-        flare.object.scale = width(object) * state.progress;
-    };
+    if (fx) |record| if (record.flare) |*flare| flare.grow(state.progress);
     show(fx, .{ .flare = true, .trails = true, .burst = true });
     state.progress += dt * flash_rate;
     if (state.progress > 1) {

@@ -110,7 +110,7 @@ const Doc = struct {
 
 /// Every option's help, which the compiler holds to having one for each.
 const docs: std.enums.EnumArray(Arg, Doc) = .init(.{
-    .@"--original" = .{ .section = .original, .text = "the original's look and sound: 16-bit colour, one sample a pixel, bilinear filtering, lighting each vertex, light worked out on encoded colours, no shadows, motion that moves on with the game's ticks, a launching ship a frame behind the retainer that lowers it, lights from the latest shots only, muzzle flashes that light nothing and none from the turrets, the force feedback's own effects only, a blow shaking the camera only while the controller rumbles, an explosion's debris lit by every light, its fireballs, rings, particles and burning bits as few, plain and brief as the original's, the Uber Explode as coarse, unlit and tied to the frame rate as the original's, a damaged ship's smoke as even as the original's, the shields' bubbles as coarse as the original's, the tractor beams as thin as the original's, the hangar's beacons falling short of the launching ship, a ship landing on the Reliant tilted as it came, its tube's door left open, the planets' atmospheres as coarse and fleeting as the original's and their terminators as hard, the sun and its lens flares from their small textures and the sun's glow going out at once behind what hides it, the levels of detail changing as near as the original's, as little drawn a frame as the original allows, the marker for a target out of sight placed as the original misplaces it, a missile's sound left where it was launched, the radio's lines cut flat at their loudest and heard dry, and the sound mixed plainly in stereo" },
+    .@"--original" = .{ .section = .original, .text = "the original's look and sound: 16-bit colour, one sample a pixel, bilinear filtering, lighting each vertex, light worked out on encoded colours, no shadows, motion that moves on with the game's ticks, a launching ship a frame behind the retainer that lowers it, lights from the latest shots only, muzzle flashes that light nothing and none from the turrets, a jump's flare that lights nothing, the force feedback's own effects only, a blow shaking the camera only while the controller rumbles, an explosion's debris lit by every light, its fireballs, rings, particles and burning bits as few, plain and brief as the original's, the Uber Explode as coarse, unlit and tied to the frame rate as the original's, a damaged ship's smoke as even as the original's, the shields' bubbles as coarse as the original's, the tractor beams as thin as the original's, the hangar's beacons falling short of the launching ship, a ship landing on the Reliant tilted as it came, its tube's door left open, the planets' atmospheres as coarse and fleeting as the original's and their terminators as hard, the sun and its lens flares from their small textures and the sun's glow going out at once behind what hides it, the levels of detail changing as near as the original's, as little drawn a frame as the original allows, the marker for a target out of sight placed as the original misplaces it, a missile's sound left where it was launched, the radio's lines cut flat at their loudest and heard dry, and the sound mixed plainly in stereo" },
     .@"--mission" = .{ .section = .mission, .value = "<number>", .text = "the mission to play, by the number the game names its file by, mission<number>.dte, from the game's missions folder or resource.hog; 0 by default, OpenReliant's own sandbox, which openreliant carries where the game has no mission 0" },
     .@"--ship" = .{ .section = .mission, .value = "<type>", .text = "the ship type to fly, by its number in shipstats.bin, in place of the loadout screen's choice, with its default missiles; the mission's own by default" },
     .@"--view" = .{ .section = .mission, .value = "<0|1|2>", .text = "the view it starts in, as the game's settings keep it: 0 the cockpit; 1 the chase view; 2 no cockpit. The settings' own by default, which the pause menu's video screen changes" },
@@ -263,6 +263,8 @@ const Options = struct {
     speech: game.cbox.Style = .{},
     /// How the tractors' and the Rippers' beams are drawn.
     beam_glow: game.tractor.Glow = .halo,
+    /// Whether a jump's flare lights what stands round it.
+    jump_light: game.jump.effect.Lighting = .flare,
     /// How the sun and the lens flares are drawn.
     sun: game.backdrop.Sun = .smooth,
     /// How the planets' atmospheres are drawn.
@@ -338,6 +340,7 @@ const Options = struct {
                 options.touchdown = .original;
                 options.speech = .original;
                 options.beam_glow = .none;
+                options.jump_light = .none;
                 options.sun = .original;
                 options.atmospheres = .original;
                 options.detail_reach = .original;
@@ -716,6 +719,7 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
     var jump_effects: game.jump.effect.Effects = undefined;
     try jump_effects.init(gpa, &textures, context.hardware);
     defer jump_effects.deinit();
+    jump_effects.lighting = options.jump_light;
     rippers.glow = options.beam_glow;
     var atmospheres: game.create.atmosphere.Atmospheres = try .init(gpa, &textures);
     defer atmospheres.deinit();
@@ -1324,6 +1328,8 @@ test Options {
     try std.testing.expectEqual(.own, retro.hangar_beacons);
     try std.testing.expectEqual(.halo, plain.beam_glow);
     try std.testing.expectEqual(.none, retro.beam_glow);
+    try std.testing.expectEqual(.flare, plain.jump_light);
+    try std.testing.expectEqual(.none, retro.jump_light);
     try std.testing.expectEqual(.far, plain.detail_reach);
     try std.testing.expectEqual(.original, retro.detail_reach);
     try std.testing.expectEqual(.roomy, plain.draw_budget);
