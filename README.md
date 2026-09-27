@@ -21,12 +21,12 @@ OpenReliant is an independent, non-commercial open-source project. It is not aff
 
 ## Current Status
 
-OpenReliant is in active development, with the campaign's first mission playable from start to finish as the original plays it. The front end, the other missions and multiplayer are still to come: see the [milestones](../../milestones).
+OpenReliant is in active development. The first campaign mission is playable from start to finish, and the front end, the other missions and multiplayer are still to come: see the [milestones](../../milestones).
 
-- **Flight & Combat**: Every ship, with the original's flight model, weapons, damage, AI and cockpit displays, and 8 camera views including 3D cockpits.
-- **Missions**: Any mission file, the game's own or a custom one, loads as the original loads it. Mission 1's script runs in full, and the later missions' commands are in progress.
-- **Controls**: Mouse and keyboard, flight sticks, HOTAS and gamepads, with the original's force-feedback effects played as rumble.
-- **Graphics**: The display's own resolution, 32-bit colour, per-pixel lighting, shadows from the sun, bloom, smooth edges and motion, and more detailed explosions, shields and planets. `--original` brings back the original's look.
+- **Flight & Combat**: All ships, with the original flight model, weapons, damage, AI and cockpit displays, and 8 camera views including 3D cockpits.
+- **Missions**: Retail and custom mission files load. The script of mission 1 runs in full, and the commands used by later missions are in progress.
+- **Controls**: Mouse and keyboard, flight sticks, HOTAS and gamepads, with force feedback played as rumble.
+- **Graphics**: Native resolution, 32-bit colour, per-pixel lighting, sun shadows, bloom, anti-aliasing, smooth motion at high frame rates, and more detailed explosions, shields and planets. `--original` restores the original graphics and sound.
 - **Audio**: 3D positional sound with reverb and headphone HRTF.
 
 ---
@@ -68,7 +68,7 @@ Insert StarLancer Disc 1 into your CD drive (or prepare `.bin`/`.iso` images) an
 *(On Windows, use `.\openreliant.exe`.)*
 
 ### 3. Launch
-Start the campaign's first mission:
+Start the first campaign mission:
 
 ```bash
 ./openreliant StarLancer --mission 1
