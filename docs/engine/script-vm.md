@@ -188,6 +188,7 @@ Some of the commands mission 1 runs:
 | `StartDirectorCam` (`0x10`), `StackDirectorCam` (`0x52`) | The director's camera takes a shot along the mission's curves or at a ship, at once or after those waiting ([The director's camera](director.md#the-commands)) |
 | `StopDirectorCam` (`0x24`) | The camera goes back to the player's cockpit, forced |
 | `WaitForDirectorCam` (`0x50`) | Waits while the camera shows the director's shots (view 13) |
+| `ReplenishWeapons` (`0x59`) | The ship the argument names is re-armed, as a Nanny re-arms a ship ([Missiles](missiles.md)) |
 
 ## The clock and timers
 
@@ -399,7 +400,8 @@ the space's `SetEnvironmentFXNebula` and `UpdateEnvironmentFXState`, `Multiplaye
 `WhenPlayerLastJumped`, and those of the ships and the player's targets: `DestroyFlightGroup`,
 `ClearAI`, `StartShipAnimation`, `StartShipAnimationReverse`, `DisableObject`, `SetPlayerTarget`,
 `SetTargetable`, `SetActionCentre`, `DisableGuns`, `SetEscortPoint`, `SetPrimaryTarget`,
-`SnapToPoint`, `IsShipThisPlayer`, `SetFlybackMarker`, `ResetFlybackMarker` and `MatchSpeed`. They
+`SnapToPoint`, `IsShipThisPlayer`, `SetFlybackMarker`, `ResetFlybackMarker`, `MatchSpeed` and
+`ReplenishWeapons`. They
 act on it through the world the mission's start and its frame give the machine, which the game
 reaches through its globals. A command not ported yet does nothing and gives 1, which lets the
 thread run on, and is logged the first time it runs ([#36](https://github.com/vdmkenny/openreliant/issues/36),

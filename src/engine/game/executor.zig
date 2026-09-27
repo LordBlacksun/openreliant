@@ -108,6 +108,7 @@ const implementations = table: {
         .{ "StackDirectorCam", stackDirectorCam },
         .{ "StopDirectorCam", stopDirectorCam },
         .{ "WaitForDirectorCam", waitForDirectorCam },
+        .{ "ReplenishWeapons", replenishWeapons },
     }) |pair| table[commandIndex(pair[0])] = pair[1];
     break :table table;
 };
@@ -641,6 +642,16 @@ fn whenPlayerLastJumped(call: Call) u32 {
 fn shipSlot(machine: *const vm.Machine, all: *const create.Objects, place: u32) ?u16 {
     const ship = machine.shipIndex(place) orelse return null;
     return if (ship < all.slots.len) ship else null;
+}
+
+/// `cmd_ReplenishWeapons` (`0x00459FA0`, command `0x59`): the ship the argument names is re-armed
+/// (`create.rearm`).
+fn replenishWeapons(call: Call) u32 {
+    const machine = call.machine;
+    const game = machine.game orelse return 1;
+    const ship = shipSlot(machine, game.world.objects, call.args[0]) orelse return 1;
+    create.rearm(game.world, ship) catch |err| log.warn("the ship in slot {d} is not re-armed: {s}", .{ ship, @errorName(err) });
+    return 1;
 }
 
 /// `cmd_DestroyFlightGroup` (`0x00457FD0`, command `0x04`): each ship of the flight group the

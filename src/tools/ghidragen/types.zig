@@ -169,6 +169,8 @@ pub const exported = [_]Export{
     .{ "DockStyle", engine.game.aidock.Style },
     .{ "DockState", engine.game.aidock.State },
     .{ "DockStep", engine.game.aidock.Step },
+    .{ "NannyDockState", engine.game.aidock.NannyState },
+    .{ "NannyDockStep", engine.game.aidock.NannyStep },
     .{ "LandStyle", engine.game.ailand.Style },
     .{ "LandState", engine.game.ailand.State },
     .{ "LandStep", engine.game.ailand.Step },

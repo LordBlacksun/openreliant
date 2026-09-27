@@ -79,8 +79,12 @@ bytes at `GameObject + 0x158`, `rack_count` of them (`+0x150`).
    it reads the same rack.
 4. 5000 more of the afterburner's fuel for each fuel pod, and 29 countermeasures.
 
-A re-arm (`order_dock`, `cmd_ReplenishWeapons`) lets go of what hangs and fits the racks again, by
-the tier at `GameObject + 0x648`, which nothing writes.
+A re-arm, as a Nanny takes a ship aboard (`order_dock`, [Docking](orders.md#docking)) and as the
+script's `ReplenishWeapons` (`0x59`, `0x00459FA0`) asks, lets go of what hangs and fits the racks
+again: a player's ship by the racks the player chose, or tier 0 where the briefing is skipped, and
+any other by the tier at `GameObject + 0x648`, which nothing writes. The ship then has 29
+countermeasures, a full afterburner with a fuel pod's 5000 each, its guns charged and their rounds
+full, and the player's missile ring is built again (`hud_missile_ring_build`).
 
 OpenReliant fits a player's ship by the tier, as the game does when the briefing is skipped; the
 loadout screen is not ported (#44). The root lists each part at its number (`object_link_part`), so

@@ -858,7 +858,6 @@ pub fn createObject(all: *Objects, tables: *Stats, types: Types, wanted: ?u16, a
     object.passes_through = @splat(.none);
     object.fighting = .none;
     object.power_up = .none;
-    object.afterburner_fuel = combat.afterburner_fuel * 100;
     object.countermeasures = gameobj.countermeasures_when_created;
     // The power shared evenly, at (1, 1) on the power ball.
     object.gun_factor = 1;
@@ -895,9 +894,7 @@ pub fn createObject(all: *Objects, tables: *Stats, types: Types, wanted: ?u16, a
         loadoutByTier(object, model, settledTier(tier, asked, all.campaign_tier));
         try fitRacks(all.gpa, object, model, if (slot.type) |loaded| loaded.effects else .{});
     }
-    for (object.fittedRacks()) |rack| {
-        if (rack.type == .fuel_pod) object.afterburner_fuel += fuel_pod_fuel;
-    }
+    object.afterburner_fuel = fullFuel(object, combat);
     ai.setTargetable(object, combat, true);
     all.exhaust.offer(all, index);
     object.type = @enumFromInt(becomes);
@@ -906,6 +903,45 @@ pub fn createObject(all: *Objects, tables: *Stats, types: Types, wanted: ?u16, a
 
 /// The afterburner's fuel a fuel pod adds, in hundredths of a second: 50 seconds.
 pub const fuel_pod_fuel = 5000;
+
+/// The afterburner's fuel of a full ship of `combat`: its own, and `fuel_pod_fuel` for each fuel pod
+/// its racks hold, as `create_object` fills it and a re-arm does again (`rearm`).
+fn fullFuel(object: *const GameObject, combat: *const ShipCombat) i32 {
+    var fuel = combat.afterburner_fuel * 100;
+    for (object.fittedRacks()) |rack| {
+        if (rack.type == .fuel_pod) fuel += fuel_pod_fuel;
+    }
+    return fuel;
+}
+
+/// A re-arm, as a Nanny takes a ship aboard (`order_dock`, `0x004079C9`) and as the mission's
+/// script asks (`cmd_ReplenishWeapons`, `0x00459FA0`): what hangs on the racks is let go and they
+/// are fitted again (`loadoutByTier`, `fitRacks`), by the tier the object holds, or tier 0 for a
+/// player's ship, as the game does where the briefing is skipped; and the ship has its
+/// countermeasures, a full afterburner (`fullFuel`), its guns charged and their rounds full. The
+/// player's ship's missile display is built again (`hud.missile_display.Ring.build`).
+///
+/// **Unverified:** the tier an object holds, which nothing writes (`GameObject.loadout_tier`);
+/// one past the tiers is tier 0.
+///
+/// Not ported: a player's ship taking the racks the loadout screen chose
+/// ([#44](https://github.com/vdmkenny/openreliant/issues/44)).
+pub fn rearm(world: gameobj.World, index: u16) Allocator.Error!void {
+    const all = world.objects;
+    const slot = &all.slots[index];
+    const object = &slot.object;
+    const combat = slot.combat orelse return;
+    if (slot.model) |*model| {
+        const tier: u2 = if (index < all.players) 0 else std.math.cast(u2, object.loadout_tier) orelse 0;
+        loadoutByTier(object, model, tier);
+        try fitRacks(all.gpa, object, model, if (slot.type) |loaded| loaded.effects else .{});
+    }
+    object.countermeasures = gameobj.countermeasures_when_created;
+    object.afterburner_fuel = fullFuel(object, combat);
+    object.gun_charge = combat.gun_energy;
+    object.rounds = combat.rounds;
+    if (index == all.player) if (world.display) |display| display.missiles.build(object);
+}
 
 /// The last ship type the campaign's tier fits: the player's twelve fighters.
 const last_fighter = 11;
@@ -1446,6 +1482,26 @@ test collectComponents {
     slot.type = &crowded_kind;
     collectComponents(&slot);
     try std.testing.expectEqual(gameobj.max_components, slot.object.component_count);
+}
+
+test rearm {
+    var mission: gameobj.testing.Mission = undefined;
+    try mission.init(std.testing.allocator);
+    defer mission.deinit();
+    _ = try mission.add(.predator, @splat(0));
+    const index = try mission.add(.predator, .{ 0, 0, 1000 });
+    const object = &mission.slot(index).object;
+    const combat = mission.slot(index).combat.?;
+    // Spent, it has everything back.
+    object.countermeasures = 0;
+    object.afterburner_fuel = 0;
+    object.gun_charge = 0;
+    object.rounds = 0;
+    try rearm(mission.world(), index);
+    try std.testing.expectEqual(gameobj.countermeasures_when_created, object.countermeasures);
+    try std.testing.expectEqual(combat.afterburner_fuel * 100, object.afterburner_fuel);
+    try std.testing.expectEqual(combat.gun_energy, object.gun_charge);
+    try std.testing.expectEqual(combat.rounds, object.rounds);
 }
 
 test "Objects.slotType" {

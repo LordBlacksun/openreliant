@@ -121,6 +121,8 @@ pub const View = enum(u8) {
     watch_marker = 0x1B,
     /// From a point the player flies past.
     flyby = 0x24,
+    /// From beside the Nanny the player's ship docks at, looking at the ship (`aidock`).
+    nanny_dock = 0x2B,
     /// **Unknown:** what it shows. The second of the two views the Yamato's landing picks from
     /// (`0x0040EBC0`), which OpenReliant has not ported
     /// ([#349](https://github.com/vdmkenny/openreliant/issues/349)).
@@ -658,6 +660,7 @@ pub const Camera = struct {
                 camera.place = lookingAt(landing.tube + math.transform(landing.carrier, landing_aside_offset), world.object.position);
             },
             .jump_out => camera.place = lookingAt(camera.place.position, world.object.position),
+            .nanny_dock => camera.place = lookingAt(world.object.position + math.transform(world.object.orientation, nanny_dock_offset), world.player.position),
             .jump_in_close => {
                 camera.place = lookingAt(world.player.place().point(jumpCloseOffset(camera.shown(world))), world.player.position);
                 // The camera shakes with a hit, as the cockpit's does.
@@ -1163,6 +1166,10 @@ const bay_tilt: f32 = 0.0007;
 /// the view aside 3500 to its left, 1000 above and 3000 behind (`0x00460AB9`).
 const landing_tube_offset: Vector = .{ 500, 0, -500 };
 const landing_aside_offset: Vector = .{ -3500, -1000, -3000 };
+
+/// Where the Nanny's docking view stands, in the Nanny's frame from its origin: 10000 to its right,
+/// 1800 above and 1400 behind (`camera_frame`, `0x00461AE3`).
+const nanny_dock_offset: Vector = .{ 10000, -1800, -1400 };
 
 // --- The jumps ----------------------------------------------------------------------------------
 

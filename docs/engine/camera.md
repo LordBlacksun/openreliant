@@ -168,6 +168,14 @@ The display names view `0x23`, but not `0x26`. **Improvement:** from within the 
 heard as in a hangar ([Sound](../port/sound.md)). The Yamato's landing picks views `0x0E` and `0x25`,
 which OpenReliant has not ported ([#349](https://github.com/vdmkenny/openreliant/issues/349)).
 
+## The Nanny's view
+
+As the player's ship docks at a Nanny ([Docking](orders.md#docking)), the camera takes view `0x2B`,
+held and forced, with the Nanny as its object. `camera_set_view` has no case of its own for it.
+`camera_frame` (`0x00461ADE`) stands the camera 10000 to the Nanny's right, 1800 above it and 1400
+behind, in its frame, looking at the player's ship. The ship's order ends with the view from its
+cockpit again.
+
 ## The director's view
 
 View 13 shows the shots a mission's script stacks for [the director's camera](director.md), which

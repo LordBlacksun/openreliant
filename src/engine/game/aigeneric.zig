@@ -214,6 +214,7 @@ pub const State = extern union {
     jump: jump.State,
     follow: follow.State,
     dock: aidock.State,
+    nanny_dock: aidock.NannyState,
     land: ailand.State,
     ripper_grab: airipper.GrabState,
     ripper_drop: airipper.DropState,

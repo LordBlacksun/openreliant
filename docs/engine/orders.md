@@ -377,7 +377,32 @@ ship stays attached.
 **Fix:** where the ship or the station has no docking point, OpenReliant logs it and the order
 ends, where the game stops.
 
-Not ported: the Nanny's, the limpet car's and the limpet pod's styles
+The Nanny's style takes a ship aboard to re-arm it. Its init (`0x004073E0`) has the ship pass
+through the Nanny and fly by its nose (`motion_plain`), and takes the port the order's component
+names among the Nanny's docking points, raised by the top of the ship's bounds; a port past them
+stops the game with "trying to dock to invalid location on %s". Its state holds the step
+(`+0x00`), the frame's tick the step waits for (`+0x04`), the port's place on its part (`+0x08`)
+and the part's node (`+0x14`). The Nanny's doors are its root's children: 0 and 4, the way in and
+the way out, for its first port, and 1 and 3 for any other. A door opens by playing its `opendoor`
+track at 1 from its start, and closes by playing it back at 1, each with sound `0x2E` (`nanny02`)
+where the door stands. Its update (`0x00407510`):
+
+| Step | What happens |
+|---|---|
+| 0 | The way in opens; the player's ship is watched from beside the Nanny (view `0x2B`, [Camera](camera.md)) |
+| 1 | The ship steers for a point 1500 above the port and 20000 ahead of it, in the part's frame (`ai_steer`, no flags), at full throttle, and within 10000 at 100 a tick over its cruise speed; within 2000 of the point it flies in |
+| 2 | It steers for the port, beyond 1000 of it aiming 0.6 of its distance further along the Nanny's own axes, 0.075 a unit above them; pointing within the cosine 0.98 of the port, it rolls to stand as the Nanny does (its roll input the roll between them less 12 times its roll rate, in degrees over 40); its throttle is 0.0001 for each unit it has to go less 0.02, at most 100 a tick over its cruise speed. Within 500 it is aboard: sound `0x2F` (`nanny03`) from it, its turns and throttle nothing, and the way in closes |
+| 3 | 500 ticks on, it is re-armed, as `ReplenishWeapons` does ([Missiles](missiles.md)), and the way out opens |
+| 4 | 400 ticks on, it has its Docked, and flies ahead (`motion_forward`) |
+| 5 | Its afterburner burns; 150 ticks on, the way out closes, the order pops, and the player's ship is watched from its cockpit again |
+
+Its exit is the station's.
+
+**Fix:** the game closes the second port's doors from the time the first port's stand at, which
+shuts them at once; OpenReliant closes each from where it stands. Where the Nanny has no such port,
+or has gone, OpenReliant ends the order, where the game stops or reads what is no longer there.
+
+Not ported: the limpet car's and the limpet pod's styles
 ([#320](https://github.com/vdmkenny/openreliant/issues/320)).
 
 ### Landing
