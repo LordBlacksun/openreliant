@@ -20,7 +20,7 @@ The display's elements as the game's manual names them, with where the code that
 | Radar | foot, middle | V | three rings with the ship at their middle and a wedge for its view ahead; each object a dot, red for hostile, green for friendly, blue for one calling on the radio, on a line up or down from the rings by its height. V narrows and widens its range, the middle ring filling the display at the narrowest | `hud_radar` (`0x00488BD0`), [The radar](#the-radar). The rings and V's ranges are ported; the dots are not |
 | Ship status | foot, left of middle | always shown | the ship's image in two rings of segments, forward, aft and the two sides: shields outside, armour inside. A shield dims as it wears; an armour segment goes as it is lost. Shifting power fore or aft doubles the shields there | `hud_ship_status` (`0x00489350`). For the player's own ship, what [SHIELD BALANCING](controls.md#the-shield-balance) shifted beyond the fore and aft shields shows as a second arc outside each: shapes `0xB2` less the level at `(-0x1A, -0x24)` from the point for the fore reserve, and `0xB7` less the level at `(-0x26, 0x1D)` for the aft one, the level worked out as for a shield. [The ship status indicator](#the-ship-status-indicator) |
 | Missile display | top, middle | M | the missile's name, the ship's missiles in a ring, how many of the chosen one are left, and the one armed at six o'clock. Comma and full stop turn the ring | [Window](#the-windows) 2: the ring (`hud_missile_ring`, `0x00501CC8`, ten entries of five halfwords), its keys and what it shows ([The ring](missiles.md#the-ring)). LAUNCH MISSILE and the ring's keys open it held |
-| Mission objectives | right | B | the mission's goals, the current one first; B pages through them | [Window](#the-windows) 10: the mission's objectives from the table at `0x00504120`, ten a mission. The frame is ported; what it shows is not |
+| Mission objectives | right | B | the mission's goals, the current one first; B pages through them | [Window](#the-windows) 10: the mission's objectives from the table at `0x00504120`, ten a mission ([The objectives](#the-objectives)) |
 | Gunnery display | foot, left | G | the gun's name, the ship as a wire frame with the gun lit, the rounds left for a gun that fires them, and whether the guns fire together or in turn. G picks the next gun, F fires them all, CTRL and G switches the two ways of firing them all | [Window](#the-windows) 1, [The gunnery display](#the-gunnery-display) |
 | Damage display | top, right | D | a segmented bar each for the weapons, the engines and the shields, shortening with damage | [Window](#the-windows) 4, [The damage display](#the-damage-display) |
 | Power distribution | left | P | the guns, the shields and the engines round a ball, each with its share of the power, a third each at first. P held with the stick moves power toward one; U, I and O give all of it to the guns, the engines or the shields, and `[` shares it out again | [Window](#the-windows) 7, [The power distribution](#the-power-distribution) |
@@ -926,8 +926,33 @@ A mission's script sets an objective's state with `SetObjective` (command `0x43`
 below 36; an objective made current becomes the one the window shows. The table's names,
 [`hud/objectives.zig`](../../src/engine/game/hud/objectives.zig), `make objective-tables` derives
 from the executable. **Fix:** the game writes an objective past the ten into the next mission's row,
-and mission 0's before the table; OpenReliant writes none. What the window shows is not ported yet
-([#98](https://github.com/vdmkenny/openreliant/issues/98)).
+and mission 0's before the table; OpenReliant writes none.
+
+OBJECTIVES WINDOW on the open window (`frame_controls`, `0x00414AD7`) gives it its full time again
+and pages: the window shows the next objective that is not hidden, round to the first after the
+tenth, and with every one hidden the next, marking that none is shown (`0x0051CF74`, which
+`mission_start` clears). From the tenth, though, it goes back to the first whatever its state, and
+leaves the mark as it was. **Fix:** the game reads the states of a mission the table has no row for
+from beside the table; OpenReliant finds them hidden.
+
+`hud_window_draw` draws window 10 in the view ahead from its place `(x, y)`
+([`hud/objectives_window.zig`](../../src/engine/game/hud/objectives_window.zig)):
+
+1. MISSION OBJECTIVES, string `0x128`, right-aligned at `(x - 3, y - 78)`.
+2. Right-aligned at `(x - 3, y - 66)`: No current objectives., `0x54A`, where paging found none,
+   and nothing more; otherwise Current Objective, `0x12A`, for an objective in the current state,
+   and Objective, `0x12B`, for any other.
+3. The objective's name, from `(x - 140, y - 48)`, in lines at most 140 wide, 14 apart, at most
+   six (`hud_text_wrapped`, `0x00480FD0`); where the table names none, or the mission is past it,
+   "ERROR: No mission Objectives defined!" (`0x0050252C`).
+
+`hud_text_wrapped` takes as many letters as fit a line, by the font's widths, up to a line feed,
+which goes. Where a letter does not fit, the line ends at the last space after its first letter,
+which goes; failing that after the last hyphen after its first letter, which stays, even the one
+that does not fit; failing that a letter short of what fits, with a hyphen added. An empty line is
+not drawn. **Fix:** the game reads mission 0's states and names from before the table, and where
+fewer than two letters fit a line it copies one of no length or less; OpenReliant shows mission 0 as
+a mission past the table, and takes a letter a line.
 
 ## Turning it off
 

@@ -1894,7 +1894,8 @@ const cloak_said: Said = .{ .on = .cloak_on, .off = .cloak_off };
 /// - FULL GUNS, on a ship of more than one group of guns, flips firing them all (`guns.fullGuns`)
 ///   and opens the gunnery window, held while SHIFT is down, which a joystick button bound to it
 ///   can be pressed with; its key, which takes no modifier, is read only while SHIFT is up.
-/// - OBJECTIVES WINDOW closes the wing status window and opens the objectives.
+/// - OBJECTIVES WINDOW closes the wing status window and opens the objectives; open already, they
+///   stay their full time again, and page to the next objective (`hud.Objectives.page`).
 /// - PRIMARY TARGET makes the mission's primary target the player's (`primaryTarget`).
 /// - SHIELD BALANCING held lets the stick shift the shields fore and aft, sounding as it is first
 ///   held.
@@ -1912,8 +1913,7 @@ const cloak_said: Said = .{ .on = .cloak_on, .off = .cloak_off };
 /// **Fix:** the game sounds a power key every frame it is held, a new sound each frame, which
 /// OpenReliant's frame rates make a din; OpenReliant sounds it as it is pressed.
 ///
-/// Not yet ported: the radio's menu COMMS WINDOW starts; OBJECTIVES WINDOW paging through the
-/// objectives once they are open; and the orders to the wingmen.
+/// Not yet ported: the radio's menu COMMS WINDOW starts; and the orders to the wingmen.
 pub fn frameKeys(keys: FrameKeys) void {
     const display = keys.display;
     const player = keys.player;
@@ -1992,7 +1992,12 @@ pub fn frameKeys(keys: FrameKeys) void {
     if (devices.active(.objectives_window, true)) {
         hud.beep(keys.world, .done);
         if (windows.up(.wing_status)) windows.close(.wing_status);
-        if (windows.status.get(.objectives).phase != .open) _ = windows.open(.objectives, multiplayer);
+        if (windows.status.get(.objectives).phase == .open) {
+            windows.renew(.objectives);
+            display.objectives.page();
+        } else {
+            _ = windows.open(.objectives, multiplayer);
+        }
     }
     if (devices.active(.primary_target, true)) primaryTarget(keys);
     const balancing = devices.active(.shield_balancing, false);
@@ -2171,6 +2176,17 @@ test "the window keys" {
     try std.testing.expectEqual(.opening, windows.status.get(.wing_status).phase);
     press.once(.objectives_window);
     try std.testing.expectEqual(.closing, windows.status.get(.wing_status).phase);
+    // Pressed on the open objectives, it pages to the next objective shown, and they stay their
+    // full time again.
+    display.objectives.reset(1, false);
+    _ = windows.step(.objectives, hud.windows.opening_ticks);
+    _ = windows.open(.objectives, false);
+    _ = windows.step(.objectives, hud.windows.opening_ticks);
+    try std.testing.expectEqual(.open, windows.status.get(.objectives).phase);
+    windows.status.getPtr(.objectives).left = 10;
+    press.once(.objectives_window);
+    try std.testing.expectEqual(1, display.objectives.shown);
+    try std.testing.expectEqual(hud.windows.layouts.get(.objectives).stay, windows.status.get(.objectives).left);
 
     // SYNCHRONISE GUNS opens the gunnery window too, and flips the guns' firing together.
     press.once(.synchronise_guns);
