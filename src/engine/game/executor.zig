@@ -41,8 +41,7 @@ pub fn commandIndex(comptime name: []const u8) u8 {
 }
 
 /// The implementation of command `number`, or null for one not ported yet
-/// ([#36](https://github.com/vdmkenny/openreliant/issues/36),
-/// [#281](https://github.com/vdmkenny/openreliant/issues/281)).
+/// ([#281](https://github.com/vdmkenny/openreliant/issues/281)).
 pub fn implementation(number: u8) ?vm.Implementation {
     return if (number < implementations.len) implementations[number] else null;
 }

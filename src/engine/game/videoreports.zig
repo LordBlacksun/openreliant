@@ -67,17 +67,15 @@ pub const permission_every: u32 = 500;
 /// ship, by a line the script's `mission_success` picks at random from its lines, and otherwise it
 /// refuses, by one of the refusals. A ship cleared lands on that carrier (`ailand`). A report
 /// that finds the radio's reports all taken is not said, and a ship refused that way is not
-/// cleared either.
+/// cleared either. The radio's menu asks too (`menu.Page.permission_to_land`).
 ///
 /// **Fix:** the game reads through a null pointer where the player's ship launched from no
 /// carrier; OpenReliant asks nothing.
 ///
-/// Not ported: the debug line it writes naming the mission's rating, which nothing shows; the
-/// radio's menu, which asks too (`0x00455E48`)
-/// ([#99](https://github.com/vdmkenny/openreliant/issues/99)); a multiplayer game's side of it, in
-/// which a remote player's ship is cleared whatever the script says
-/// ([#55](https://github.com/vdmkenny/openreliant/issues/55)); and the game's mode `0x00524FE4` 1,
-/// in which the key works as in a training mission.
+/// Not ported: the debug line it writes naming the mission's rating, which nothing shows; a
+/// multiplayer game's side of it, in which a remote player's ship is cleared whatever the script
+/// says ([#55](https://github.com/vdmkenny/openreliant/issues/55)); and the game's mode
+/// `0x00524FE4` 1, in which the key works as in a training mission.
 pub fn permissionToLand(world: gameobj.World, game_ticks: u32) void {
     const player = world.player;
     if (game_ticks < player.permission_heard_from) return;
