@@ -727,9 +727,10 @@ fn disableObject(call: Call) u32 {
 }
 
 /// `cmd_DisableObject_ship` (`0x004583E0`): where the first argument names one of the ship's
-/// components (`push_component`), the component's assembly shows its damaged model while the second
-/// argument is set, and its own again while it is not; otherwise the ship is disabled, which leaves
-/// it out of the mission's work (`GameObject.Flags.disabled`), or enabled again.
+/// components (`push_component`, or a squad's member), the component's assembly shows its damaged
+/// model while the second argument is set, and its own again while it is not; otherwise the ship
+/// is disabled, which leaves it out of the mission's work (`GameObject.Flags.disabled`), or enabled
+/// again. A mission hides the slots a Ripper fills this way (Ripper attach cargo pod to Mammoth).
 fn disableObjectShip(call: Call, ship: u16) void {
     const machine = call.machine;
     const slot = &machine.game.?.world.objects.slots[ship];
@@ -1512,6 +1513,75 @@ test "the flyback markers and the Grendels go, and the action sphere takes its d
     try std.testing.expectEqual(0, world.player.flyback.count);
     try std.testing.expectEqual(.none, all.slots[0].object.nav_point);
     for ([_]u16{ 1, 2 }) |ship| try std.testing.expectEqual(.stand_in, all.slots[ship].object.type);
+}
+
+test "DisableObject acts on each component a squad names" {
+    const gpa = std.testing.allocator;
+    const shp = @import("../../formats/shp.zig");
+    const srofiles = @import("srofiles.zig");
+    const Routine = vm.machine.testing.Routine;
+    var routine: Routine = .init(gpa);
+    defer routine.deinit();
+    try routine.op(.push_squad, &.{0});
+    try routine.op(.push_byte, &.{1});
+    try routine.command("DisableObject");
+    try routine.op(.push_byte, &.{1});
+    try routine.op(.@"return", &.{});
+    const code = try routine.finish();
+    defer gpa.free(code);
+
+    // Ship 0 and a squad of two of its components, 0 and 2, as a mission hides a ship's cargo pods.
+    const member = struct {
+        fn of(component: u8) dte.SquadMember {
+            return .{ .object_id = 0, ._unknown_02 = 0, .squad = 0, ._unknown_06 = 0, .component = component, ._unknown_09 = @splat(0) };
+        }
+    }.of;
+    var squad = std.mem.zeroes(dte.Squad);
+    squad.object_id = 1;
+    squad.first_member = 0;
+    var fixture: vm.machine.testing.Fixture = undefined;
+    try fixture.init(gpa, &.{.{ .code = code, .start = true }}, .{
+        .ships = &.{testShip(0, dte.Ship.no_flight_group, @intFromEnum(gameobj.Type.mammoth), dte.Ship.no_pilot)},
+        .objects = &.{
+            .{ .kind = .ship, .count = 0, .first = 0, ._unknown_04 = 0 },
+            .{ .kind = .squad, .count = 0, .first = 0, ._unknown_04 = 0 },
+        },
+        .squads = &.{squad},
+        .squad_members = &.{ member(0), member(2) },
+    });
+    defer fixture.deinit();
+    var world: gameobj.testing.Mission = undefined;
+    try world.init(gpa);
+    defer world.deinit();
+
+    // Components 0 to 2 are parts 0, 2 and 3; part 1 is part 0's damaged model, which shares its
+    // link.
+    var data: [4]shp.PartData = @splat(objects.testing.part());
+    for (&data, [_]bool{ true, false, true, true }, [_]u32{ 1, 1, 2, 3 }) |*part, component, link| {
+        part.part.parent = -1;
+        part.part.flags.component = component;
+        part.part.link_id = link;
+    }
+    data[1].part.flags.damaged = true;
+    var loaded_parts: [4]srofiles.LoadedPart = @splat(.{ .flags = .{}, .levels = &.{}, .meshes = &.{} });
+    const source: shp.Model = .{ .header = std.mem.zeroes(shp.Header), .parts = &data, .trailing_bytes = 0 };
+    const loaded: srofiles.Loaded = .{ .parts = &loaded_parts };
+    const slot = &world.objects.slots[0];
+    slot.model = try objects.Model.create(gpa, &source, &loaded, .{});
+    defer {
+        slot.model.?.deinit(gpa);
+        slot.model = null;
+    }
+    create.collectComponents(slot);
+
+    fixture.machine.game = world.orders();
+    try fixture.machine.start();
+    // Each named component's assembly shows its damaged model; the rest, and the ship, are as they
+    // were.
+    const parts = slot.model.?.parts;
+    try std.testing.expect(parts[0].hidden and !parts[1].hidden);
+    try std.testing.expect(!parts[2].hidden and parts[3].hidden);
+    try std.testing.expect(!slot.object.flags.disabled);
 }
 
 test shipType {
