@@ -509,13 +509,16 @@ fn disableGenericComms(call: Call) u32 {
 }
 
 /// `cmd_UpdateEnvironmentFXState` (`0x004591A0`, command `0x38`): what the script asks of its
-/// space takes effect at once, rather than at the next jump (`environfx.Environment.update`).
-///
-/// Not ported: the sun, the lights and the nebula aimed again from the mission's markers
-/// (`backdrop_place`, [#72](https://github.com/vdmkenny/openreliant/issues/72)).
+/// space takes effect at once, rather than at the next jump (`environfx.Environment.update`), and
+/// the mission's markers aim the sun, the lights and the nebula again
+/// (`backdrop.Backdrop.place`).
 fn updateEnvironmentFXState(call: Call) u32 {
     const game = call.machine.game orelse return 1;
-    if (game.world.environment) |environment| environment.update();
+    const world = game.world;
+    const environment = world.environment orelse return 1;
+    environment.update();
+    const ships = if (world.mission) |bound| bound.shipCount() else 0;
+    environment.space.place(environment.sky, world.objects, ships);
     return 1;
 }
 
@@ -1327,7 +1330,7 @@ test "the commands that set ships, the radio, the display and the space" {
     world.objects.mission_number = 1;
     var display: hud.State = .{};
     display.objectives.reset(1, false);
-    var environment: @import("environfx.zig").Environment = .{ .sky = undefined, .textures = undefined, .lights = undefined };
+    var environment: @import("environfx.zig").Environment = .{ .sky = undefined, .textures = undefined, .space = undefined };
     var game = world.orders();
     game.world.spawn = .{ .tables = &world.tables, .types = create.testing.no_models };
     game.world.display = &display;

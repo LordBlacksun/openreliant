@@ -96,4 +96,3 @@ Both pipes begin with `SR_object_rotate`, which leaves the object's transform in
 - The mesh sets `model_load` builds for cloaking.
 - Hanging each part from its parent part's node (`object_link_parts`), which leaves every part where it is, and the moment of inertia `object_bounds` sums.
 - What `node_draw` draws for the cloak and for nodes of kind 6.
-- `backdrop_place`, which aims the sun, the lights and the nebula from a mission's markers, and the objects `backdrop_frame` turns and makes glow.

@@ -601,7 +601,7 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
     const sky = try game.nebula.Sky.create(arena, &textures, try tga.decode(arena, try resources.readFile(arena, game.nebula.dome_image_name)));
     try sky.select(&textures, game.nebula.default_nebula, &space.lights);
     // What the mission's script asks of its space: the nebula it shows.
-    var environment: game.environfx.Environment = .{ .sky = sky, .textures = &textures, .lights = &space.lights };
+    var environment: game.environfx.Environment = .{ .sky = sky, .textures = &textures, .space = space };
 
     // The engine glows every ship's thrusters burn, built once and shared by them all.
     const glows: game.environfx.Glows = try .create(arena, &textures);

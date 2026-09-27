@@ -20,7 +20,7 @@ A band of 15 by 8 vertices around the camera (`nebula_dome`, `0x00498810`). For 
 - position: `(sin 2πu, 5 * (v - 0.5), cos 2πu)`, scaled to a length of 5000, so the band stops about 22 degrees short of either pole;
 - colour: the pixel of `starref12.tga` at `(255u, 255v)`, rounded down, top row first, over 256.
 
-Each row of quads is one strip of triangles, split along the diagonal from each quad's first corner to the one below its next. The mesh holds no texture coordinates, normals or bounds. Its object has flags `0x800`, so none is culled, `0x1000`, so it is not tested against the view and is always clipped, and `0x80000`, so each vertex takes the object's own colour and no light reaches it. `backdrop_place` turns it with the sun marker. The software renderer builds a different dome.
+Each row of quads is one strip of triangles, split along the diagonal from each quad's first corner to the one below its next. The mesh holds no texture coordinates, normals or bounds. Its object has flags `0x800`, so none is culled, `0x1000`, so it is not tested against the view and is always clipped, and `0x80000`, so each vertex takes the object's own colour and no light reaches it. `backdrop_place` turns it with the sun marker ([Placement](#placement)). The software renderer builds a different dome.
 
 ## Nebula
 
@@ -72,7 +72,7 @@ to a quarter as long, 0.025 view units (`0x004DC424`).
 
 ## Sun and lens flares
 
-The sun's direction comes from the sun marker's orientation, or is `(1, -0.5, 0.2)`, normalized, without one. The sun and the flares are sprites (see [Rendering](rendering.md#sprites)), textured, coloured grey and added. `backdrop_frame` sizes each to reach its texture's width and height times `z / 768` from its centre, with `z` its depth, then scales the sun's: on screen a sprite reaches its texture's size times the view's scale over 768, in pixels, whatever the distance.
+The sun's direction is `(1, -0.5, 0.2)`, normalized, until a sun marker aims it ([Placement](#placement)). The sun and the flares are sprites (see [Rendering](rendering.md#sprites)), textured, coloured grey and added. `backdrop_frame` sizes each to reach its texture's width and height times `z / 768` from its centre, with `z` its depth, then scales the sun's: on screen a sprite reaches its texture's size times the view's scale over 768, in pixels, whatever the distance.
 
 | Sprite | Size | Drawn | Grey |
 |---|---|---|---|
@@ -157,7 +157,7 @@ table, which goes on drawing it; OpenReliant lets go of the planet's own and tak
 
 ## Lights
 
-`backdrop_create` makes six lights; `backdrop_place` (`0x004A5A00`) aims the key lights along the sun and the fill lights along the nebula marker's forward axis, or `(-1, 0.5, 0)` without one.
+`backdrop_create` makes six lights, the key lights shining from the sun and the fill lights from `(-1, 0.5, 0)`, normalized, until the markers aim them ([Placement](#placement)).
 
 | Mask | Kind | Intensity | Colour |
 |---|---|---|---|
@@ -169,6 +169,15 @@ table, which goes on drawing it; OpenReliant lets go of the planet's own and tak
 | `0x20` | Ambient | 1 | 0.09, 0.09, 0.09 |
 
 A light reaches an object unless their masks share a bit. A part's object has mask `0x18` when its model lists components and `0x03` otherwise (`node_add_part`), so models that list components take the full fill light and the rest take it at 0.7; both take the key light and both ambients.
+
+## Placement
+
+`backdrop_place` (`0x004A5A00`) aims the backdrop from a mission's markers, as the script asks with `UpdateEnvironmentFXState`. It sets the sun's direction back to `(1, -0.5, 0.2)`, normalized, then reads the objects in the first slots, as many as the more of the mission's ships and the objects in use, each by the orientation of its renderer's frame. The last marker of each kind wins.
+
+- **A sun marker** (type `0x3DC`) puts the sun along its backward axis: the orientation negated, whose forward axis is the sun's direction. Both key lights shine from there, and `sunlayer1`, `sunlayer2` and `sunlayer3` stand 1000 away along it. The sky dome takes the negated orientation times the transpose of the look at the default sun (`mat3_look_at`, `0x004C1940`), a reflection, which mirrors its colours.
+- **A nebula marker** (type `0x3DD`) aims both fill lights along its forward axis, and the nebula's patch shown then takes its orientation. The other patch keeps its own.
+
+Without a sun marker the sun's direction stays a unit long, and the sun's sprites, the key lights and the dome keep what the last sun marker gave them; without a nebula marker the fill lights and the patches keep theirs. The lens flares follow the sun's direction.
 
 ## Environment effects
 
