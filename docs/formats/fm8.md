@@ -48,7 +48,9 @@ Ten films come from earlier versions of the tool that made them: `51stWL_Plt`, `
 `STINGWL`, `Victorious_Brdge_Off_D` and `test`. Their key frames hold the width before the height
 and the first entry before the entries, and their delta frames their counts in other orders
 (below). No pilot record names them, and the game's decoder, reading them in its own order, would
-draw their pixels from the palette. OpenReliant reads them by their layout: a key frame whose
+draw their pixels from the palette. Nine are faces the released films lack, the wing leaders of the
+51st, the Buccaneers, the Cougars and the Stingers and the Victorious's bridge officer's death;
+`test` holds `BUCC`'s frames again. OpenReliant reads them by their layout: a key frame whose
 entries are fewer than its first entry has the earlier order, and a delta frame the first order
 whose counts lay out a chunk of its size.
 
