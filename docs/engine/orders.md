@@ -510,8 +510,10 @@ is gone into the ship: disabled, no longer targetable and hidden, and the compon
 Ripper flies on (`motion_forward`) and has its RipperDroppedObject. It still carries the pod: only
 Ripper end drop object ends that.
 
-**Unknown:** what keeps a Mammoth's cargo slots hidden until the Ripper fills them; OpenReliant
-shows them from the start ([#324](https://github.com/vdmkenny/openreliant/issues/324)).
+A Mammoth's cargo slots stay hidden until the Ripper fills them because the mission's script
+hides them: it disables the components as it makes the ship (`DisableObject`), which hides each
+assembly. Mission 1 disables a squad that holds the Loadup Mammoth's components 3 to 24 as it
+creates the ship's flight group.
 
 **Fix:** where the next `rippercargo` entry is still taken, the game stops with "Ripper Grab AI
 error: Too many rippers doing their stuff at once."; where a Ripper carries nothing, it stops with
