@@ -21,7 +21,7 @@ OpenReliant is an independent, non-commercial open-source project. It is not aff
 
 ## Current Status
 
-OpenReliant plays the campaign's first mission from start to finish, as the original plays it. You launch from the Reliant, meet the convoy and fight off the Coalition's ambush, then land back aboard. The mission's script runs its triggers and orders, and its objectives show on the display. The pilots speak on the radio with their faces, the music follows the fight, and your wingmen answer the radio menu and the F keys. The sandbox, mission 0, is built through the same mission code and remains for testing.
+OpenReliant is in active development: the campaign's first mission is fully playable, while the front end and the rest of the campaign are still to come. Mission 1 plays from start to finish as the original plays it: you launch from the Reliant, meet the convoy and fight off the Coalition's ambush, then land back aboard. The mission's script runs its triggers and orders, and its objectives show on the display. The pilots speak on the radio with their faces, the music follows the fight, and your wingmen answer the radio menu and the F keys. The sandbox, mission 0, is built through the same mission code and remains for testing.
 
 - **Flight & Combat**: Fly any ship from the game using mouse/keyboard, flight sticks, HOTAS, or gamepads, with the authentic flight model, throttle, afterburners, and 8 camera modes (including 3D cockpits).
 - **AI**: Coalition fighters fight with the original's maneuvers, capital ships' turrets track and fire, and wingmen take your orders.
