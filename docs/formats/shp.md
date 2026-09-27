@@ -222,7 +222,7 @@ wrote 12-byte records, with no mask, which the loader leaves zeroed.
 
 | Off | Type | Field |
 |---|---|---|
-| `0x00` | vec3 | Unknown; nothing reads it. (0, -1, 0) or (0, 1, 0) in the shipped models |
+| `0x00` | vec3 | The way a fighter's attack run on the component pulls out, in the object's frame (`maneuver_new_attack_run_start`, `0x004065D0`): (0, -1, 0) or (0, 1, 0) in the shipped models, away from the side of the hull the component stands on |
 | `0x0C` | u16[32] | 32 rows about the component's Y axis by 16 columns from it, a bit a direction, set where a turret may fire |
 
 ### Level of detail (tag `0x02`)

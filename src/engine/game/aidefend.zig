@@ -6,6 +6,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+const shp = @import("../../formats/shp.zig");
 const engine = @import("../../engine.zig");
 const Pointer = engine.Pointer;
 const math = @import("../surrender/math.zig");
@@ -13,6 +14,7 @@ const Vector = math.Vector;
 const ai = @import("ai.zig");
 const aifight = @import("aifight.zig");
 const Fighter = aifight.Fighter;
+const create = @import("create.zig");
 const gameobj = @import("gameobj.zig");
 const objects = @import("objects.zig");
 const pilots = @import("pilots.zig");
@@ -445,16 +447,27 @@ fn attackMediumFighter(fighter: Fighter) bool {
     return true;
 }
 
-/// `maneuver_new_attack_run_start` (`0x004065D0`): the way out from the part of the target it aims
-/// at that is clear of the target's hull (`ai.escapeDirection`), in the target's frame.
-///
-/// Not ported: for a component of the target, the point the model gives the component
-/// ([#239](https://github.com/vdmkenny/openreliant/issues/239)); OpenReliant finds the way out for
-/// it as for any other part.
+/// `maneuver_new_attack_run_start` (`0x004065D0`): the way out, in the target's frame. For a
+/// component of the target that its model gives a firing arc, the way out the arc names
+/// (`shp.FiringArc.way_out`); for any other aim, the way out from the part of the target it aims
+/// at that is clear of the target's hull (`ai.escapeDirection`).
 fn startAttackRun(fighter: Fighter) void {
     const enemy = fighter.enemy();
+    if (arcWayOut(enemy, fighter.target().component)) |way| {
+        fighter.state.point = way;
+        return;
+    }
     const out = ai.escapeDirection(enemy, fighter.aimed().position);
     fighter.state.point = gameobj.vec3(math.transformTransposed(enemy.object.root.next_orientation, out));
+}
+
+/// The way out the firing arc of component `component` of the ship in `slot` names, where its
+/// type's model gives the component one; the arcs follow the object's components, the model's own
+/// first.
+fn arcWayOut(slot: *const create.Slot, component: i16) ?shp.Vec3 {
+    const index = std.math.cast(usize, component) orelse return null;
+    const arcs = (slot.type orelse return null).model.firing_arcs;
+    return if (index < arcs.len) arcs[index].way_out else null;
 }
 
 /// `maneuver_new_attack_run_run` (`0x00406680`): flies to a point out from the part it aims at,
@@ -803,4 +816,25 @@ test goingToCrash {
     // A pilot of a skill the game has no berth for never crashes.
     try std.testing.expectEqual(null, crashBerth(.other));
     try std.testing.expectEqual(2000, crashBerth(.high));
+}
+
+test arcWayOut {
+    const gpa = std.testing.allocator;
+    var mission: gameobj.testing.Mission = undefined;
+    try mission.init(gpa);
+    defer mission.deinit();
+    var hull: create.testing.Model = undefined;
+    try hull.init(gpa);
+    defer hull.deinit(gpa);
+    var arcs = [_]shp.FiringArc{std.mem.zeroes(shp.FiringArc)};
+    arcs[0].way_out = .{ .x = 0, .y = -1, .z = 0 };
+    hull.source.firing_arcs = &arcs;
+    const index = try create.createObject(mission.objects, &mission.tables, hull.types(), null, .reaper, 0, @splat(0), &mission.random);
+    const slot = mission.slot(index);
+
+    // A component the model gives an arc pulls out the way the arc names; the whole ship, or a
+    // component past the arcs, has none.
+    try std.testing.expectEqual(arcs[0].way_out, arcWayOut(slot, 0).?);
+    try std.testing.expectEqual(null, arcWayOut(slot, -1));
+    try std.testing.expectEqual(null, arcWayOut(slot, 1));
 }

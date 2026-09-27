@@ -78,8 +78,13 @@ pub fn length(v: Vector) f32 {
 
 /// How far apart two points are (`vec3_distance`, `0x004C12D0`).
 pub fn distance(a: Vector, b: Vector) f32 {
+    return @sqrt(distanceSquared(a, b));
+}
+
+/// The square of how far apart two points are (`vec3_distance_squared`, `0x004C1320`).
+pub fn distanceSquared(a: Vector, b: Vector) f32 {
     const d = a - b;
-    return @sqrt(d[1] * d[1] + d[2] * d[2] + d[0] * d[0]);
+    return d[1] * d[1] + d[2] * d[2] + d[0] * d[0];
 }
 
 /// The value `t` of the way from `a` to `b` (`lerp`, `0x004C1050`), or for vectors the point `t` of

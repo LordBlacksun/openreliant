@@ -112,7 +112,7 @@ timer in the state, `min + random * (max - min)` ticks after `frame_start`, whic
 | `Attackmassive` | Steers at its aim point at full throttle until it is within 50 times its cruise speed, plus both radii, of the target's part. |
 | `AttackMediumFighter` | For its ticks, flies at full throttle toward where the target will be, leading it by its velocity less a tenth of the ship's, over the time the ship needs to get there. Within 10000 units of a target that is not within 18 degrees of its nose, it flies straight on instead. |
 | `Avoid` | For its ticks, with the target ahead, pitches hard at half throttle, one way or the other by whether the target is above or below; with the target behind, flies on at full throttle. |
-| `NewAttackRun` | Takes the way out from the target's part that is clear of its hull (`ai_escape_direction`, `0x00402500`), or for a component the point the model gives it, then flies to a point 50000 units out that way from the part, or with `true` twice the target's radius for a target larger than 50000. The way out turns with the part of the target hanging from its root that the aimed part is, or hangs from. It burns full throttle and afterburner while the way out lies along its velocity, half throttle while it lies against it, and ends within 2000 units of the point. `true` also sets the ship's `fighting` to -1 at the start; the end sets it back to the target. |
+| `NewAttackRun` | Takes the way out from the target's part that is clear of its hull (`ai_escape_direction`, `0x00402500`), or for a component that the target's model gives a firing arc, the way out the arc names, in the target's frame ([firing arcs](../formats/shp.md#firing-arc-tag-0x10)), then flies to a point 50000 units out that way from the part, or with `true` twice the target's radius for a target larger than 50000. The way out turns with the part of the target hanging from its root that the aimed part is, or hangs from. It burns full throttle and afterburner while the way out lies along its velocity, half throttle while it lies against it, and ends within 2000 units of the point. `true` also sets the ship's `fighting` to -1 at the start; the end sets it back to the target. |
 | `RunToShip` | Flies to the friendly ship chosen for it. By a ship with components it ends within 5000 units of the ship's edge; by one without, it matches the ship's speed along its nose and closes by the distance past 5000. |
 | `EndScript` | Ends the maneuver: it sets the maneuver's end to the tick before, so Fight chooses another. |
 
@@ -218,10 +218,8 @@ The Fight order and its maneuvers read the ship's pilot, a record of `pilot_stat
 
 ## In OpenReliant
 
-The Fight order and every command run as described, with these left out: the points a model
-gives its components ([#239](https://github.com/vdmkenny/openreliant/issues/239)), and
-multiplayer, where the host chooses the maneuvers
-([#55](https://github.com/vdmkenny/openreliant/issues/55)).
+The Fight order and every command run as described, but for multiplayer, where the host chooses
+the maneuvers ([#55](https://github.com/vdmkenny/openreliant/issues/55)).
 
 Where the game would stop or hang, OpenReliant goes on: a script that runs off its end ends the
 maneuver, a loop that starts 256 lines in one update without one waiting is left for the next
