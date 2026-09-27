@@ -26,7 +26,7 @@ OpenReliant is in active development. The first campaign mission is playable fro
 - **Flight & Combat**: All ships, with the original flight model, weapons, damage, AI and cockpit displays, and 8 camera views including 3D cockpits.
 - **Missions**: Retail and custom mission files load. The script of mission 1 runs in full, and the commands used by later missions are in progress.
 - **Controls**: Mouse and keyboard, flight sticks, HOTAS and gamepads, with force feedback played as rumble.
-- **Graphics**: Native resolution, 32-bit colour, per-pixel lighting, sun shadows, bloom, anti-aliasing, smooth motion at high frame rates, and more detailed explosions, shields and planets. `--original` restores the original graphics and sound.
+- **Graphics**: Per-pixel shading with gamma-corrected lighting, and real-time shadows. Rendering runs at native resolution in 32-bit colour, with bloom, anti-aliasing, smooth motion at high frame rates, and more detailed explosions, shields and planets. `--original` restores the original graphics and sound.
 - **Audio**: 3D positional sound with reverb and headphone HRTF.
 - **In Development**: The front end (menus, briefings, loadout), the remaining campaign missions, and multiplayer. See the [milestones](../../milestones) for the roadmap.
 
