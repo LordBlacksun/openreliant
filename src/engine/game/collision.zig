@@ -6,6 +6,7 @@
 //! between it and `Create.cpp`'s, which no string places.
 
 const std = @import("std");
+const log = std.log.scoped(.collision);
 
 const dte = @import("../../formats/dte.zig");
 const math = @import("../surrender/math.zig");
@@ -213,11 +214,11 @@ pub const Kind = enum(i32) {
     /// the shields (`shockwave.Shockwave.strike`).
     missile = 1,
     collision = 2,
-    /// What a torpedo does to what it meets, 5001 (`objects_collide`), and a ship to the component
-    /// of a hull it dies crashing into, 5001 (`collision_test_hull`).
+    /// What a torpedo does to what it meets, 5001 (`objects_collide`), and to the part of a hull it
+    /// strikes, 5001 (`collision_test_hull`).
     crash = 3,
-    /// **Unknown.** Also 5001 from a ship dying against a hull, to another part of the component's
-    /// assembly (`collision_test_hull`).
+    /// **Unknown.** Also 5001 from a torpedo striking a hull, to the hull part the hit passes on to
+    /// (`collision_test_hull`).
     _unknown_4 = 4,
     /// A Screamer's hit.
     screamer = 5,
@@ -422,7 +423,8 @@ fn smartTargeting(world: gameobj.World, attacker: u16, kind: Kind) ?*hud.State {
 /// ShotAt is posted (`shotAt`); a shot's on an object listing components, at once, and even while a
 /// collision's test against a hull runs again.
 ///
-/// Not ported: what the player's hits on a friend tell the mission.
+/// Not ported: what the player's hits on a friend tell the mission, the complaints on the radio
+/// and being sent home ([#357](https://github.com/vdmkenny/openreliant/issues/357)).
 pub fn armorDamage(world: gameobj.World, index: u16, struck: Quadrant, value: f32, attacker: u16, kind: Kind) void {
     const all = world.objects;
     const slot = &all.slots[index];
@@ -609,7 +611,8 @@ fn counted(kind: Kind) bool {
 }
 
 /// `0x00465C50`: a ship that meets an object listing components is tested against that object's
-/// parts, not its sphere. The two are moved apart and tested again, up to nine times, the tests
+/// parts, not its sphere; a torpedo once. The two are moved apart and tested again, up to nine
+/// times, the tests
 /// after the first holding back the ShotAt of the knocks they deal (`holdShots`). Two objects that
 /// both list components pass through each other, as does anything meeting the limpet pod.
 fn parts(world: gameobj.World, first: u16, second: u16, pass: u8) bool {
@@ -623,6 +626,8 @@ fn parts(world: gameobj.World, first: u16, second: u16, pass: u8) bool {
     while (tries < hull_passes) : (tries += 1) {
         if (!hullHit(world, ship, hull, pass)) break;
         holdShots(world, false);
+        // A torpedo is gone once it has struck.
+        if (className(all, ship) == .torpedo) return false;
         for ([_]u16{ ship, hull }) |index| motion.moveSlot(world, index);
         holdShots(world, true);
     }
@@ -639,14 +644,14 @@ const reserve_drain: f32 = 1 / taken_share;
 
 /// `collision_test_hull` (`0x00465380`): the nearest face of the hull to the ship's sphere. The
 /// ship is shoved at its own centre and the hull at the face, so the hull turns about the hit and
-/// the ship does not. The ship takes the damage on the quadrant it was struck in
-/// (`knockDamage`); its shield reserve is drawn by twice that, as the game halves the damage only
-/// once it has drawn the reserve. A force field the ship hits glows whole (`shield.flareCapital`).
+/// the ship does not. A torpedo then strikes the hull (`torpedoStrikes`). Any other ship takes the
+/// damage on the quadrant it was struck in (`knockDamage`); its shield reserve is drawn by twice
+/// that, as the game halves the damage only once it has drawn the reserve. A force field the ship
+/// hits glows whole (`shield.flareCapital`).
 ///
-/// Not ported: what the hit destroys ([#42](https://github.com/vdmkenny/openreliant/issues/42)),
-/// and a torpedo's hit, which damages the hull's own parts
-/// ([#239](https://github.com/vdmkenny/openreliant/issues/239)). The game also tests the player's
-/// ship against each part's trigger polygons first, which one shipped model carries.
+/// Not ported: what the hit destroys ([#42](https://github.com/vdmkenny/openreliant/issues/42)).
+/// The game also tests the player's ship against each part's trigger polygons first, which one
+/// shipped model carries.
 fn hullHit(world: gameobj.World, ship: u16, hull: u16, pass: u8) bool {
     const all = world.objects;
     const model = if (all.slots[hull].model) |*live| live else return false;
@@ -663,6 +668,10 @@ fn hullHit(world: gameobj.World, ship: u16, hull: u16, pass: u8) bool {
     // only for a part its model animates.
     const lever = object.placeAt(.now).inverse(contact);
     const impulse = shoveAt(world, ship, hull, -normal, .{ @splat(0), lever }, pass) orelse return true;
+    if (className(all, ship) == .torpedo) {
+        torpedoStrikes(world, ship, hull, found.part);
+        return true;
+    }
 
     const hit = &all.slots[ship].object;
     const value = math.length(impulse) * damage_share / hit.mass;
@@ -670,6 +679,65 @@ fn hullHit(world: gameobj.World, ship: u16, hull: u16, pass: u8) bool {
     knockDamage(world, ship, struck, value, value * reserve_drain, hull, contact, .after);
     if (found.part.part().force_field) shield.flareCapital(world, hull, found.part, null);
     return true;
+}
+
+/// An assembly part holding more armour than this passes a torpedo's hit on to no hull part
+/// (`collision_test_hull`, `0x004657A6`).
+const passing_armor: i32 = 999;
+
+/// The part whose hit a torpedo passes on to no hull part: the Ulysses' fin (`0x004F7480`).
+const ulysses_fin = "Ulysses Fin";
+
+/// `collision_test_hull` (`0x004656CF`), for a torpedo that strikes a hull, which lists components:
+/// the hull lurches (`lurch`), the part struck takes `torpedo_blow` as a crash, and a hull part the
+/// hit passes on to (`passedTo`) takes it again, of kind `_unknown_4`. The torpedo is destroyed
+/// (`object_destroyed`), taking no damage of its own.
+fn torpedoStrikes(world: gameobj.World, torpedo: u16, hull: u16, struck: objects.PartRef) void {
+    const ctx: aigeneric.Context = .{ .world = world, .clock = world.clock };
+    lurch(ctx, torpedo, hull);
+    componentDamage(world, hull, struck, torpedo_blow, torpedo, .crash);
+    if (passedTo(world.objects, hull, struck)) |part| componentDamage(world, hull, part, torpedo_blow, torpedo, ._unknown_4);
+    ai.objectDestroyed(ctx, torpedo, false, false);
+}
+
+/// A hull struck by a torpedo lurches away from it: one not unlisted, unless it is lurching
+/// already, jumping or warping, takes Make capship list left or right
+/// (`aigeneric.capshipList`), left where the torpedo came in heading to its left.
+fn lurch(ctx: aigeneric.Context, torpedo: u16, hull: u16) void {
+    const all = ctx.world.objects;
+    const slot = &all.slots[hull];
+    if (!slot.object.flags.components or slot.object.flags.unlisted) return;
+    if (slot.current()) |entry| switch (entry.order) {
+        .make_capship_list_left, .make_capship_list_right, .jump_out, .jump_in, .warp_out, .warp_in => return,
+        else => {},
+    };
+    const heading = math.forward(all.slots[torpedo].object.placeAt(.now).orientation);
+    const across = math.transformTransposed(slot.object.placeAt(.now).orientation, heading)[0];
+    const side: aigeneric.Lurch = if (across < 0) .left else .right;
+    _ = aigeneric.push(ctx, hull, side.order(), .none) catch |err| {
+        log.warn("object {d} does not lurch: {s}", .{ hull, @errorName(err) });
+    };
+}
+
+/// The hull part a torpedo's hit on `struck` passes on to, where it passes on at all: for a part of
+/// an assembly holding no more than `passing_armor`, the first hull part the hull's model shows. A
+/// part of the hull's own model passes on nothing where it is a hull part itself or the Ulysses'
+/// fin, or where that hull part is of its own assembly.
+fn passedTo(all: *create.Objects, hull: u16, struck: objects.PartRef) ?objects.PartRef {
+    const part = struck.part();
+    if (part.link_id == 0 or part.component_armor > passing_armor) return null;
+    const model = if (all.slots[hull].model) |*own| own else return null;
+    const own = struck.model == model;
+    if (own) {
+        if (part.class == .hull) return null;
+        if (struck.data()) |record| if (std.mem.eql(u8, record.part.name(), ulysses_fin)) return null;
+    }
+    for (model.parts, 0..) |*candidate, index| {
+        if (candidate.removed or candidate.hidden or candidate.class != .hull) continue;
+        if (own and candidate.link_id == part.link_id) return null;
+        return .{ .model = model, .index = index };
+    }
+    return null;
 }
 
 const testing = struct {
@@ -792,6 +860,77 @@ test "a ship that meets a hull is shoved off the face it hit" {
     // Two hulls pass through each other.
     all.slots[ship].object.flags.components = true;
     try std.testing.expect(!collide(world, ship, hull, 0));
+}
+
+test "a torpedo that strikes a hull is gone, and the hull lurches" {
+    const gpa = std.testing.allocator;
+    var mission: gameobj.testing.Mission = undefined;
+    try mission.init(gpa);
+    defer mission.deinit();
+    const all = mission.objects;
+    var model: create.testing.Model = undefined;
+    try model.init(gpa);
+    defer model.deinit(gpa);
+    model.withHull();
+    model.data[0].part.flags.component = true;
+    model.data[0].part.component_armor = 20000;
+    const world = mission.world();
+
+    // The player's ship, then a hull of one square part, and a torpedo flying straight into its
+    // face.
+    _ = try mission.add(.kamov, .{ 0, 50000, 0 });
+    const hull = try create.createObject(all, &mission.tables, model.types(), null, .mammoth, 0, @splat(0), &mission.random);
+    all.slots[hull].object.flags.components = true;
+    all.slots[hull].object.mass = 100000;
+    all.slots[hull].motion = null;
+    const torpedo = try mission.add(.russian_torpedo, .{ 60, 0, -60 });
+    mission.tables.combat[@intFromEnum(gameobj.Type.russian_torpedo)].class = .torpedo;
+    all.slots[torpedo].object.radius = 100;
+    all.slots[torpedo].object.mass = 1000;
+    all.slots[torpedo].motion = null;
+    all.slots[torpedo].object.velocity = .{ .x = 0, .y = 0, .z = 40 };
+    all.slots[torpedo].object.root.next_position = .{ .x = 60, .y = 0, .z = -20 };
+
+    // Struck once, the pair is not tested again. The part struck takes the blow, the torpedo is
+    // destroyed, taking nothing itself, and the hull lurches to the right of it.
+    try std.testing.expect(!collide(world, torpedo, hull, 0));
+    try std.testing.expectEqual(20000 - torpedo_blow, all.slots[hull].model.?.parts[0].armor);
+    try std.testing.expect(all.slots[torpedo].object.flags.exploding);
+    try std.testing.expectEqual(.make_capship_list_right, all.slots[hull].current().?.order);
+    // Struck again while it lurches, it lurches no more.
+    const again = try mission.add(.russian_torpedo, .{ 60, 0, -60 });
+    all.slots[again].object.radius = 100;
+    all.slots[again].motion = null;
+    all.slots[again].object.root.next_position = .{ .x = 60, .y = 0, .z = -20 };
+    _ = collide(world, again, hull, 0);
+    try std.testing.expectEqual(1, all.slots[hull].object.order_count);
+}
+
+test passedTo {
+    const gpa = std.testing.allocator;
+    var mission: gameobj.testing.Mission = undefined;
+    try mission.init(gpa);
+    defer mission.deinit();
+    var model: create.testing.Model = undefined;
+    try model.init(gpa);
+    defer model.deinit(gpa);
+    _ = try mission.add(.kamov, @splat(0));
+    const hull = try create.createObject(mission.objects, &mission.tables, model.types(), null, .mammoth, 0, @splat(0), &mission.random);
+    const live = &mission.objects.slots[hull].model.?;
+    const struck: objects.PartRef = .{ .model = live, .index = 0 };
+    // A part of no assembly, or of too much armour, passes nothing on.
+    live.parts[0].class = .turret;
+    try std.testing.expectEqual(null, passedTo(mission.objects, hull, struck));
+    live.parts[0].link_id = 2;
+    live.parts[0].component_armor = passing_armor + 1;
+    try std.testing.expectEqual(null, passedTo(mission.objects, hull, struck));
+    // One light enough passes it on to the first hull part shown, unless that is of its own
+    // assembly; the model's one part is not a hull part, so there is none.
+    live.parts[0].component_armor = passing_armor;
+    try std.testing.expectEqual(null, passedTo(mission.objects, hull, struck));
+    // A hull part struck passes nothing on.
+    live.parts[0].class = .hull;
+    try std.testing.expectEqual(null, passedTo(mission.objects, hull, struck));
 }
 
 test damage {

@@ -24,6 +24,7 @@ const guns = @import("guns.zig");
 const input = @import("../input.zig");
 const jump = @import("jump.zig");
 const launch = @import("launch.zig");
+const missiles = @import("missiles.zig");
 const motion = @import("motion.zig");
 const Clock = @import("main.zig").Clock;
 const orders = @import("ai/orders.zig");
@@ -97,6 +98,37 @@ pub const Target = extern struct {
     }
 };
 
+test capshipList {
+    var mission: gameobj.testing.Mission = undefined;
+    try mission.init(std.testing.allocator);
+    defer mission.deinit();
+    const ctx = mission.orders();
+    _ = try mission.add(.predator, @splat(0));
+    const ship = try mission.add(.mammoth, .{ 0, 0, 10000 });
+    const object = &mission.slot(ship).object;
+    const flight = mission.slot(ship).flight.?;
+    try std.testing.expect(try push(ctx, ship, Lurch.left.order(), .none));
+
+    // It rolls and yaws to the left for 200 ticks, then back for 300, then stops rolling and the
+    // order ends.
+    objectOrders(ctx, ship);
+    try std.testing.expectEqual(-lurch_roll[0] / flight.roll_rate, object.roll_input);
+    try std.testing.expectEqual(-lurch_yaw[0] / flight.yaw_rate, object.yaw_input);
+    mission.clock.frame_start = lurch_ticks[0] - 1;
+    objectOrders(ctx, ship);
+    try std.testing.expectEqual(-lurch_roll[0] / flight.roll_rate, object.roll_input);
+    mission.clock.frame_start = lurch_ticks[0];
+    objectOrders(ctx, ship);
+    try std.testing.expectEqual(-lurch_roll[1] / flight.roll_rate, object.roll_input);
+    try std.testing.expectEqual(-lurch_yaw[1] / flight.yaw_rate, object.yaw_input);
+    mission.clock.frame_start = lurch_ticks[0] + lurch_ticks[1];
+    objectOrders(ctx, ship);
+    try std.testing.expectEqual(1, object.order_count);
+    objectOrders(ctx, ship);
+    try std.testing.expectEqual(0, object.roll_input);
+    try std.testing.expectEqual(0, object.order_count);
+}
+
 test Target {
     try std.testing.expectEqual(null, Target.none.ship());
     try std.testing.expectEqual(null, Target.none.part());
@@ -169,6 +201,7 @@ pub const State = extern union {
     fight: aifight.FightState,
     fly: aiorders.FlyState,
     mill: aiorders.MillState,
+    list: aiorders.ListState,
     escort: aiorders.EscortState,
     find_target: aiorders.FindTargetState,
     attach: aiorders.AttachState,
@@ -485,6 +518,58 @@ pub fn flyBackwards(ctx: Context, index: u16) void {
     object.throttle = aiorders.backwards_throttle;
 }
 
+/// Which way a capital ship struck by a torpedo lurches: Make capship list left (115) or right
+/// (116, `0x0040C4B0` and `0x0040C4C0`, which hand `capshipList` -1 or 1).
+pub const Lurch = enum(i8) {
+    left = -1,
+    right = 1,
+
+    pub fn order(lurch: Lurch) Order {
+        return switch (lurch) {
+            .left => .make_capship_list_left,
+            .right => .make_capship_list_right,
+        };
+    }
+};
+
+/// How a capital ship lurches as a torpedo strikes it: the roll and the yaw it turns at in its first
+/// step and in its second, a tick, and the ticks each lasts (`0x004DC518`, `0x004DC514`,
+/// `0x004DC510`, `0x004DC50C`).
+const lurch_roll = [2]f32{ 0.01, -0.006 };
+const lurch_yaw = [2]f32{ 0.006, -0.0048 };
+const lurch_ticks = [2]i32{ 200, 300 };
+
+/// `0x0040C3A0`, the update of Make capship list left and right (115, 116), which a capital ship
+/// takes as a torpedo strikes it (`collision`): for `lurch_ticks[0]` it rolls and yaws toward `side`
+/// at its first step's turns, then for `lurch_ticks[1]` back at the second's, each over its own
+/// rates, then stops rolling and the order ends. **Unverified:** it lies before this file's known
+/// code, and its `init` with `aiorders.zig`'s orders (`aiorders.capshipListInit`).
+pub fn capshipList(ctx: Context, index: u16, side: Lurch) void {
+    const slot = &ctx.world.objects.slots[index];
+    const object = &slot.object;
+    const state = &slot.state.list;
+    const now = ctx.clock.frame_start;
+    const flight = slot.flight orelse return;
+    const way: f32 = @floatFromInt(@intFromEnum(side));
+    switch (state.step) {
+        0, 1 => |step| {
+            if (step == 1 and state.until > now) return;
+            object.roll_input = lurch_roll[@intCast(step)] * way / flight.roll_rate;
+            object.yaw_input = lurch_yaw[@intCast(step)] * way / flight.yaw_rate;
+            state.step += 1;
+            state.until = now + lurch_ticks[@intCast(step)];
+        },
+        2 => if (state.until <= now) {
+            state.step = 3;
+        },
+        3 => {
+            object.roll_input = 0;
+            _ = pop(ctx, index);
+        },
+        else => {},
+    }
+}
+
 /// The `init` of the order, where OpenReliant runs it. The orders that aren't ported yet do nothing
 /// ([#30](https://github.com/vdmkenny/openreliant/issues/30)).
 fn runInit(ctx: Context, index: u16, info: orders.Info) void {
@@ -503,6 +588,8 @@ fn runInit(ctx: Context, index: u16, info: orders.Info) void {
         .eject_106 => aieject.abandonedInit(ctx, index),
         .scoop_up => tractor.scoopUpInit(ctx, index),
         .fight => aifight.init(ctx, index),
+        .torpedo => missiles.torpedoInit(ctx, index),
+        .make_capship_list_left, .make_capship_list_right => aiorders.capshipListInit(ctx, index),
         .disrupted => aiorders.disruptedInit(ctx, index),
         .launch => launch.init(ctx, index),
         .jump_in, .jump_in_40 => jump.inInit(ctx, index),
@@ -544,6 +631,9 @@ fn runUpdate(ctx: Context, index: u16, info: orders.Info) void {
         .scoop_up => tractor.scoopUp(ctx, index),
         .eject_fighter_attack => aieject.fighterAttack(ctx, index),
         .fight => aifight.update(ctx, index),
+        .torpedo => missiles.torpedo(ctx, index),
+        .make_capship_list_left => capshipList(ctx, index, .left),
+        .make_capship_list_right => capshipList(ctx, index, .right),
         .disrupted => aiorders.disrupted(ctx, index),
         .launch_missile => aiorders.launchMissile(ctx, index),
         .unnamed_3 => aiorders.launchJackHammer(ctx, index),
