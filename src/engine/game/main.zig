@@ -473,17 +473,7 @@ pub fn controlsFrame(controls: Controls) void {
         radio.runFilm(on_air, ticks);
         radio.frame(on_air);
     };
-    const cockpit_input: ?camera.Cockpit.Input = if (controls.cockpit) |shown| moved: {
-        const live = &slot.object;
-        const flight = slot.flight orelse break :moved null;
-        const rates: [3]f32 = .{
-            live.pitch_rate / flight.pitch_rate,
-            live.yaw_rate / flight.yaw_rate,
-            live.roll_rate / flight.roll_rate,
-        };
-        const speed = live.speed / ai.cruiseSpeed(live, flight, view.view);
-        break :moved cockpit.input(&shown.model, shown.source, rates, speed);
-    } else null;
+    const cockpit_input = if (controls.cockpit) |shown| shown.inputFor(slot, view.view) else null;
     const subject = camera.Subject.of(slot);
     const seen = if (view.object) |object| camera.Subject.of(&all.slots[object]) else subject;
     const marker = if (world.explosions) |explosions| if (explosions.marker) |left| left.position else null else null;
