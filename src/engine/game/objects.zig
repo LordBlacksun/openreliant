@@ -1770,6 +1770,12 @@ pub const Model = struct {
         };
     }
 
+    /// The walls round the model throw back nothing more (`bounceLights`), as what stood among
+    /// them leaves: the even light they threw has no place, and would reach it anywhere.
+    pub fn endBounce(model: *Model) void {
+        for (model.lights) |*light| light.bounce = null;
+    }
+
     /// One glow for each attachment of kind `engine_glow` a part carries, at its place in the model
     /// (`node_mount_glow`). A model carries none while the glows' meshes are not built.
     fn createGlows(gpa: Allocator, model: *const shp.Model, glows: ?*const environfx.Glows) Allocator.Error![]Glow {
@@ -2846,6 +2852,12 @@ test "a model's lights: their sprites, and the light a blinking one casts" {
     scene.clear();
     try built.draw(gpa, &scene, .world, .{ .frame_start = 150 });
     try std.testing.expectEqual(0, scene.lights.items.len);
+    // Ended, it throws nothing back, and casts its light alone.
+    built.endBounce();
+    try std.testing.expectEqual(null, built.lights[1].bounce);
+    scene.clear();
+    try built.draw(gpa, &scene, .world, .{});
+    try std.testing.expectEqual(1, scene.lights.items.len);
 }
 
 test "an engine glow burns with the throttle" {

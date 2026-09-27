@@ -186,8 +186,9 @@ ship on the retainer, so their light falls short of it, and they stand almost st
 its nose, which the cutaways don't show. **Improvement:** OpenReliant has the beacons reach twice
 as far, and throws a tenth of their flash back off the red walls, while they shine, as an even
 light on what stands in the hangar, kept off the hangar's own parts by a light bit of its own
-(`0x40`), so that the ship and its cockpit flash red with them; `--original` keeps their own reach
-and throws nothing back.
+(`0x40`), so that the ship and its cockpit flash red with them. That light has no place, so it
+ends as the ship drops out of the hangar (step 6), before it would reach the wing outside;
+`--original` keeps the beacons' own reach and throws nothing back.
 
 Not ported:
 

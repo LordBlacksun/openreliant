@@ -305,6 +305,8 @@ pub fn run(ctx: aigeneric.Context, index: u16) void {
         },
         .drop => {
             if (player) if (world.display) |display| display.caption.start(ctx.clock.game_ticks);
+            // The ship leaves the hangar, whose walls throw the beacons' flash on it no more.
+            if (player) if (hangarModel(all)) |model| model.endBounce();
             slot.motion = .downward;
             slot.object.throttle = 1;
             moveOn(state, .drop, now);
@@ -367,12 +369,17 @@ fn tubeDoor(all: *create.Objects, slot: *const create.Slot, step: usize) ?struct
 /// The time a track keeps as it is played again (`node_play_named` with a time below zero).
 const keep_time: f32 = -1;
 
+/// The hangar's model, where the hangar stands in the cutaway slot.
+fn hangarModel(all: *create.Objects) ?*objects.Model {
+    const hangar = &all.slots[create.cutaway_slot];
+    if (hangar.object.type != .reliant_hangar) return null;
+    return if (hangar.model) |*held| held else null;
+}
+
 /// Plays `track` on the hangar's part `part` from `time` at `speed`, where the hangar stands in
 /// the cutaway slot.
 fn playOnHangar(all: *create.Objects, part: usize, track: []const u8, time: f32, speed: f32) void {
-    const hangar = &all.slots[create.cutaway_slot];
-    if (hangar.object.type != .reliant_hangar) return;
-    const model = if (hangar.model) |*held| held else return;
+    const model = hangarModel(all) orelse return;
     if (part < model.parts.len) model.playNamed(part, track, time, null, speed);
 }
 
