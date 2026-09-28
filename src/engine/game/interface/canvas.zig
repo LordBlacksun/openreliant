@@ -160,10 +160,7 @@ pub fn scaleFor(window: [2]u32) f32 {
 
 /// Where the front end's top left corner stands in a window of `window`, which centres it.
 pub fn cornerFor(window: [2]u32) [2]f32 {
-    const s = scaleFor(window);
-    var from: [2]f32 = undefined;
-    for (&from, window, size) |*start, pixels, across| start.* = (@as(f32, @floatFromInt(pixels)) - @as(f32, @floatFromInt(across)) * s) / 2;
-    return from;
+    return hud.centred(window, size, scaleFor(window));
 }
 
 /// A rectangle of the front end's screen, as its tables keep one: its corner and its size.

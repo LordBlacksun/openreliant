@@ -112,13 +112,13 @@ const Vertex = extern struct {
 };
 
 /// A draw's shading as the shader reads it from each vertex, one word: the shadows its pixels take
-/// in the low byte, whether its texture is magnified smoothly in the next bit, and whether the key
-/// lights reach past its terminator in the one after.
+/// in the low byte, how its texture is magnified in the next two bits, and whether the key lights
+/// reach past its terminator in the one after.
 const Shading = packed struct(u32) {
     receives: device.Receives,
     magnify: srtexture.Image.Magnify,
     soft_terminator: bool,
-    _unused: u22 = 0,
+    _unused: u21 = 0,
 
     fn of(state: device.State) Shading {
         return .{
@@ -1149,16 +1149,19 @@ fn decoded(channel: f32) f32 {
 const blank_levels = [1]srtexture.Level{.{ .width = 1, .height = 1, .rgba = &.{ 0xFF, 0xFF, 0xFF, 0xFF } }};
 
 test Shading {
-    // The shadows in the low byte and the smooth magnification in the next bit, as the shader
-    // reads them.
+    // The shadows in the low byte and the magnification in the next two bits, as the shader reads
+    // them.
     var image: srtexture.Image = .{ .levels = &.{}, .magnify = .smooth };
     const smooth: u32 = @bitCast(Shading.of(.{ .texture = &image, .depth = undefined, .blend = null, .receives = .cockpit }));
     try std.testing.expectEqual(0x102, smooth);
+    image.magnify = .edge_adaptive;
+    const upscaled: u32 = @bitCast(Shading.of(.{ .texture = &image, .depth = undefined, .blend = null, .receives = .nothing }));
+    try std.testing.expectEqual(0x200, upscaled);
     const plain: u32 = @bitCast(Shading.of(.{ .texture = null, .depth = undefined, .blend = null, .receives = .world }));
     try std.testing.expectEqual(0x001, plain);
     // A planet's soft terminator in the bit after.
     const planet: u32 = @bitCast(Shading.of(.{ .texture = null, .depth = undefined, .blend = null, .receives = .world, .soft_terminator = true }));
-    try std.testing.expectEqual(0x201, planet);
+    try std.testing.expectEqual(0x401, planet);
 }
 
 test appendList {
