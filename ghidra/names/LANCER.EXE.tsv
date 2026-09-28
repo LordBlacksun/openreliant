@@ -1892,7 +1892,7 @@ address	kind	name	type	comment
 0043eb30	function	interface_hit	int __fastcall (short *rects, int count, int x, int y)	The first of count rectangles of four shorts, corner and size, that holds x, y with the edges left out, or -1
 00494a70	function	background_load	void (void)	Reads background_name as a TGA and hands it to the device (sr + 0x50), or runs background_hook where one is set; with no name, clears the picture
 00494b50	function	background_set	void __fastcall (char *name)	Shows the picture of name behind the frames, loading it (background_load) unless background_name is it already, case aside; null clears it. The front end's screens and loading_screen set one
-004ab3f0	function	loading_screen	void (void)	LOADING over interface\sl_splash.tga, sl_splash800.tga or sl_splash1024.tga, by the screen's width, rendered once as a mission loads
+004ab3f0	function	loading_screen	void (void)	The first frame of mission_load's loading screen: LOADING written as loading_line, which no overlay draws, and interface\sl_splash.tga, sl_splash800.tga or sl_splash1024.tga, by the screen's width, rendered alone
 0051dac4	data	interface_screen	int	The front end's screen, which interface_run runs: 0 main menu, 1 GAME OPTIONS, 3 audio, 7 briefing, 8 the landing movie, 10 and 11 the multiplayer sessions, 12 pilot roster, 13 saved games, 14 connection, 15 video, 16 controls, 17 and 18 a session's loadout
 00520274	data	interface_pointer_x	int	The front end's pointer across (interface_pointer_update), 320 as the main menu starts
 00520270	data	interface_pointer_y	int	The front end's pointer down, 200 as the main menu starts
@@ -1971,3 +1971,10 @@ address	kind	name	type	comment
 004ff748	data	environment_effects_ready	uint	The effects environment_effect_set takes: 0 and 2
 00588338	data	mission_terminated	int	How many times the script has ended the mission (TerminateMission): mission_run zeroes it and ends its loop once it is set, and a mission below 28 then ends as the player's ship's destruction does
 00524fe4	data	simulator_mode	int	The game's mode: 0 none, PREPARING FOR LAUNCH; 1 the Reliant's simulator's training, Calibrating Simulator; 2 Instant Action, Preparing for Instant Action
+004ab2b0	function	loading_line_draw	void (void)	The loading screens' overlay (sr + 0x88): loading_line in hud_font_large (optfnt.fnt) through the last of text_ramps, centred across and its top 40 pixels above the screen's foot
+004ab300	function	loading_players_draw	void (void)	mission_load's overlay: loading_line_draw's line, then in a network session each player's name down the left, 18 pixels apart, and READY (string 0x145) 0x165 across beside each one ready, or beside all where 0x005D5E7C is set
+004ab470	function	loading_step	void (void)	Before each of renderer_load's loads after the first: the message pump, LOADING (string 0x32A) as loading_line, loading_line_draw as the overlay, and a frame rendered and flipped
+004ab4b0	function	renderer_load	void (void)	The loading renderer_start ends with: VFX's palette made of the renderer's, LOADING as loading_line and interface\splash.tga behind a frame rendered alone, then the ships' stats, particles_init, backdrop_create, nebula_create, attachment_models_load, engine_glows_build, guns_init, missiles_init, shieldfx_init with shields_init, eject_init, ai_first_setup and the pilots' stats, a loading_step before each but the first
+005d6200	data	loading_line	char[128]	The line the loading screens write under their picture (loading_line_draw)
+005955a0	data	text_ramps	byte[16][16]	Sixteen remap tables of a font's coverage levels, which fonts_open builds: level c of table k to 255 less 63 k c / 225 of the renderer's palette under a hardware renderer, the greys at the top of palette.tga, and to 31 k c / 225 under the software one; level 0 clear (0xFF). The loading screens draw through the last
+00595074	data	hud_font_large	void **	optfnt.fnt, opened by fonts_open: the loading screens' line

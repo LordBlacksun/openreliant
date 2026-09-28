@@ -6,11 +6,11 @@ The screens the game shows outside a mission: the main menu, the pilots, the set
 
 ## In OpenReliant
 
-[`genilib/interf.zig`](../../src/engine/genilib/interf.zig) runs the screens (`interface_run`) and opens what they draw with. [`game/interface/`](../../src/engine/game/interface) holds the screens: the front end's screen and pointer in [`canvas.zig`](../../src/engine/game/interface/canvas.zig), the main menu in [`main_menu.zig`](../../src/engine/game/interface/main_menu.zig), and the YES or NO dialog in [`dialog.zig`](../../src/engine/game/interface/dialog.zig). The picture behind the screens is `matmanager.Background` ([`game/matmanager.zig`](../../src/engine/game/matmanager.zig)).
+[`genilib/interf.zig`](../../src/engine/genilib/interf.zig) runs the screens (`interface_run`) and opens what they draw with. [`game/interface/`](../../src/engine/game/interface) holds the screens: the front end's screen and pointer in [`canvas.zig`](../../src/engine/game/interface/canvas.zig), the main menu in [`main_menu.zig`](../../src/engine/game/interface/main_menu.zig), and the YES or NO dialog in [`dialog.zig`](../../src/engine/game/interface/dialog.zig). The picture behind the screens is `matmanager.Background` ([`game/matmanager.zig`](../../src/engine/game/matmanager.zig)). The loading screens are in [`game/xtrabits/loading.zig`](../../src/engine/game/xtrabits/loading.zig).
 
 OpenReliant opens in the front end unless `--mission` names a mission. A mission the front end starts flies at once, and when it ends, or LEAVE MISSION leaves it, OpenReliant goes back to the main menu.
 
-Ported so far: the screen loop, the main menu, QUIT's dialog, and INSTANT ACTION. Not yet:
+Ported so far: the screen loop, the main menu, QUIT's dialog, INSTANT ACTION, and the loading screens. Not yet:
 
 - The other screens ([#43](https://github.com/vdmkenny/openreliant/issues/43) maps them). Until the pilot roster ([#397](https://github.com/vdmkenny/openreliant/issues/397)), the Reliant's rooms ([#398](https://github.com/vdmkenny/openreliant/issues/398)) and the briefing ([#73](https://github.com/vdmkenny/openreliant/issues/73)) are ported, SINGLE PLAYER starts the campaign's first mission. MULTI PLAYER ([#404](https://github.com/vdmkenny/openreliant/issues/404)) and GAME OPTIONS ([#400](https://github.com/vdmkenny/openreliant/issues/400)) stay on the main menu.
 - The debriefing, which a mission's end goes to ([#73](https://github.com/vdmkenny/openreliant/issues/73)).
@@ -144,4 +144,37 @@ The shapes take the palette of their block's set: the pointer's the first, the l
 
 `background_set` (`0x00494B50`) shows a picture behind the frames, loading it with `background_load` (`0x00494A70`) unless `background_name` (`0x00588744`) is it already, case aside. `background_load` reads the TGA and hands it to the device (`sr + 0x50`), or runs `background_hook` (`0x00588740`) in its place where one is set.
 
-`loading_screen` (`0x004AB3F0`) writes LOADING over `interface\sl_splash.tga`, `sl_splash800.tga` or `sl_splash1024.tga`, by the screen's width, as a mission loads ([#402](https://github.com/vdmkenny/openreliant/issues/402)).
+The loading screens show one too ([The loading screens](#the-loading-screens)).
+
+## The loading screens
+
+The game shows a loading screen as its renderer starts and before each attempt at a mission: a
+picture over the whole screen, and a line of its strings centred across it, the line's top 40
+pixels above the screen's foot (`loading_line_draw`, `0x004AB2B0`). The line is in
+`interface\optfnt.fnt`, drawn through the last of `text_ramps` (`0x005955A0`), which maps the
+font's levels onto the greys at the top of the renderer's palette, up to white.
+
+- As the renderer starts, `renderer_load` (`0x004AB4B0`) shows `interface\splash.tga` alone, then
+  with LOADING (string `0x32A`) before each part of the game it loads after the ships' stats: the
+  particles, the backdrop and the nebula, the attachments' models, the engine glows, the guns, the
+  missiles, the shields, the ejection, the AI and the pilots' stats (`loading_step`,
+  `0x004AB470`), running the message pump each time.
+- Before each attempt at a mission, `mission_load` (`0x004AD0A0`) shows `interface\sl_splash.tga`,
+  `sl_splash800.tga` or `sl_splash1024.tga`, one picture at three sizes, by the screen's width,
+  alone (`loading_screen`, `0x004AB3F0`). Once it has set the renderer, the textures and the
+  display up again, it adds a line by the simulator's mode (`simulator_mode`): PREPARING FOR
+  LAUNCH (string `0xE2`) for none, Calibrating Simulator (`0x14B`) for the Reliant's simulator's
+  training, and Preparing for Instant Action (`0x289`) for any other. In a network session each
+  player's name follows down the left, 18 pixels apart, with READY beside it once the player is
+  ready (`loading_players_draw`, `0x004AB300`).
+
+OpenReliant shows both as it draws the front end: laid out as the game lays them out on a screen
+640 by 480, as large as fits in the window. It shows the start-up's LOADING before each of a few
+parts it loads. It sets the renderer and the textures up once, as it starts, so the mission's two
+frames follow each other at once. Meanwhile the system's events wait for the loop.
+
+Not ported: the players' names in a network session
+([#404](https://github.com/vdmkenny/openreliant/issues/404)).
+
+**Improvement:** before a mission OpenReliant shows the largest picture, `sl_splash1024.tga`,
+whatever the window's width. `--original` picks it by the width, as the game does.

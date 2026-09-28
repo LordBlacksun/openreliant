@@ -4,6 +4,9 @@
 //! has a portal cut an object's parts (`clipTree`). **Unverified:** that the third and the last
 //! are this file's: the third lies between the message pump and the first code the file's
 //! assertions place, the last after the last code they place.
+//!
+//! The loading screens the game shows as it starts and before each attempt at a mission are in
+//! [`xtrabits/loading.zig`](xtrabits/loading.zig).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -16,6 +19,8 @@ const libcmt = @import("../libcmt.zig");
 const GameObject = @import("gameobj.zig").GameObject;
 const create = @import("create.zig");
 const objects = @import("objects.zig");
+
+pub const loading = @import("xtrabits/loading.zig");
 
 /// A scene object of any kind `scene_add` takes.
 pub const Object = union(enum) {
@@ -223,4 +228,8 @@ test clipLine {
     to = .{ -20, 50 };
     try std.testing.expect(!clipLine(last, &from, &to));
     try std.testing.expectEqual([2]i32{ -20, 50 }, to);
+}
+
+test {
+    _ = loading;
 }

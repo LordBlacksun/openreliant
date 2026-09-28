@@ -68,6 +68,12 @@ pub const Canvas = struct {
         try hud.drawShape(art, canvas.gpa, canvas.target, index, canvas.point(at), .{ 1, 1, 1, 1 }, canvas.scale());
     }
 
+    /// Draws `picture` over the whole of the front end's screen, whatever its size.
+    pub fn fill(canvas: Canvas, picture: *srtexture.Image) void {
+        const across: f32 = @floatFromInt(picture.width());
+        hud.drawImage(canvas.target, picture, canvas.corner(), .{ 1, 1, 1, 1 }, canvas.scale() * @as(f32, @floatFromInt(size[0])) / across, .{});
+    }
+
     /// Draws `picture` with its top left corner at `at`.
     pub fn image(canvas: Canvas, picture: *srtexture.Image, at: [2]i32) void {
         const s = canvas.scale();
@@ -195,6 +201,29 @@ test scaleFor {
     try std.testing.expectEqual([2]f32{ 240, 0 }, cornerFor(.{ 1920, 1080 }));
     try std.testing.expectEqual([2]f32{ 0, 180 }, cornerFor(.{ 960, 1080 }));
     try std.testing.expectEqual([2]f32{ 0, 0 }, cornerFor(.{ 640, 480 }));
+}
+
+test "Canvas.fill" {
+    const gpa = std.testing.allocator;
+    var recorder: device.testing.Recorder = .{ .gpa = gpa };
+    defer recorder.deinit();
+    const strings: language.Language = .{ .strings = &.{} };
+    var font: hud.Opened = undefined;
+    const drawn: Canvas = .{ .gpa = gpa, .target = recorder.interface(), .window = .{ 1280, 720 }, .fonts = .{ .large = &font, .small = &font }, .strings = &strings };
+    // A picture 1024 by 768 covers the front end's screen, one and a half times its size in a
+    // window 720 high, centred across it.
+    const rgba = try gpa.alloc(u8, 1024 * 768 * 4);
+    var picture = srtexture.Image.single(gpa, 1024, 768, rgba) catch |err| {
+        gpa.free(rgba);
+        return err;
+    };
+    defer picture.deinit(gpa);
+    drawn.fill(&picture);
+    const corners = recorder.drawn(0);
+    try std.testing.expectEqual(160, corners[0].x);
+    try std.testing.expectEqual(0, corners[0].y);
+    try std.testing.expectEqual(1120, corners[2].x);
+    try std.testing.expectEqual(720, corners[2].y);
 }
 
 test hit {
