@@ -20,6 +20,7 @@ const math = @import("../surrender/math.zig");
 const Vector = math.Vector;
 const srcore = @import("../surrender/surrenderlib/srcore.zig");
 const srtexture = @import("../surrender/surrenderlib/srtexture.zig");
+const ease = @import("../genilib/interf/ease.zig");
 const ai = @import("ai.zig");
 const aigeneric = @import("aigeneric.zig");
 const Context = aigeneric.Context;
@@ -30,7 +31,6 @@ const matmanager = @import("matmanager.zig");
 const motion = @import("motion.zig");
 const objects = @import("objects.zig");
 const particles = @import("particles.zig");
-const shield = @import("shield.zig");
 const sound3d = @import("sound3d.zig");
 const tractor = @import("tractor.zig");
 const xtrabits = @import("xtrabits.zig");
@@ -620,14 +620,14 @@ fn liftedAt(state: *const GrabState, step: GrabStep, now: i32) Vector {
 fn fittedAt(state: *const AttachState, now: i32) Vector {
     const share = through(state.since, now, AttachStep.fitting.ticks());
     var at: Vector = undefined;
-    inline for (0..3) |axis| at[axis] = shield.ease(state.from[axis], state.port[axis], share);
+    inline for (0..3) |axis| at[axis] = ease.cosine(state.from[axis], state.port[axis], share);
     return at;
 }
 
 /// `angles` of each, `share` of the way from `a` to `b`, slow at each end (`cosine_ease`).
 fn easeAngles(a: [3]f32, b: [3]f32, share: f32) Vector {
     var out: Vector = undefined;
-    inline for (0..3) |axis| out[axis] = shield.ease(a[axis], b[axis], share);
+    inline for (0..3) |axis| out[axis] = ease.cosine(a[axis], b[axis], share);
     return out;
 }
 
@@ -769,9 +769,9 @@ pub fn grab(ctx: Context, index: u16) void {
         .turning => {
             const share = @min(through(state.since, now, GrabStep.turning.ticks()), 1);
             objects.setOrientation(&held.object, &held.drawn, math.fromAngles(
-                shield.ease(state.angles[0], state.own_angles[0], share),
-                shield.ease(state.angles[1], state.own_angles[1], share),
-                shield.ease(state.angles[2], state.own_angles[2], share),
+                ease.cosine(state.angles[0], state.own_angles[0], share),
+                ease.cosine(state.angles[1], state.own_angles[1], share),
+                ease.cosine(state.angles[2], state.own_angles[2], share),
             ));
             if (grip) |beams| beams.show(1);
             if (over(state.since, now, GrabStep.turning.ticks())) next(state, now);

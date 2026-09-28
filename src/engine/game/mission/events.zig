@@ -350,6 +350,16 @@ pub fn jumpedIn(world: gameobj.World, index: u16) void {
     postWithShip(world, index, .jumped_in);
 }
 
+/// `event_fixed_gate_jumped_in` (`0x0045ABD0`): the object in slot `index` has come in through the
+/// fixed gate in slot `gate` (`wgate.jumpIn`). Its ship's FixedGateJumpedIn, with the gate's ship,
+/// goes on to its groups.
+pub fn fixedGateJumpedIn(world: gameobj.World, index: u16, gate: u16) void {
+    const events = world.events orelse return;
+    const ship = events.shipOf(index) orelse return;
+    var values = [_]u32{events.value(gate)};
+    events.postGroup(ship, .{ .condition = .fixed_gate_jumped_in, .values = &values });
+}
+
 /// The ship of the object in slot `index` posts `condition` with itself as its value, which goes
 /// on to its groups, as `event_launched`, `event_jumped_in` and `event_post_explosion` do. An
 /// object that stands for no mission's ship posts nothing.

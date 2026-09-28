@@ -248,47 +248,77 @@ choices come from `object_random` (`0x004ADD10`), each object's own generator: a
 set from C's `rand()` when the object is created, that steps as `seed * 0x343FD + 0x269EC3`, bits
 16 to 30 of it over 32767 giving a number from 0 to 1.
 
-| Order | What it does |
-|---|---|
-| Do Nothing (0) | Zeroes the throttle and the turning inputs. |
-| Explode (11) | A destroyed object's end, by what it is and in one of three styles ([Destruction](objects.md#destruction)). |
-| Launch Missile (2) | One-shot: launches a missile at the target from the first of the ship's racks with missiles left that is not a Jack Hammer's ([Missiles](missiles.md#the-ais-missiles)). |
-| 3, nameless | One-shot: as Launch Missile, from the first rack of Jack Hammers. |
-| Fly (6) | Flies at the speed in its data, or at full throttle for zero. With a target it flies to it and pops within 2000 units; otherwise it keeps the heading it had when it started, steering at a point 20000 units along it. It steers with flags `0x7` and halves the throttle while avoiding. An object without flight stats is moved along that heading instead. |
-| Run Away (7) | Flies away from the target at half throttle, steering with flags `0x3`. Pops when the target's slot holds a stand-in. |
-| Escort (9) | On starting, takes the ship its target names, or the ship at the order's number among a flight group's or a squad's ships, counting round them again past the last (the walk's visitor at `0x0040AA50`); OpenReliant takes none where the group has no ships, which the game walks for ever (**Fix**). Each update, it pops once that ship's slot holds a stand-in; otherwise it steers for a point 10000 ahead of the ship: within 5000 of it with half its turn and flags `0x4`, and farther off with its full turn and flags `0x3`. Its throttle is the escorted ship's speed over its own cruise speed, and 0.0001 more for each unit the escorted ship lies ahead along its own heading. |
-| Find New Target (10) | Walks the ships its target names, weighing each it can aim at, cloaked or not, by the square of its node's distance from where the ship will be next ([Picking a fight](#picking-a-fight)). It fights the lightest to fight, pushing Fight, or Torpedo (103) for a ship of the torpedo class; with none, it mills round the lightest to mill round, pushing Mill (120); with neither it pops. |
-| Object Attach (13) | On starting, keeps where the ship will stand next in the frame its target will stand in next. Each update it puts the ship there in the target's next frame, turned as the target will be, and gives it the target's turn, velocity, speed and rates of turn, so that it rides the target. |
-| Toggle Cloak (16) | One-shot: cloaks or uncloaks the ship if its model's header allows a cloak, and the ships being launched from it do the same. |
-| Ship Follow Curve (17) | Flies the path of the mission's curves from the curve in its data ([Following a path](#following-a-path)). |
-| Ship Follow Curve Backwards (119) | Flies that path backwards, from its end to its start. |
-| Dock (109) | Docks at a port of its target ([Docking](#docking)). |
-| Land (8) | The player's ship lands on its carrier, which ends the mission ([Landing](#landing)). |
-| Slow Rotate (18) | Zero throttle, yaw input 0.1. |
-| Random Spin Slow, Medium, Fast (22 to 24) | On starting, zero throttle and each turning input 0.1 plus a random number times 0.3, 0.5 or 0.9. Its update does nothing. |
-| Match Speed (32) | Sets the throttle to the target's speed over the ship's cruise speed. Pops when the target is no longer valid. |
-| Turns object lights on (35) | Switches on the lights of the parts with the lightmap flag, with a sound, and pops. Ship type 165 instead switches on the first part's four lights one by one, then those of every lightmap part, a step each 100 ticks with a sound at each, and pops after 500 ticks. While the setting at `0x5D5618` is not 1 it pops at once. |
-| Turns object lights off (42) | Switches them off. |
-| Huuuuuuuge explosion (43) | The Uber Explode at the object, of size 50000 over 1500 ticks ([Effects](effects.md#the-uber-explode)), then it pops. |
-| Immediately set ship to zero velocity and rotation (44) | `object_stop` (`0x00403000`), then it pops. |
-| Fly ship backwards (45) | Throttle -0.5, no turning. |
-| Multiplayer Control (101) | Disables the object once it has object flag `0x10000000`. |
-| Fight (105) | Fights its target by running [combat maneuvers](maneuvers.md), one after another. |
-| Torpedo (103) | Find New Target's for a ship of the torpedo class. On starting, full throttle. Each update it pops once it can aim at its target no more; otherwise it steers with a limit of 2 and no ease at the target's node, led along the target's nose by the target's speed times the ticks the torpedo takes to get there at its top speed, less its own velocity times half those ticks, 25 at most. It goes off against what it meets ([Collisions](loop.md#collisions)). |
-| Make capship list left, right (115, 116) | A capital ship struck by a torpedo lurches ([Collisions](loop.md#collisions)): its update (`capship_list`, `0x0040C3A0`) sets the roll and yaw inputs to 0.01 and 0.006 over the ship's roll and yaw rates, to the left for 115 and the right for 116, then 200 ticks on to 0.006 and 0.0048 the other way, and 300 ticks after that clears the roll and pops. |
-| Jump In (19, 40) | The ship arrives beside its target, flying in from far behind it; 40 first holds its place in the formation a while ([Jumps](jump.md#jump-in)). |
-| Jump Out (20, 41) | The ship turns to where it goes, charges and jumps: to its target, where Jump In of the matching number brings it in, or out of the mission where it names none; a ship jumping with the player's goes in formation behind it ([Jumps](jump.md#jump-out)). |
-| Launch (104) | The ship leaves its carrier, in the style the carrier's type picks ([Launches](launch.md)). |
-| Mill (120) | On starting, where it can aim at its target, cloaked or not, keeps the tick and a circle facing from the target's node to where the ship will be next. Each update it pops once it can aim at the target no more or 500 ticks have passed; otherwise it flies at full throttle, steering with flags `0x3` for a point on the circle 50000 from the node, which comes round from the ship's side by 0.000005 of its cruise speed a tick. |
-| Disrupted (114) | A Havoc's shockwave gives it ([Effects](effects.md#shockwaves)). On starting, sets object flag `0x8` (unpowered), keeps the tick to end at, the duration in its data (a word) after `frame_start`, takes the push in its data after that (three floats) as a knock in the ship's own frame, though the shockwave gives it in the world's, and knocks each turn rate by up to 0.05 either way at random, which the ship tumbles by. It also plays fifteen [electric rays](effects.md#electric-rays) over the ship, each from its centre out to its radius in a random direction, 90 either way, with a jitter of 0.6, flickering, dimming as they go dark, and lasting as long as the order, white (0.8, 0.8, 1) and blue (0.3, 0.5, 1) in turn. It pops past that tick, and its `exit` clears the flag. |
-| Eject (30) | The pilot leaves the ship in its cockpit, which becomes the pod, and the rest of the ship a new object; the pod clears the ship, and the player's waits to be picked up ([Ejection](ejection.md#the-pod)). |
-| Eject (106) | The ship a pilot has left: destroyed 200 ticks on. |
-| Scoop Up (107) | A nanny ship or the Antanov takes the player's pod aboard with its tractor beams ([Ejection](ejection.md#scoop-up)). |
-| Eject Spin (108) | An AI pilot's ship spins, unpowered, for 200 ticks; then the pilot ejects (Eject). |
-| Eject fighter attack (113) | A Sabre flies at the player's pod and shoots it down ([Ejection](ejection.md#eject-fighter-attack)). |
-| Eject Player (118) | The player's ship drifts, unpowered, for 400 to 599 ticks, then explodes, unless the pilot ejects first ([Destruction](objects.md#destruction), [Ejection](ejection.md#ejecting)). |
+Every order, by its number, with what it does and whether OpenReliant runs it. An order
+OpenReliant does not run yet holds its place on the stack and does nothing
+([#30](https://github.com/vdmkenny/openreliant/issues/30)).
 
-**Unknown:** what the other orders do.
+| Number | Order | What it does | Ported |
+|---|---|---|---|
+| 0 | Do Nothing | Zeroes the throttle and the turning inputs. | Yes |
+| 1 | Fly Aimlessly | Not read yet. | No |
+| 2 | Launch Missile | One-shot: launches a missile at the target from the first of the ship's racks with missiles left that is not a Jack Hammer's ([Missiles](missiles.md#the-ais-missiles)). | Yes |
+| 3 | (nameless) | One-shot: as Launch Missile, from the first rack of Jack Hammers. | Yes |
+| 4 | Warp In | A capital ship warps in through a tunnel of its own ([Gates](gates.md)). Not read in full yet. | No ([#30](https://github.com/vdmkenny/openreliant/issues/30)) |
+| 5 | Warp Out | A capital ship warps out through a tunnel of its own. Not read in full yet. | No ([#30](https://github.com/vdmkenny/openreliant/issues/30)) |
+| 6 | Fly | Flies at the speed in its data, or at full throttle for zero. With a target it flies to it and pops within 2000 units; otherwise it keeps the heading it had when it started, steering at a point 20000 units along it. It steers with flags `0x7` and halves the throttle while avoiding. An object without flight stats is moved along that heading instead. | Yes |
+| 7 | Run Away | Flies away from the target at half throttle, steering with flags `0x3`. Pops when the target's slot holds a stand-in. | Yes |
+| 8 | Land | The player's ship lands on its carrier, which ends the mission ([Landing](#landing)). | Partly: the Yamato's style is not ([#349](https://github.com/vdmkenny/openreliant/issues/349)) |
+| 9 | Escort | On starting, takes the ship its target names, or the ship at the order's number among a flight group's or a squad's ships, counting round them again past the last (the walk's visitor at `0x0040AA50`); OpenReliant takes none where the group has no ships, which the game walks for ever (**Fix**). Each update, it pops once that ship's slot holds a stand-in; otherwise it steers for a point 10000 ahead of the ship: within 5000 of it with half its turn and flags `0x4`, and farther off with its full turn and flags `0x3`. Its throttle is the escorted ship's speed over its own cruise speed, and 0.0001 more for each unit the escorted ship lies ahead along its own heading. | Yes |
+| 10 | Find New Target | Walks the ships its target names, weighing each it can aim at, cloaked or not, by the square of its node's distance from where the ship will be next ([Picking a fight](#picking-a-fight)). It fights the lightest to fight, pushing Fight, or Torpedo (103) for a ship of the torpedo class; with none, it mills round the lightest to mill round, pushing Mill (120); with neither it pops. | Yes |
+| 11 | Explode | A destroyed object's end, by what it is and in one of three styles ([Destruction](objects.md#destruction)). | Yes |
+| 12 | Ripper grabs target object | A Ripper carries its target off ([The Ripper](#the-ripper)). | Yes |
+| 13 | Object Attach | On starting, keeps where the ship will stand next in the frame its target will stand in next. Each update it puts the ship there in the target's next frame, turned as the target will be, and gives it the target's turn, velocity, speed and rates of turn, so that it rides the target. | Yes |
+| 14 | Formation Regroup | Not read yet. | No |
+| 15 | Patrol Route | Not read yet. | No |
+| 16 | Toggle Cloak | One-shot: cloaks or uncloaks the ship if its model's header allows a cloak, and the ships being launched from it do the same. | Yes |
+| 17 | Ship Follow Curve | Flies the path of the mission's curves from the curve in its data ([Following a path](#following-a-path)). | Yes |
+| 18 | Slow Rotate | Zero throttle, yaw input 0.1. | Yes |
+| 19, 40 | Jump In | The ship arrives beside its target, flying in from far behind it; 40 first holds its place in the formation a while ([Jumps](jump.md#jump-in)). | Yes |
+| 20, 41 | Jump Out | The ship turns to where it goes, charges and jumps: to its target, where Jump In of the matching number brings it in, or out of the mission where it names none; a ship jumping with the player's goes in formation behind it ([Jumps](jump.md#jump-out)). | Yes |
+| 21 | Find Scoop Up | Not read yet. | No |
+| 22 to 24 | Random Spin Slow, Medium, Fast | On starting, zero throttle and each turning input 0.1 plus a random number times 0.3, 0.5 or 0.9. Its update does nothing. | Yes |
+| 25 | Fixed Gate Jump In | The ship comes in through the tunnel at the object its target names, out beyond its mouth, cut by its portal ([Gates](gates.md#jump-in)). | Partly: the Krasny's split in missions 16 and 66 is not ([#407](https://github.com/vdmkenny/openreliant/issues/407)) |
+| 26 | Fixed Gate Jump Out | The ship goes out through the nearest gate's tunnel, the player's riding the worm, then comes in through its target's (25) ([Gates](gates.md#jump-out)). | Yes |
+| 27 | Formation | Not read yet. | No |
+| 28 | Fixed Gate Open | A tunnel grows open at the object ([Gates](gates.md#open-and-close)). | Yes |
+| 29 | Fixed Gate Close | The object's tunnel shrinks away and goes. | Yes |
+| 30 | Eject | The pilot leaves the ship in its cockpit, which becomes the pod, and the rest of the ship a new object; the pod clears the ship, and the player's waits to be picked up ([Ejection](ejection.md#the-pod)). | Yes |
+| 31 | Fixed Gate Collapse | The gate comes down in fireballs, its tunnel burning out ([Gates](gates.md#collapse)). | Partly: the Krasny's split is not ([#407](https://github.com/vdmkenny/openreliant/issues/407)) |
+| 32 | Match Speed | Sets the throttle to the target's speed over the ship's cruise speed. Pops when the target is no longer valid. | Yes |
+| 33 | Dark Reign shoot | Not read yet. | No |
+| 34 | Move to spawn pos | A deathmatch's (`deathmatch.cpp`). Not read yet. | No ([#55](https://github.com/vdmkenny/openreliant/issues/55)) |
+| 35 | Turns object lights on | Switches on the lights of the parts with the lightmap flag, with a sound, and pops. Ship type 165 instead switches on the first part's four lights one by one, then those of every lightmap part, a step each 100 ticks with a sound at each, and pops after 500 ticks. While the setting at `0x5D5618` is not 1 it pops at once. | No |
+| 36 | Make Boridin section break away | Not read yet. | No |
+| 37 | Rotate Boridin breakaway warp projector | Not read yet. | No |
+| 38 | Start warp projection from Boridin | The Boridin's warp projection, through a tunnel of its own ([Gates](gates.md)). Not read in full yet. | No ([#30](https://github.com/vdmkenny/openreliant/issues/30)) |
+| 39 | Make ripper drop what it's carrying | A Ripper lets go of what it carries ([The Ripper](#the-ripper)). | Yes |
+| 42 | Turns object lights off | Switches off the lights order 35 switches on. | No |
+| 43 | Huuuuuuuge explosion | The Uber Explode at the object, of size 50000 over 1500 ticks ([Effects](effects.md#the-uber-explode)), then it pops. | Yes |
+| 44 | Immediately set ship to zero velocity and rotation | `object_stop` (`0x00403000`), then it pops. | Yes |
+| 45 | Fly ship backwards | Throttle -0.5, no turning. | Yes |
+| 100 | Player Control | The player's controls fly the ship ([Controls](controls.md)). | Yes |
+| 101 | Multiplayer Control | Disables the object once it has object flag `0x10000000`. | No ([#55](https://github.com/vdmkenny/openreliant/issues/55)) |
+| 102 | Avoid Target | Not read yet. | No |
+| 103 | Torpedo | Find New Target's for a ship of the torpedo class. On starting, full throttle. Each update it pops once it can aim at its target no more; otherwise it steers with a limit of 2 and no ease at the target's node, led along the target's nose by the target's speed times the ticks the torpedo takes to get there at its top speed, less its own velocity times half those ticks, 25 at most. It goes off against what it meets ([Collisions](loop.md#collisions)). | Yes |
+| 104 | Launch | The ship leaves its carrier, in the style the carrier's type picks ([Launches](launch.md)). | Partly: the other styles are not ([#304](https://github.com/vdmkenny/openreliant/issues/304)) |
+| 105 | Fight | Fights its target by running [combat maneuvers](maneuvers.md), one after another. | Yes |
+| 106 | Eject | The ship a pilot has left: destroyed 200 ticks on. | Yes |
+| 107 | Scoop Up | A nanny ship or the Antanov takes the player's pod aboard with its tractor beams ([Ejection](ejection.md#scoop-up)). | Yes |
+| 108 | Eject Spin | An AI pilot's ship spins, unpowered, for 200 ticks; then the pilot ejects (Eject). | Yes |
+| 109 | Dock | Docks at a port of its target ([Docking](#docking)). | Partly: the Nanny's, the limpet car's and the limpet pod's styles are not ([#320](https://github.com/vdmkenny/openreliant/issues/320)) |
+| 110 | Dark reign shoot | The Dark Reign's ion cannon; `ion_cannons_hold_lock` keeps its target ([Script VM](script-vm.md#the-games-variables)). Not read in full yet. | No |
+| 111 | Ripper end drop object | A Ripper draws its forearms back once it has let go ([The Ripper](#the-ripper)). | Yes |
+| 112 | Ripper attach cargo pod to Mammoth | A Ripper fits a cargo pod onto a Mammoth ([The Ripper](#the-ripper)). | Yes |
+| 113 | Eject fighter attack | A Sabre flies at the player's pod and shoots it down ([Ejection](ejection.md#eject-fighter-attack)). | Yes |
+| 114 | Disrupted | A Havoc's shockwave gives it ([Effects](effects.md#shockwaves)). On starting, sets object flag `0x8` (unpowered), keeps the tick to end at, the duration in its data (a word) after `frame_start`, takes the push in its data after that (three floats) as a knock in the ship's own frame, though the shockwave gives it in the world's, and knocks each turn rate by up to 0.05 either way at random, which the ship tumbles by. It also plays fifteen [electric rays](effects.md#electric-rays) over the ship, each from its centre out to its radius in a random direction, 90 either way, with a jitter of 0.6, flickering, dimming as they go dark, and lasting as long as the order, white (0.8, 0.8, 1) and blue (0.3, 0.5, 1) in turn. It pops past that tick, and its `exit` clears the flag. | Yes |
+| 115, 116 | Make capship list left, right | A capital ship struck by a torpedo lurches ([Collisions](loop.md#collisions)): its update (`capship_list`, `0x0040C3A0`) sets the roll and yaw inputs to 0.01 and 0.006 over the ship's roll and yaw rates, to the left for 115 and the right for 116, then 200 ticks on to 0.006 and 0.0048 the other way, and 300 ticks after that clears the roll and pops. | Yes |
+| 117 | Friendly Fire | The carrier recalls the player's ship for destroying a friend, and it lands ([Friendly fire](#friendly-fire)). | Yes |
+| 118 | Eject Player | The player's ship drifts, unpowered, for 400 to 599 ticks, then explodes, unless the pilot ejects first ([Destruction](objects.md#destruction), [Ejection](ejection.md#ejecting)). | Yes |
+| 119 | Ship Follow Curve Backwards | Flies the path of Ship Follow Curve (17) backwards, from its end to its start. | Yes |
+| 120 | Mill | On starting, where it can aim at its target, cloaked or not, keeps the tick and a circle facing from the target's node to where the ship will be next. Each update it pops once it can aim at the target no more or 500 ticks have passed; otherwise it flies at full throttle, steering with flags `0x3` for a point on the circle 50000 from the node, which comes round from the ship's side by 0.000005 of its cruise speed a tick. | Yes |
+| 121 | Deathmatch Respawn Effect | A deathmatch's (`deathmatch.cpp`). Not read yet. | No ([#55](https://github.com/vdmkenny/openreliant/issues/55)) |
+| 122 | Deathmatch Dark Reign target | It has no routines: nothing to run. | Yes |
+| 200 | (nameless) | It has no routines: nothing to run. | Yes |
 
 ### Following a path
 

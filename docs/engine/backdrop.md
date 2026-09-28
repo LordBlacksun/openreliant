@@ -175,4 +175,47 @@ Without a sun marker the sun's direction stays a unit long, and the sun's sprite
 
 ## Environment effects
 
-`SetEnvironmentFX` sets or clears an effect's bit (`environment_effect_set`, `0x00469C60`), applied at the next jump or on `UpdateEnvironmentFXState`. The table of effects at `0x004FF808` names two, Ice Field and Planet Bombard, with no handlers: switching them does nothing.
+A mission's script turns environment effects on and off by number (`SetEnvironmentFX`,
+`environment_effect_set`, `0x00469C60`), a bit each: the effects on (`0x0055249C`) and those asked
+for (`0x005531A4`). The game takes the effects `0x004FF748` allows, the ice field and effect 2, and
+logs any other as not yet implemented. The table of effects (`0x004FF804`, 32 bytes each) gives
+each whether it waits, two routines to turn it on and off, which none has, and a name: Ice Field,
+Planet Bombard, then "not defined". The ice field and Planet Bombard wait: turning one on or off asks
+for it, and `environment_update` turns the effects on and off as asked, at the next jump or on
+`UpdateEnvironmentFXState`. Any other goes on or off at once, and what is asked for is then what is
+on. Nothing reads effect 2 (`0x0046A6F0`).
+
+The renderer's start clears the effects (`backdrop_create`, `0x00469C30`), and builds the ice field
+and ten flashes for Planet Bombard (`0x0046A500`, `Boom_Mesh`, `pbang`), which nothing draws: their
+frame (`0x0046A312`) is never called.
+
+**Fix:** since nothing else clears them, an effect one mission leaves on shows in the next, the ice
+field of Instant Action's last wave among them; OpenReliant clears them as each mission starts.
+
+### The ice field
+
+Effect 0: rocks of ice all about the camera, far off, each a triangle facing it and turning
+(`0x00469DF0`). There are 200, 500 or 800 of them by the options' detail, each a triangle a unit
+across with its point at its place (`0x0046A250`), drawn with `farast2` by coordinates of its own,
+lit and added by a grey of its own:
+
+- Which of the texture's five rocks it shows, one for each fifth of a random number: a quarter of the
+  texture each, or a triangle across the top middle (`0x004FF990`).
+- Its grey, from a half to full.
+- Where it lies, 2500 from the camera: 0.65 of them in a band 0.1 radians across, the rest in one
+  0.7 across, each in one of two arcs 2.2 radians wide, a half turn apart.
+- Its size: 0.94 of them 5 to 30, the rest 30 to 100.
+- How fast it turns: the seven rates 0.0005 radians a tick apart, from -3 steps to 3, in turn.
+
+While the ice field is on, `backdrop_frame` adds each rock that lies ahead of the camera, within
+about 49 degrees of its axis (1625 of its 2500 along it), to the background layer after the lights
+and before the star fields (`0x0046A170`): it stands at its place from the camera, facing it, turned
+by its rate for each tick of the frame's time.
+
+OpenReliant builds and draws the ice field
+([`game/environfx.zig`](../../src/engine/game/environfx.zig)).
+
+**Improvement:** OpenReliant draws every rock ahead of the camera, so that the field fills the whole
+view however wide it is, and no rock appears or vanishes within it as the view turns; the game's cone
+leaves the corners of the view bare, and the sides of a wide one. `--original` draws only the rocks
+in the game's cone.

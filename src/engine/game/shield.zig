@@ -19,6 +19,7 @@ const libcmt = @import("../libcmt.zig");
 const Objects = @import("create.zig").Objects;
 const Detail = @import("explode.zig").Detail;
 const cloak = @import("cloak.zig");
+const ease = @import("../genilib/interf/ease.zig");
 const gameobj = @import("gameobj.zig");
 const matmanager = @import("matmanager.zig");
 const objects = @import("objects.zig");
@@ -221,22 +222,6 @@ const ramp_rise: f32 = 0.4;
 const ramp_fall: f32 = 0.2;
 const ramp_fade: f32 = 0.6;
 
-/// `cosine_ease` (`0x004268C0`): from `a` to `b` as `share` goes from 0 to 1, slow at each end. It
-/// lies among the interface's code, between `wgate.cpp`'s and `interf.cpp`'s, and serves much of
-/// it; OpenReliant keeps it here, with the ramps, and the cloak's shimmer uses it too
-/// (`cloak.shimmerColour`).
-///
-/// **Improvement:** the cosine comes from `std.math` rather than the engine's table (`sr_cos`).
-pub fn ease(a: f32, b: f32, share: f32) f32 {
-    return a + (b - a) * (1 - @cos(share * std.math.pi)) / 2;
-}
-
-test ease {
-    try std.testing.expectApproxEqAbs(2, ease(2, 6, 0), 1e-6);
-    try std.testing.expectApproxEqAbs(4, ease(2, 6, 0.5), 1e-6);
-    try std.testing.expectApproxEqAbs(6, ease(2, 6, 1), 1e-6);
-}
-
 /// `0x0049EB00` and `0x0049EC30`: a ramp's colour at `strength`, as red, green and blue. A friendly
 /// ship's runs from nothing at 1 up to a cyan of 0.7 green and full blue at 0.6, down through a dim
 /// blue at 0.4 to nothing below 0.35; without a hardware renderer it is grey. The others' swaps the
@@ -245,12 +230,12 @@ fn rampColour(tint: Tint, strength: f32, hardware: bool) Colour {
     var colour: Colour = @splat(0);
     if (strength > ramp_peak) {
         const share = (1 - strength) / ramp_rise;
-        colour = .{ 0, ease(0, ramp_green, share), ease(0, 1, share) };
+        colour = .{ 0, ease.cosine(0, ramp_green, share), ease.cosine(0, 1, share) };
     } else if (strength > ramp_dim) {
         const share = (ramp_peak - strength) / ramp_fall;
-        colour = .{ 0, ease(ramp_green, 0, share), ease(1, ramp_dim_blue, share) };
+        colour = .{ 0, ease.cosine(ramp_green, 0, share), ease.cosine(1, ramp_dim_blue, share) };
     } else if (strength > ramp_out) {
-        colour = .{ 0, 0, ease(ramp_dim_blue, 0, (ramp_peak - strength) / ramp_fade) };
+        colour = .{ 0, 0, ease.cosine(ramp_dim_blue, 0, (ramp_peak - strength) / ramp_fade) };
     }
     const tinted: Colour = switch (tint) {
         .friendly => if (hardware) colour else @splat(colour[2]),

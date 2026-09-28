@@ -1,7 +1,9 @@
 //! `C:\lancer\game\xtrabits.cpp`: odds and ends of the game's frame. `scene_add` (`0x004ADB30`)
 //! puts an object in the scene for the frame, `object_random15` (`0x004ADCE0`) draws an object's
-//! own random numbers, and `0x004AAFC0` clips a line to a pane. **Unverified:** that the last is
-//! this file's: it lies between the message pump and the first code the file's assertions place.
+//! own random numbers, `0x004AAFC0` clips a line to a pane, and `node_tree_clip` (`0x004ADEE0`)
+//! has a portal cut an object's parts (`clipTree`). **Unverified:** that the third and the last
+//! are this file's: the third lies between the message pump and the first code the file's
+//! assertions place, the last after the last code they place.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -13,6 +15,7 @@ const srstars = @import("../surrender/surrenderlib/srstars.zig");
 const libcmt = @import("../libcmt.zig");
 const GameObject = @import("gameobj.zig").GameObject;
 const create = @import("create.zig");
+const objects = @import("objects.zig");
 
 /// A scene object of any kind `scene_add` takes.
 pub const Object = union(enum) {
@@ -40,6 +43,22 @@ pub fn sceneAdd(gpa: Allocator, scene: *srcore.Scene, object: Object, layer: src
         .stars => |field| if (!field.flags.hidden) try list.append(gpa, .{ .stars = field }),
         .portal => |portal| try scene.portals.append(gpa, portal),
     }
+}
+
+/// Clips part `index` of `model` and every part of each model it carries, however deep, by
+/// `portal`, or, where null, by none, the flag left as it was (`node_tree_clip`, `0x004ADEE0`;
+/// `node_tree_unclip`, `0x004ADF40`).
+pub fn clipPart(model: *objects.Model, index: usize, portal: ?*const srapiext.Portal) void {
+    const part = &model.parts[index];
+    part.object.portal = portal;
+    if (portal != null) part.object.flags.portal_clipped = true;
+    var each = model.carriedBy(index);
+    while (each.next()) |mount| clipTree(&mount.model, portal);
+}
+
+/// `clipPart` for every part of `model`, as `node_tree_clip` clips an object from its root.
+pub fn clipTree(model: *objects.Model, portal: ?*const srapiext.Portal) void {
+    for (0..model.parts.len) |index| clipPart(model, index, portal);
 }
 
 test sceneAdd {

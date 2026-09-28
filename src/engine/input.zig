@@ -991,6 +991,9 @@ pub const Player = struct {
     shield_reserves: gameobj.ShieldReserves = .{},
     /// How the mission is ending, which the player's ship's end decides.
     ending: @import("game/main.zig").Ending = .playing,
+    /// `0x00588338`: how many times the script has ended the mission (`TerminateMission`), which
+    /// ends it once the frame is over (`main.missionFrame`); a mission's start clears it.
+    terminated: u32 = 0,
     /// What the mission's scene shows (`0x00587CD4`).
     showing: @import("game/main.zig").Showing = .everything,
     /// `player_carrier` (`0x0057E05C`): the ship the player's ship launched from, which the
@@ -1889,10 +1892,10 @@ const cloak_said: Said = .{ .on = .cloak_on, .off = .cloak_off };
 /// The keys `frame_controls` reads after the targeting's, in its order, each with the display's
 /// sound (`hud.Beep`): most with `done`, a device turning on or off with `on` or `off`.
 ///
-/// - ATTACK MY TARGET, BACK OFF and HELP ME, outside a multiplayer game, while the player's
-///   target is a hostile ship that can be aimed at (`videoreports.wingmen.hostileTarget`), give
-///   their command to a wingman the game picks (`videoreports.wingmen.give`), with no sound of the
-///   display's.
+/// - ATTACK MY TARGET, BACK OFF and HELP ME, outside a multiplayer game and the simulator
+///   (`create.Simulator.simulated`), while the player's target is a hostile ship that can be aimed
+///   at (`videoreports.wingmen.hostileTarget`), give their command to a wingman the game picks
+///   (`videoreports.wingmen.give`), with no sound of the display's.
 /// - PERMISSION TO LAND, outside a multiplayer mission, asks the carrier to clear the player's
 ///   ship to land (`videoreports.permissionToLand`), with no sound of the display's.
 /// - TOGGLE BLINDFIRE flips blind fire on a ship that carries it, and Betty says which, with no
@@ -1928,9 +1931,6 @@ const cloak_said: Said = .{ .on = .cloak_on, .off = .cloak_off };
 ///
 /// **Fix:** the game sounds a power key every frame it is held, a new sound each frame, which
 /// OpenReliant's frame rates make a din; OpenReliant sounds it as it is pressed.
-///
-/// Not yet ported: that the wingmen's keys go unheard in the front end's simulator (`0x0057E044`)
-/// and where the game's mode (`0x00524FE4`) is not 0.
 pub fn frameKeys(keys: FrameKeys) void {
     const display = keys.display;
     const player = keys.player;
@@ -1940,8 +1940,9 @@ pub fn frameKeys(keys: FrameKeys) void {
     const object = &slot.object;
     const windows = &display.windows;
     const groups = slot.groupCount();
+    const simulated = if (keys.all) |all| all.simulator.simulated() else false;
     for (wingmen_keys) |key| {
-        if (!devices.active(key.action, true) or multiplayer) continue;
+        if (!devices.active(key.action, true) or multiplayer or simulated) continue;
         const world = keys.world orelse continue;
         if (videoreports.wingmen.hostileTarget(world.objects) == null) continue;
         videoreports.wingmen.give(world, key.command, .picked);
@@ -2144,6 +2145,30 @@ test frameKeys {
     frameKeys(.{ .display = &display, .player = &player, .devices = &devices, .slot = &slot, .view = .cockpit, .game_ticks = 0, .multiplayer = false });
     try std.testing.expect(object.flags.spectral_shields);
     try std.testing.expectEqual(.on, display.devices.get(.spectral_shields).setting);
+}
+
+test "the wingmen's keys go unheard in the simulator" {
+    var heard: videoreports.testing.Heard = undefined;
+    const world = try heard.initWing();
+    defer heard.deinit();
+    const all = heard.mission.objects;
+    const wingman = &all.slots[heard.wingman];
+    var devices: Devices = .{};
+    var display: hud.State = .{};
+    const key = controls.binding(.attack_my_target).key;
+    const keys: FrameKeys = .{ .display = &display, .player = world.player, .devices = &devices, .slot = &all.slots[all.player], .view = .cockpit, .game_ticks = 0, .multiplayer = false, .world = world, .all = all };
+    const orders = wingman.object.order_count;
+    all.simulator = .{ .mode = .instant_action, .main_menu = true };
+    devices.keyboard.down[key] = true;
+    frameKeys(keys);
+    try std.testing.expectEqual(orders, wingman.object.order_count);
+    // Out of it, ATTACK MY TARGET, pressed again, has the wingman fight the player's target.
+    all.simulator = .{};
+    devices.keyboard.down[key] = false;
+    devices.read();
+    devices.keyboard.down[key] = true;
+    frameKeys(keys);
+    try std.testing.expectEqual(.fight, wingman.current().?.order);
 }
 
 test "the window keys" {

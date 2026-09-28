@@ -1451,6 +1451,28 @@ test objectAlloc {
 /// The game ticks a simulation step takes: it steps on every fourth.
 pub const ticks_per_step = 4;
 
+/// The simulation steps due at tick `now` since tick `paced_at`, which moves on by them: for what
+/// OpenReliant paces by the steps where the game paces it by the frames, so that it keeps its pace
+/// whatever the frame rate.
+pub fn stepsDue(paced_at: *i32, now: i32) u32 {
+    const due: u32 = @intCast(@divFloor(@max(now -% paced_at.*, 0), ticks_per_step));
+    paced_at.* +%= @intCast(due * ticks_per_step);
+    return due;
+}
+
+test stepsDue {
+    var paced_at: i32 = 100;
+    // Short of a step, none is due, and the pace holds.
+    try std.testing.expectEqual(0, stepsDue(&paced_at, 103));
+    try std.testing.expectEqual(100, paced_at);
+    // Two steps and a tick on, two are due, and the tick left over counts toward the next.
+    try std.testing.expectEqual(2, stepsDue(&paced_at, 109));
+    try std.testing.expectEqual(108, paced_at);
+    try std.testing.expectEqual(1, stepsDue(&paced_at, 112));
+    // A clock that ran back brings none.
+    try std.testing.expectEqual(0, stepsDue(&paced_at, 50));
+}
+
 /// What a simulation step works on besides the clock and the devices, which the game keeps in
 /// globals: the live objects, the player's controls, and the camera's view and shake. The cruise
 /// speed reads the view (`object_cruise_speed`), and the player's speed raises the shake
@@ -1497,6 +1519,8 @@ pub const World = struct {
     rippers: ?*@import("airipper.zig").Rippers = null,
     /// What the jumps show (`jump.effect`).
     jump_effects: ?*@import("jump/effect.zig").Effects = null,
+    /// The gates' tunnels and the worm (`wgate.cpp`); null where no gate opens.
+    gates: ?*@import("wgate.zig").Gates = null,
     /// The planets' atmospheres (`create.atmosphere`); null where no planet has one drawn.
     atmospheres: ?*@import("create/atmosphere.zig").Atmospheres = null,
     /// The escort point's marker (`create.escort`), whose pulse each mission starts again.
@@ -1605,18 +1629,25 @@ pub fn nextTurn(clock: *Clock, objects_live: u32) u32 {
 }
 
 /// `game_tick` (`0x00477850`): one tick of the mission. Paused, it counts the tick and does
-/// nothing else. Returns whether the simulation stepped.
+/// nothing else. Every `countdown_ticks` of the mission it takes a second off the countdown, game
+/// variable 33 (`vm.Variables.countdown`, `0x00477889`), which mission 29 sets and the display
+/// shows (`hud.clockTime`). Returns whether the simulation stepped.
 ///
-/// Not ported: the countdown at `0x0052A474` that it steps once a second, and the timed
-/// sections it brackets the tick with outside a network game.
+/// Not ported: the timed sections it brackets the tick with outside a network game.
 pub fn gameTick(clock: *Clock, devices: *input.Devices, world: World) bool {
     if (clock.paused) {
         clock.paused_ticks +%= 1;
         return false;
     }
     clock.mission_ticks +%= 1;
+    if (@rem(clock.mission_ticks, countdown_ticks) == 0) if (world.variables) |variables| {
+        variables.countdown -%= 1;
+    };
     return simulationStep(clock, devices, world);
 }
+
+/// The mission's ticks to a second of the countdown (`0x0047787E`).
+pub const countdown_ticks = 100;
 
 /// What `simulation_step` does for the object whose turn it is (`Clock.nextTurn`), before its node
 /// update: orthonormalizes the root's next orientation (`mat3_orthonormalize`), so that rounding
@@ -2177,6 +2208,25 @@ test "a step updates and moves every live object" {
     // No key held, the player's throttle stays at nothing, and it stays where it was.
     try std.testing.expectEqual(0, all.slots[player].object.root.next_position.z);
     try std.testing.expect(all.slots[player].object.shields.left > 0);
+}
+
+test "the countdown loses a second every hundred ticks" {
+    const gpa = std.testing.allocator;
+    var mission: testing.Mission = undefined;
+    try mission.init(gpa);
+    defer mission.deinit();
+    var variables: @import("../vm.zig").Variables = .{ .countdown = 110 };
+    var world = mission.world();
+    world.variables = &variables;
+    var devices: input.Devices = .{};
+    for (0..countdown_ticks - 1) |_| _ = gameTick(&mission.clock, &devices, world);
+    try std.testing.expectEqual(110, variables.countdown);
+    _ = gameTick(&mission.clock, &devices, world);
+    try std.testing.expectEqual(109, variables.countdown);
+    // Paused, the mission's ticks stop, and so does the countdown.
+    mission.clock.paused = true;
+    for (0..countdown_ticks * 2) |_| _ = gameTick(&mission.clock, &devices, world);
+    try std.testing.expectEqual(109, variables.countdown);
 }
 
 test "each object's turn comes round in rotation" {

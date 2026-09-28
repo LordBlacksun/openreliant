@@ -31,6 +31,7 @@ const Clock = @import("main.zig").Clock;
 const orders = @import("ai/orders.zig");
 const Order = orders.Order;
 const tractor = @import("tractor.zig");
+const wgate = @import("wgate.zig");
 
 /// Orders an object's stack holds; `order_push` refuses another.
 pub const max_stack = 20;
@@ -221,6 +222,7 @@ pub const State = extern union {
     ripper_end_drop: airipper.EndDropState,
     ripper_attach: airipper.AttachState,
     friendly_fire: friendly_fire.State,
+    gate: wgate.State,
     /// What every order that flies a ship by `motion_follow` holds first.
     follower: motion.Follower,
 
@@ -612,6 +614,11 @@ fn runInit(ctx: Context, index: u16, info: orders.Info) void {
         .ripper_end_drop_object => airipper.endDropInit(ctx, index),
         .ripper_attach_cargo_pod_to_mammoth => airipper.attachInit(ctx, index),
         .friendly_fire => friendly_fire.init(ctx, index),
+        .fixed_gate_jump_in => wgate.jumpInInit(ctx, index),
+        .fixed_gate_jump_out => wgate.jumpOutInit(ctx, index),
+        .fixed_gate_open => wgate.openInit(ctx, index),
+        .fixed_gate_close => wgate.closeInit(ctx, index),
+        .fixed_gate_collapse => wgate.collapseInit(ctx, index),
         else => {},
     }
 }
@@ -659,6 +666,11 @@ fn runUpdate(ctx: Context, index: u16, info: orders.Info) void {
         .ripper_end_drop_object => airipper.endDrop(ctx, index),
         .ripper_attach_cargo_pod_to_mammoth => airipper.attach(ctx, index),
         .friendly_fire => friendly_fire.update(ctx, index),
+        .fixed_gate_jump_in => wgate.jumpIn(ctx, index),
+        .fixed_gate_jump_out => wgate.jumpOut(ctx, index),
+        .fixed_gate_open => wgate.open(ctx, index),
+        .fixed_gate_close => wgate.close(ctx, index),
+        .fixed_gate_collapse => wgate.collapse(ctx, index),
         else => {},
     }
 }

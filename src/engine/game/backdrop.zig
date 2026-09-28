@@ -429,7 +429,9 @@ pub const Backdrop = struct {
 
     /// Adds the lights, the star fields, the dust, the sun and the lens flares to the scene
     /// (`backdrop_frame`), placing the flares, sizing the sprites and finding the sun's point and
-    /// visibility for the frame.
+    /// visibility for the frame. Between the lights and the star fields the game adds the
+    /// environment's effects, which `main.drawFrame` adds before the lights, the lights keeping a
+    /// list of their own (`environfx.Environment.frame`).
     pub fn frame(backdrop: *Backdrop, gpa: Allocator, scene: *srcore.Scene, context: *srapi.Context, view: camera.View, cockpit_mode: camera.CockpitMode) Allocator.Error!void {
         for (&backdrop.lights.values) |*light| try xtrabits.sceneAdd(gpa, scene, .{ .light = light }, .background);
         // Toward the sun, in the camera's frame.

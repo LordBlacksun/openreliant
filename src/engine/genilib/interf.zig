@@ -23,6 +23,8 @@ const canvas = interface.canvas;
 const main_menu = interface.main_menu;
 const device = @import("../surrender/srd3d/device.zig");
 
+pub const ease = @import("interf/ease.zig");
+
 const log = std.log.scoped(.interface);
 
 /// The front end's screens, by the number `interface_run` runs them by (`0x0051DAC4`). Numbers 10
@@ -146,7 +148,7 @@ pub const Interface = struct {
     ///
     /// Not ported: the screens besides the main menu (#43 lists them), and the movies played
     /// between screens (#401). Until they are, SINGLE PLAYER starts the campaign's first mission,
-    /// the other screens stay on the main menu, and INSTANT ACTION does nothing (#399).
+    /// and MULTI PLAYER and GAME OPTIONS stay on the main menu.
     pub fn frame(front: *Interface, context: Context) ?Outcome {
         if (front.screen == .main_menu and front.entered != .main_menu) {
             front.main_menu.enter(&front.pointer, context.sound);
@@ -165,8 +167,9 @@ pub const Interface = struct {
                     .quit => .quit,
                     .fly => |flight| .{ .fly = flight },
                     .pilot_roster => .{ .fly = .{ .mission = first_mission } },
-                    .connection, .game_options, .instant_action => {
-                        log.info("MULTI PLAYER, GAME OPTIONS and INSTANT ACTION are not ported yet", .{});
+                    .instant_action => .{ .fly = main_menu.instant_action },
+                    .connection, .game_options => {
+                        log.info("MULTI PLAYER and GAME OPTIONS are not ported yet", .{});
                         return null;
                     },
                 };
@@ -216,6 +219,13 @@ test "the front end's first choices" {
     devices.mouse.at = .{ 500.0 / 640.0, 300.0 / 480.0 };
     try std.testing.expectEqual(null, front.frame(.{ .devices = &devices, .window = .{ 640, 480 }, .elapsed = 1 }));
     try std.testing.expectEqual(Screen.main_menu, front.screen);
+    // INSTANT ACTION flies mission 29 in the simulator.
+    devices.mouse.at = .{ 310.0 / 640.0, 450.0 / 480.0 };
+    try std.testing.expectEqual(main_menu.instant_action, front.frame(.{ .devices = &devices, .window = .{ 640, 480 }, .elapsed = 1 }).?.fly);
+}
+
+test {
+    std.testing.refAllDecls(@This());
 }
 
 test Screen {

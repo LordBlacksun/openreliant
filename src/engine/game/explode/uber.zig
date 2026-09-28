@@ -253,14 +253,10 @@ pub const Blast = struct {
     /// How many times the blast draws its numbers afresh this frame, at tick `now`: once a frame,
     /// as the game does; or in the fuller style, once for each simulation step since it last did.
     fn rounds(blast: *Blast, now: i32) u32 {
-        switch (blast.style) {
-            .original => return 1,
-            .fuller => {
-                const due: u32 = @intCast(@divFloor(@max(now - blast.paced_at, 0), gameobj.ticks_per_step));
-                blast.paced_at += @intCast(due * gameobj.ticks_per_step);
-                return due;
-            },
-        }
+        return switch (blast.style) {
+            .original => 1,
+            .fuller => gameobj.stepsDue(&blast.paced_at, now),
+        };
     }
 
     /// The ball's part of the frame, `out` of the way to its widest, drawing its numbers afresh

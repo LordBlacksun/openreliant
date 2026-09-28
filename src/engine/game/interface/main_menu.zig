@@ -10,6 +10,8 @@ const assert = std.debug.assert;
 
 const fat = @import("../../../formats/fat.zig");
 const input = @import("../../input.zig");
+const create = @import("../create.zig");
+const gameobj = @import("../gameobj.zig");
 const hog_snd = @import("../hog_snd.zig");
 const hud = @import("../hud.zig");
 const canvas_module = @import("canvas.zig");
@@ -109,7 +111,7 @@ pub const Choice = union(enum) {
     pilot_roster,
     connection,
     game_options,
-    /// INSTANT ACTION: mission 29, the simulator (`simulator`).
+    /// INSTANT ACTION (`instant_action`).
     instant_action,
     /// QUIT, answered YES.
     quit,
@@ -118,12 +120,23 @@ pub const Choice = union(enum) {
 };
 
 /// A mission to fly: its number, the ship type the loadout gives the player, or null for the ship
-/// the mission gives, and whether its briefing and loadout come first, as `skip_briefing` clear
-/// has them. The developers' Enter asks for them, and their ship keys skip them.
+/// the mission gives, whether its briefing and loadout come first, as `skip_briefing` clear has
+/// them, and the simulator it runs in. The developers' Enter asks for the briefing, and their ship
+/// keys skip it.
 pub const Flight = struct {
     mission: u16,
     ship: ?u8 = null,
     briefing: bool = false,
+    simulator: create.Simulator = .{},
+};
+
+/// INSTANT ACTION (`0x0042905B` to `0x004290E4`): mission 29 in a Grendel, ship type 2, in the
+/// simulator of its mode, which the main menu flies again for as long as RESTART starts it again,
+/// then comes back to itself. It keeps the mission's number and the pilot's kills as they were.
+pub const instant_action: Flight = .{
+    .mission = create.instant_action_mission,
+    .ship = @intFromEnum(gameobj.Type.grendel),
+    .simulator = .{ .mode = .instant_action, .main_menu = true },
 };
 
 /// What a frame of the menu reads and plays through.

@@ -937,7 +937,7 @@ fn loseRoot(ctx: aigeneric.Context, index: u16, model: *Model, root: math.Place)
     for (model.parts) |*part| {
         if (part.removed or part.spent or !(part.armor < 0)) continue;
         part.spent = true;
-        if (part.class == .engine) object.engines_intact -= 1 / @as(f32, @floatFromInt(object.engines));
+        if (part.class == .engine) loseEngine(object);
         if (part.class == .shield_generator) {
             if (object.flags.shield_generator) shieldsDown(world, part.drawn());
             object.flags.shield_generator = false;
@@ -959,6 +959,11 @@ fn loseRoot(ctx: aigeneric.Context, index: u16, model: *Model, root: math.Place)
         }
     }
     model.destroyed = false;
+}
+
+/// One of `object`'s engines taken out, which takes its share off `engines_intact`.
+pub fn loseEngine(object: *gameobj.GameObject) void {
+    object.engines_intact -= 1 / @as(f32, @floatFromInt(object.engines));
 }
 
 /// A shield generator going down: `SHLDDOWN` from where it stands, facing its way.

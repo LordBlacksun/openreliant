@@ -41,6 +41,7 @@ const environfx = @import("environfx.zig");
 const explode = @import("explode.zig");
 const smoke = @import("main/smoke.zig");
 const srofiles = @import("srofiles.zig");
+const wgate = @import("wgate.zig");
 const xtrabits = @import("xtrabits.zig");
 
 pub const models = @import("create/models.zig");
@@ -526,6 +527,8 @@ pub const Objects = struct {
     /// `mission25_second_part` (`0x00587CDC`): whether mission 25's first part is won and its
     /// second is played, before which the player flies a Kamov.
     mission25_second_part: bool = false,
+    /// The simulator the front end runs the mission in, where it does.
+    simulator: Simulator = .{},
     /// The ship the loadout screen chose for each player's slot (`player_loadouts`, `0x00588400`,
     /// the first word of each), which `create_object` makes the player's ship of (`slotType`).
     /// Until the loadout screen is ported
@@ -600,12 +603,12 @@ pub const Objects = struct {
         return use.loaded;
     }
 
-    /// The type `create_object` makes an object asked for as `asked` of in slot `index`: in a
-    /// player's slot, a Kamov in mission 25's first part, or else the ship the loadout chose, its
-    /// `t_` twin from `twins_from_mission` on; in any other slot, `asked`.
-    ///
-    /// Not ported: a multiplayer game, where every slot takes `asked`, and the rule of
-    /// `0x00524FE4` by which a type 13 becomes a Reliant.
+    /// Whether the display's clock counts down (`hud.clockTime`): in Instant Action's simulator,
+    /// and in mission 29 however it is flown.
+    pub fn countsDown(all: *const Objects) bool {
+        return all.simulator.mode == .instant_action or all.mission_number == instant_action_mission;
+    }
+
     /// Whether the mission is one of the training missions (`training_missions`), in which the
     /// flight instructor clears the player's ship to land and `SetInvulnerability` reaches the
     /// players' ships too.
@@ -618,6 +621,12 @@ pub const Objects = struct {
         return all.mission_number == kamov_mission and !all.mission25_second_part;
     }
 
+    /// The type `create_object` makes an object asked for as `asked` of in slot `index`: in a
+    /// player's slot, a Kamov in mission 25's first part, or else the ship the loadout chose, its
+    /// `t_` twin from `twins_from_mission` on; in any other slot, `asked`.
+    ///
+    /// Not ported: a multiplayer game, where every slot takes `asked`, and the rule of
+    /// `simulator_mode` by which a type 13 becomes a Reliant.
     pub fn slotType(all: *const Objects, index: u16, asked: gameobj.Type) gameobj.Type {
         if (index >= all.players or index >= all.loadout_ships.len) return asked;
         if (all.kamovPart()) return .kamov;
@@ -665,6 +674,49 @@ pub const kamov_mission = 25;
 /// `permission_to_land`).
 pub const training_missions = [2]u16{ 30, 35 };
 
+/// Mission 29, which INSTANT ACTION flies, and whose display counts down (`0x00486206`).
+pub const instant_action_mission = 29;
+
+/// The simulator the front end runs a mission in: `simulator_mode` (`0x00524FE4`), and `simulator`
+/// (`0x0057E044`), which the main menu's INSTANT ACTION sets as well. Out of the simulator, the
+/// wingmen hear their keys (`frame_controls`), and the player's ship takes the loadout screen's
+/// weapons (`create_object`, `cmd_ReplenishWeapons`).
+pub const Simulator = struct {
+    mode: Mode = .none,
+    /// Set while the main menu's INSTANT ACTION runs.
+    main_menu: bool = false,
+
+    /// What the simulator runs, as the loading screen names it (`0x004AD0A0`).
+    pub const Mode = enum(u8) {
+        /// No simulator: PREPARING FOR LAUNCH.
+        none = 0,
+        /// The Reliant's simulator's training: Calibrating Simulator.
+        training = 1,
+        /// Instant Action, mission 29: Preparing for Instant Action.
+        instant_action = 2,
+        _,
+    };
+
+    /// Whether the mission is simulated.
+    pub fn simulated(simulator: Simulator) bool {
+        return simulator.main_menu or simulator.mode != .none;
+    }
+};
+
+test Simulator {
+    try std.testing.expect(!(Simulator{}).simulated());
+    try std.testing.expect((Simulator{ .mode = .instant_action, .main_menu = true }).simulated());
+    try std.testing.expect((Simulator{ .mode = .training }).simulated());
+    var all: Objects = undefined;
+    all.simulator = .{};
+    all.mission_number = instant_action_mission;
+    try std.testing.expect(all.countsDown());
+    all.mission_number = 1;
+    try std.testing.expect(!all.countsDown());
+    all.simulator.mode = .instant_action;
+    try std.testing.expect(all.countsDown());
+}
+
 /// What goes wrong in `create_object`, which stops the game with a fatal error for either.
 pub const Error = error{
     /// "Overrun in GO array": the slot is past the last, or none is left to hand out.
@@ -709,8 +761,8 @@ fn wreckOf(object_type: gameobj.Type) ?Wreck {
 /// burns for good, its rays flickering, with its burn lights and smoke (`explode.burnPart`). The
 /// port does it once the object is made, as the split makes the wreck (`explode.split`).
 ///
-/// Not ported: the rest of `create_object` for single types, such as the Protogate's power core,
-/// which burns with rays alone ([#233](https://github.com/vdmkenny/openreliant/issues/233)).
+/// Not ported: the rest of `create_object` for single types but the gates (`gateMade`)
+/// ([#233](https://github.com/vdmkenny/openreliant/issues/233)).
 pub fn wreckMade(world: gameobj.World, index: u16) void {
     const slot = &world.objects.slots[index];
     const wreck = wreckOf(slot.object.type) orelse return;
@@ -719,6 +771,46 @@ pub fn wreckMade(world: gameobj.World, index: u16) void {
     };
     explode.burnPart(world, index, wreck.part, .{ .forever = true, .flickers = true, .lights = true });
 }
+
+/// The part of `create_object` for a Coalition gate (`0x00467D2B`, `0x0046823A`), once it is made
+/// where the world can see it: a tunnel stands in it, of a proto gate's colours for the prototype
+/// and an advanced gate's for the advanced one (`wgate.Gates.make`), at the middle of the first two
+/// points of the door list of the part that holds it, where that part stands from the one it hangs
+/// from. A prototype's power core burns for good, with steady rays alone (`explode.burnPart`), and
+/// each of the gate's parts plays its `Rotate End` track, an advanced gate's playing `Rotate Inner`
+/// first at its inner ring's pace (`wgate.inner_ring_speed`), where it has either.
+pub fn gateMade(world: gameobj.World, index: u16) void {
+    const slot = &world.objects.slots[index];
+    const kind: wgate.Kind, const holder: usize = switch (slot.object.type) {
+        .proto_gate => .{ .proto, proto_gate_holder },
+        .advanced_gate => .{ .advanced, advanced_gate_holder },
+        else => return,
+    };
+    const gates = world.gates orelse return;
+    const model = if (slot.model) |*live| live else return;
+    if (holder >= model.parts.len) return;
+    const ref: objects.PartRef = .{ .model = model, .index = holder };
+    const door = (ref.data() orelse return).pointList(.door) orelse return;
+    if (door.points.len < 2) return;
+    const middle = (gameobj.vector(door.points[0].position) + gameobj.vector(door.points[1].position)) * @as(Vector, @splat(0.5));
+    if (kind == .proto) explode.burnPart(world, index, proto_power_core, .{ .forever = true, .flickers = false, .lights = false });
+    _ = gates.make(world, index, kind, ref.part().frameWithin(.{}).point(middle)) catch |err| {
+        std.log.warn("the gate in slot {d} opens no tunnel: {s}", .{ index, @errorName(err) });
+    };
+    for (0..model.parts.len) |part| {
+        if (kind == .advanced) model.playNamed(part, rotate_inner, 0, null, wgate.inner_ring_speed);
+        model.playNamed(part, rotate_end, 0, null, wgate.ring_speed);
+    }
+}
+
+/// The part whose door list places a gate's tunnel, the prototype's and the advanced gate's
+/// (`0x00467D2B`, `0x0046823A`); the prototype's power core (`0x004F9D78`); and the gates' tracks
+/// (`0x004F9D6C`, `0x004F9DA4`).
+const proto_gate_holder = 1;
+const advanced_gate_holder = 6;
+const proto_power_core = "Protogate Power core";
+const rotate_end = "Rotate End";
+const rotate_inner = "Rotate Inner";
 
 /// The planets' types, whose objects `create_object` sets up as planets (`planetMade`): Neptune to
 /// Venus, and their models of less detail.
@@ -798,10 +890,9 @@ fn recentreMesh(mesh: *@import("../surrender/surrenderlib/srapiext.zig").Mesh) v
 /// and is not debris gets its shields' bubble (`shield.Bubble`). A type that is another under a
 /// second number takes the other's stats (`donor`), and its number once it is made.
 ///
-/// Its missile racks are fitted by the loadout `tier` a mission's ship record asks for, as
-/// `settledTier` settles it for the type asked for (`loadoutByTier`, `fitRacks`), with 5000 more of
-/// the afterburner's fuel for each fuel pod. Given a player's slot, it makes the type the loadout
-/// chose (`Objects.slotType`).
+/// It is armed by the loadout `tier` a mission's ship record asks for, as `settledTier` settles it
+/// for the type asked for (`arm`). Given a player's slot, it makes the type the loadout chose
+/// (`Objects.slotType`).
 ///
 /// Not ported: the components (#40); what it does for capital ships, gates and other single types
 /// but the wrecks and the planets (#233, `wreckMade`, `planetMade`); for a player's slot, the
@@ -918,18 +1009,13 @@ pub fn createObject(all: *Objects, tables: *Stats, types: Types, wanted: ?u16, a
     }
     object.wing_icon = 0;
     pilots.setPilot(object, if (combat.side == .hostile) coalition_pilot else 0);
-    // Each quadrant's shields and armour full.
-    object.shields = .all(combat.fullShields() - 1);
-    object.armor = .all(combat.startingArmor());
-    main.armorConditions(object, combat);
+    makeWhole(object, combat);
     if (!object.flags.components and combat.class != .debris) slot.shield = try shield.Bubble.create(all.gpa, object.radius, combat.side);
 
     object.engines_intact = 1;
     object.passes_through = @splat(.none);
     object.fighting = .none;
     object.power_up = .none;
-    object.afterburner_fuel = combat.afterburner_fuel * 100;
-    object.countermeasures = gameobj.countermeasures_when_created;
     // The power shared evenly, at (1, 1) on the power ball.
     object.gun_factor = 1;
     object.speed_factor = 1;
@@ -957,17 +1043,8 @@ pub fn createObject(all: *Objects, tables: *Stats, types: Types, wanted: ?u16, a
         lead.side = .first;
         if (guns.gunAt(slot.guns, second)) |other| other.side = .second;
     }
-    // Its guns charged.
-    object.gun_charge = combat.gun_energy;
-    object.rounds = combat.rounds;
     object.gun_mode = .created(combat.gun_groups);
-    if (slot.model) |*model| {
-        loadoutByTier(object, model, settledTier(tier, asked, all.campaign_tier));
-        try fitRacks(all.gpa, object, model, if (slot.type) |loaded| loaded.effects else .{});
-    }
-    for (object.fittedRacks()) |rack| {
-        if (rack.type == .fuel_pod) object.afterburner_fuel += fuel_pod_fuel;
-    }
+    try arm(all.gpa, slot, settledTier(tier, asked, all.campaign_tier));
     ai.setTargetable(object, combat, true);
     all.exhaust.offer(all, index);
     object.type = @enumFromInt(becomes);
@@ -976,6 +1053,38 @@ pub fn createObject(all: *Objects, tables: *Stats, types: Types, wanted: ?u16, a
 
 /// The afterburner's fuel a fuel pod adds, in hundredths of a second: 50 seconds.
 pub const fuel_pod_fuel = 5000;
+
+/// The weapons `create_object` gives the object in `slot`, which a re-arm gives it again
+/// (`order_dock`, `cmd_ReplenishWeapons`): racks of the loadout `tier` on its missile hardpoints
+/// (`loadoutByTier`), fitted and filled (`fitRacks`), what hung there before let go; its
+/// countermeasures; the afterburner's fuel of its type, 5000 more for each fuel pod; and its guns
+/// charged, with their rounds.
+///
+/// Not ported: a multiplayer game, where a re-arm leaves the afterburner's fuel as it is.
+pub fn arm(gpa: Allocator, slot: *Slot, tier: u2) Allocator.Error!void {
+    const object = &slot.object;
+    const combat = slot.combat orelse return;
+    if (slot.model) |*model| {
+        loadoutByTier(object, model, tier);
+        try fitRacks(gpa, object, model, if (slot.type) |loaded| loaded.effects else .{});
+    }
+    object.countermeasures = gameobj.countermeasures_when_created;
+    object.afterburner_fuel = combat.afterburner_fuel * 100;
+    for (object.fittedRacks()) |rack| {
+        if (rack.type == .fuel_pod) object.afterburner_fuel += fuel_pod_fuel;
+    }
+    object.gun_charge = combat.gun_energy;
+    object.rounds = combat.rounds;
+}
+
+/// Each quadrant's shields and armour full, as `create_object` makes an object and
+/// `cmd_ReplenishWeapons` makes it whole again, and what its armour does to it
+/// (`main.armorConditions`).
+pub fn makeWhole(object: *GameObject, combat: *const ShipCombat) void {
+    object.shields = .all(combat.fullShields() - 1);
+    object.armor = .all(combat.startingArmor());
+    main.armorConditions(object, combat);
+}
 
 /// The last ship type the campaign's tier fits: the player's twelve fighters.
 const last_fighter = 11;
@@ -1415,6 +1524,47 @@ test planetMade {
     // Lit by the second key light alone.
     try std.testing.expect(!@import("backdrop.zig").initialLights().get(.key_01).reaches(part.object.light_mask));
     try std.testing.expect(@import("backdrop.zig").initialLights().get(.key_08).reaches(part.object.light_mask));
+}
+
+test gateMade {
+    const gpa = std.testing.allocator;
+    var mission: gameobj.testing.Mission = undefined;
+    try mission.init(gpa);
+    defer mission.deinit();
+    var built: wgate.testing.Built = undefined;
+    try built.init(gpa);
+    defer built.deinit(gpa);
+    var world = mission.world();
+    world.gates = &built.gates;
+
+    // A prototype whose part 1 stands 1000 up, its door's first two points either side of its
+    // origin, 100 along.
+    const point = struct {
+        fn at(x: f32, y: f32, z: f32) shp.Point {
+            return .{ ._unknown_00 = 0, .vertex = 0, .position = .{ .x = x, .y = y, .z = z } };
+        }
+    }.at;
+    var door = [2]shp.Point{ point(-50, 0, 100), point(50, 0, 100) };
+    var lists = [1]shp.PointList{.{ .kind = .door, .points = &door }};
+    var data: [2]shp.PartData = @splat(objects.testing.part());
+    data[1].point_lists = &lists;
+    const source: shp.Model = .{ .header = std.mem.zeroes(shp.Header), .parts = &data, .trailing_bytes = 0 };
+    var levels = [1]@import("../surrender/surrenderlib/srapiext.zig").Level{.{ .mesh = &srofiles.empty, .until = std.math.inf(f32) }};
+    var parts: [2]objects.Model.Part = @splat(.{ .hidden = false, .parent = null, .origin = @splat(0), .object = .{ .flags = .{}, .position = @splat(0), .radius = 1, .levels = &levels } });
+    parts[1].origin = .{ 0, 1000, 0 };
+    const gate = try mission.add(.proto_gate, @splat(0));
+    const slot = mission.slot(gate);
+    slot.model = .{ .source = &source, .parts = &parts, .order = &.{}, .lights = &.{}, .glows = &.{}, .mounts = &.{} };
+    defer slot.model = null;
+    gateMade(world, gate);
+    const record = built.gates.of(gate).?;
+    try std.testing.expectEqual(wgate.Kind.proto, record.kind);
+    try std.testing.expectEqual(Vector{ 0, 1000, 100 }, record.at);
+
+    // Any other type makes no tunnel.
+    const other = try mission.add(.predator, @splat(0));
+    gateMade(world, other);
+    try std.testing.expectEqual(null, built.gates.of(other));
 }
 
 test wreckMade {
