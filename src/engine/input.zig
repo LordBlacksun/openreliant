@@ -1003,8 +1003,8 @@ pub const Player = struct {
     /// (`videoreports.permissionToLand`).
     permission_heard_from: u32 = 0,
     /// Whether the pilot is a woman (`0x00562F16`), whose own lines the radio plays in a woman's
-    /// voice (`videoreports.playerSays`). The front end's new pilot screen sets it; until it is
-    /// ported ([#43](https://github.com/vdmkenny/openreliant/issues/43)) the pilot is a man.
+    /// voice (`videoreports.playerSays`). The pilot roster sets it (`pilot_roster.Pilot`), for
+    /// each mission the front end starts.
     female: bool = false,
     /// The cutaway the player's launch from the Reliant shows.
     cutaway: @import("game/launch/reliant.zig").Cutaway = .none,

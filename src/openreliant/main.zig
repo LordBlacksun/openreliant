@@ -114,7 +114,7 @@ const docs: std.enums.EnumArray(Arg, Doc) = .init(.{
     .@"--mission" = .{ .section = .mission, .value = "<number>", .text = "play this mission at once rather than open the main menu: the number the game names its file by, mission<number>.dte, from the game's missions folder or resource.hog; 0 is OpenReliant's sandbox, which openreliant carries where the game has no mission 0" },
     .@"--ship" = .{ .section = .mission, .value = "<type>", .text = "the ship type to fly, by its number in shipstats.bin, in place of the loadout screen's choice, with its default missiles; the mission's own by default" },
     .@"--view" = .{ .section = .mission, .value = "<0|1|2>", .text = "the view it starts in, as the game's settings keep it: 0 the cockpit; 1 the chase view; 2 no cockpit. The settings' own by default, which the pause menu's video screen changes" },
-    .@"--difficulty" = .{ .section = .mission, .value = "<easy|medium|hard>", .text = "the game's difficulty: how hard hits land on your ship, and shots on the enemy; medium by default, as in the game" },
+    .@"--difficulty" = .{ .section = .mission, .value = "<easy|medium|hard>", .text = "the game's difficulty: how hard hits land on your ship, and shots on the enemy. By default, as in the game, medium with --mission, where a new campaign's starts, and easy in the main menu until SET GAME DIFFICULTY sets it" },
     .@"--music" = .{ .section = .mission, .value = "<file>", .text = "a piece from the game's music folder to play from the start, until the mission's script plays its own; none by default" },
     .@"--no-pause-menu" = .{ .section = .mission, .text = "with --mission, fly the mission again as soon as it ends, where it otherwise ends in the game's pause menu" },
     .@"--fullscreen" = .{ .section = .display, .text = "fill the display; Alt and Enter switch while playing" },
@@ -217,7 +217,9 @@ const Options = struct {
     ship: ?u8 = null,
     /// The options' cockpit setting, for the run; the ini's `[Device] View` without it.
     cockpit: ?camera.CockpitSetting = null,
-    difficulty: game.collision.Difficulty = .medium,
+    /// The game's difficulty, for the run; null for medium with `--mission`, and for the game's
+    /// own, easy until SET GAME DIFFICULTY sets it, in the front end.
+    difficulty: ?game.collision.Difficulty = null,
     screenshot: ?[]const u8 = null,
     /// The game ticks a screenshot runs before it is taken, one a frame.
     screenshot_ticks: u32 = minimum_screenshot_ticks,
@@ -669,6 +671,8 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
     objects.bullets.shot_lights = options.shot_lights;
     var player: engine.input.Player = .{};
     var devices: engine.input.Devices = .{};
+    // The characters typed into the window, which its procedure queues (`WM_CHAR`).
+    var typed: game.winmain.Typed = .{};
     // The game's settings file, which `load_key_config` reads the input settings from and the
     // pause menu's screens write to. If it's missing, every setting keeps its default.
     var settings_file: engine.profile.File = .{ .arena = arena, .profile = .read(io, arena, directory) };
@@ -779,7 +783,7 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
     while (lacking.next()) |effect| std.log.warn("forces\\{s} is missing or isn't an effect file: it plays nothing", .{effect.fileName()});
     var force_feedback: engine.input.force.Forces = .{ .library = &found_forces.library, .settings = options.forces };
     // What the objects run in, the camera's view brought up to date each frame.
-    var world: game.gameobj.World = .{ .forces = &force_feedback, .objects = objects, .player = &player, .clock = &clock, .view = view.view, .shake = &view.hit_shake, .random = &rand, .difficulty = options.difficulty, .hangar_beacons = options.hangar_beacons, .touchdown = options.touchdown, .hearing = hearing, .camera = &view, .explosions = &explosions, .particles = &particles, .smoke = &smoke, .gun_particles = &gun_particles, .shockwaves = &shockwaves, .trails = &trails, .countermeasures = &countermeasures, .sparks = &sparks, .shields = &shields, .rays = &rays, .tractors = &tractors, .rippers = &rippers, .jump_effects = &jump_effects, .atmospheres = &atmospheres, .escort_marker = escort_marker, .flash = &flash, .spawn = .{ .tables = tables, .types = types.types() }, .environment = &environment, .radio = &radio, .gates = &gates };
+    var world: game.gameobj.World = .{ .forces = &force_feedback, .objects = objects, .player = &player, .clock = &clock, .view = view.view, .shake = &view.hit_shake, .random = &rand, .difficulty = options.difficulty orelse .medium, .hangar_beacons = options.hangar_beacons, .touchdown = options.touchdown, .hearing = hearing, .camera = &view, .explosions = &explosions, .particles = &particles, .smoke = &smoke, .gun_particles = &gun_particles, .shockwaves = &shockwaves, .trails = &trails, .countermeasures = &countermeasures, .sparks = &sparks, .shields = &shields, .rays = &rays, .tractors = &tractors, .rippers = &rippers, .jump_effects = &jump_effects, .atmospheres = &atmospheres, .escort_marker = escort_marker, .flash = &flash, .spawn = .{ .tables = tables, .types = types.types() }, .environment = &environment, .radio = &radio, .gates = &gates };
 
     // The pause menu, which stands in the display's place while the game is paused.
     var pause_menu: game.hudoptions.PauseMenu = .{};
@@ -831,10 +835,20 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
     if (options.mission != null) try play.start(.{ .world = world, .clock = &clock, .devices = &devices });
     // The front end, where the game opens unless `--mission` names a mission, and what it draws
     // with; whether it is shown, and whether the mission being flown was started from it.
-    var front: engine.genilib.interf.Interface = .{};
+    var front: engine.genilib.interf.Interface = .{ .pilot = .{ .difficulty = options.difficulty orelse .easy } };
     var front_resources: ?engine.genilib.interf.Resources = null;
     defer if (front_resources) |*open| open.close();
     var in_front_end = options.mission == null;
+    // The pilot as the game starts: the call sign the profile gives, as `campaign_new` reads it,
+    // and the list of call signs, which `WinMain` reads and writes straight back (`0x004A919B`).
+    if (in_front_end) {
+        if (readGameFile(io, arena, directory, game.gameflow.profile_name)) |bytes| {
+            front.pilot.call_sign.set(game.gameflow.profileCallSign(bytes));
+        } else |_| {}
+        const player_name = strings.string(@intFromEnum(game.interface.pilot_roster.String.player)) orelse "";
+        front.pilot_roster.list = game.winmain.loadCallSigns(settings_file.profile, player_name);
+        try game.winmain.saveCallSigns(&front.pilot_roster.list, &settings_file);
+    }
     var from_front_end = false;
     var front_ticks = platform.window.ticks();
     // A piece of music asked for, as a mission's script plays one (`cmd_PlayMusic`): from `music\`,
@@ -879,6 +893,7 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
             .key => |key| if (options.screenshot == null) {
                 devices.keyboard.down[@intFromEnum(key.scan)] = key.down;
             },
+            .typed => |character| if (options.screenshot == null) typed.push(game.language.fromUnicode(character)),
             .controllers => if (options.screenshot == null) connectController(arena, &devices, &controller, settings_file.profile),
             .active => |active| app.active = active or frames_left != null,
             .pointer => |pointer| if (options.screenshot == null) {
@@ -903,8 +918,6 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
         world.mission = if (play.loaded) |loaded| &loaded.bound else null;
         world.events = if (play.loaded) |loaded| &loaded.events else null;
         world.variables = if (play.loaded) |loaded| &loaded.script.variables else null;
-        const orders: game.aigeneric.Context = .{ .world = world, .clock = &clock, .devices = &devices };
-        const slot = &objects.slots[objects.player];
         // The front end's frame while it is shown, as `interface_run` runs its screens, which the
         // keyboard is read for each pass; the mission it picks starts at once, with its clocks
         // zeroed as `mission_run` zeroes them.
@@ -915,7 +928,16 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
             front_ticks = ticks;
             devices.keyboard.read();
             sound.updateMusic();
-            if (front.frame(.{ .devices = &devices, .window = size, .elapsed = elapsed, .sound = sound, .bank = stdsmp })) |outcome| switch (outcome) {
+            if (front.frame(.{
+                .devices = &devices,
+                .typed = &typed,
+                .window = size,
+                .elapsed = elapsed,
+                .sound = sound,
+                .bank = stdsmp,
+                .resources = &front_resources.?,
+                .settings = &settings_file,
+            })) |outcome| switch (outcome) {
                 .quit => return,
                 .fly => |flight| {
                     play.number = flight.mission;
@@ -927,14 +949,22 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
                     // the simulator it runs in.
                     objects.loadout_ships[objects.player] = if (flight.ship orelse options.ship) |ship| @enumFromInt(ship) else null;
                     objects.simulator = flight.simulator;
+                    // The pilot the front end has set flies it: the radio says the pilot's own
+                    // lines in the pilot's voice, and hits land by the game's difficulty.
+                    player.female = front.pilot.female;
+                    world.difficulty = front.pilot.difficulty;
                     sound.closeMusic();
                     clock.start(platform.window.ticks());
-                    try play.start(orders);
+                    try play.start(.{ .world = world, .clock = &clock, .devices = &devices });
                     in_front_end = false;
                     from_front_end = true;
                 },
             };
         }
+        // The window takes text while the front end has a line to type into.
+        window.takeText(in_front_end and front.takesText());
+        const orders: game.aigeneric.Context = .{ .world = world, .clock = &clock, .devices = &devices };
+        const slot = &objects.slots[objects.player];
         if (!in_front_end) {
             // The timer's ticks since the last pass, then a game tick for each, as `mission_run` paces
             // them: the simulation steps on every fourth, reading the keyboard as it goes, and runs the
@@ -1487,10 +1517,10 @@ test Options {
     try std.testing.expectError(error.Usage, parsed(&.{ "--ship", "0x0E" }));
     try std.testing.expectError(error.Usage, parsed(&.{"--bogus"}));
     try std.testing.expectEqualStrings("shot.png", (try parsed(&.{ "--screenshot", "shot.png" })).screenshot.?);
-    // Medium, the game's own default, unless told otherwise.
-    try std.testing.expectEqual(.medium, (try parsed(&.{})).difficulty);
-    try std.testing.expectEqual(.hard, (try parsed(&.{ "--difficulty", "hard" })).difficulty);
-    try std.testing.expectEqual(.medium, (try parsed(&.{ "--original", "--difficulty", "medium" })).difficulty);
+    // As the game has it unless told otherwise.
+    try std.testing.expectEqual(null, (try parsed(&.{})).difficulty);
+    try std.testing.expectEqual(.hard, (try parsed(&.{ "--difficulty", "hard" })).difficulty.?);
+    try std.testing.expectEqual(.medium, (try parsed(&.{ "--original", "--difficulty", "medium" })).difficulty.?);
     try std.testing.expectError(error.Usage, parsed(&.{ "--difficulty", "ace" }));
 
     // The improvements on by default; the original's look, and single settings after it.

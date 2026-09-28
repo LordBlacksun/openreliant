@@ -74,6 +74,46 @@ pub const Canvas = struct {
         hud.drawImage(canvas.target, picture, canvas.corner(), .{ 1, 1, 1, 1 }, canvas.scale() * @as(f32, @floatFromInt(size[0])) / across, .{});
     }
 
+    /// Draws a line in `colour` from the pixel at `from` to the pixel at `to`, both included
+    /// (`VFX_line_draw`).
+    pub fn line(canvas: Canvas, from: [2]i32, to: [2]i32, colour: [3]f32) void {
+        hud.drawLine(canvas.target, canvas.pixelAt(from), canvas.pixelAt(to), hud.atBrightness(colour, 1), canvas.scale());
+    }
+
+    /// Fills the pixels from `from` to `to`, both included, with `colour` (`VFX_pane_wipe`).
+    pub fn wipe(canvas: Canvas, from: [2]i32, to: [2]i32, colour: [3]f32) void {
+        const s = canvas.scale();
+        const start = canvas.pixelAt(from);
+        const end = canvas.pixelAt(to);
+        hud.drawFilled(canvas.target, .{ .left = start[0], .top = start[1], .right = end[0] + s, .bottom = end[1] + s }, hud.atBrightness(colour, 1));
+    }
+
+    /// `interface_box` (`0x00435C60`): the frame round a box `extent` across and down from `at`, at a
+    /// brightness of 1. Its top and left edges are light (`box_light`), its right and bottom dark
+    /// (`box_dark`), each a pixel short of the corner the other starts from, and a pixel in runs a
+    /// second frame, all in between (`box_inner`).
+    pub fn box(canvas: Canvas, at: [2]i32, extent: [2]i32) void {
+        const x = at[0];
+        const y = at[1];
+        const right = x + extent[0];
+        const bottom = y + extent[1];
+        canvas.line(.{ x, y }, .{ right, y }, box_light);
+        canvas.line(.{ x, y }, .{ x, bottom }, box_light);
+        canvas.line(.{ right, y + 1 }, .{ right, bottom }, box_dark);
+        canvas.line(.{ right, bottom }, .{ x + 1, bottom }, box_dark);
+        canvas.line(.{ x + 1, y + 1 }, .{ right - 1, y + 1 }, box_inner);
+        canvas.line(.{ x + 1, bottom - 1 }, .{ right - 1, bottom - 1 }, box_inner);
+        canvas.line(.{ x + 1, y + 1 }, .{ x + 1, bottom - 1 }, box_inner);
+        canvas.line(.{ right - 1, y + 1 }, .{ right - 1, bottom - 1 }, box_inner);
+    }
+
+    /// Where the pixel at `at`, a point of the front end's screen, starts in the window.
+    fn pixelAt(canvas: Canvas, at: [2]i32) hud.Point {
+        const s = canvas.scale();
+        const from = canvas.corner();
+        return .{ from[0] + @as(f32, @floatFromInt(at[0])) * s, from[1] + @as(f32, @floatFromInt(at[1])) * s };
+    }
+
     /// Draws `picture` with its top left corner at `at`.
     pub fn image(canvas: Canvas, picture: *srtexture.Image, at: [2]i32) void {
         const s = canvas.scale();
@@ -105,6 +145,12 @@ pub const Canvas = struct {
         try canvas.text(font, at, words, colour, alignment);
     }
 };
+
+/// `interface_box`'s colours at a brightness of 1 (`0x004DC6D0`, `0x004DC6CC`; `0x004DC6C8`,
+/// `0x004DC6C4`; `0x004DC6C0`, `0x004DC6BC`), in 255ths: no red, and green and blue.
+const box_light = hud.rgb(0x00A7FF);
+const box_dark = hud.rgb(0x005785);
+const box_inner = hud.rgb(0x0086CD);
 
 /// How many of a window's pixels one of the front end's spans in a window of `window`: as many as
 /// fit the front end in it.
@@ -144,6 +190,12 @@ comptime {
 pub fn hit(rects: []const Rect, at: [2]i32) ?usize {
     for (rects, 0..) |rect, index| if (rect.holds(at)) return index;
     return null;
+}
+
+/// `hit` over a screen's items, each with its rectangle: the first item that holds `at`.
+pub fn itemAt(comptime Item: type, rects: *const std.EnumArray(Item, Rect), at: [2]i32) ?Item {
+    const index = hit(&rects.values, at) orelse return null;
+    return std.EnumArray(Item, Rect).Indexer.keyForIndex(index);
 }
 
 /// The front end's pointer (`interface_pointer_x`, `interface_pointer_y`), its buttons and its
@@ -237,6 +289,17 @@ test hit {
     try std.testing.expectEqual(null, hit(&rects, .{ 27, 200 }));
     try std.testing.expectEqual(null, hit(&rects, .{ 211, 200 }));
     try std.testing.expectEqual(null, hit(&rects, .{ 600, 20 }));
+}
+
+test itemAt {
+    const Item = enum { panel, button };
+    const rects = std.EnumArray(Item, Rect).init(.{
+        .panel = .{ .x = 27, .y = 123, .width = 184, .height = 290 },
+        .button = .{ .x = 100, .y = 200, .width = 20, .height = 15 },
+    });
+    // The first that holds the point, where two do.
+    try std.testing.expectEqual(.panel, itemAt(Item, &rects, .{ 110, 205 }));
+    try std.testing.expectEqual(null, itemAt(Item, &rects, .{ 600, 20 }));
 }
 
 test Pointer {

@@ -28,7 +28,7 @@ OpenReliant is in active development. The first campaign mission is playable fro
 - **Controls**: Mouse and keyboard, flight sticks, HOTAS and gamepads, with force feedback played as rumble.
 - **Graphics**: Per-pixel shading with gamma-corrected lighting, and real-time shadows. Rendering runs at native resolution in 32-bit colour, with bloom, anti-aliasing, smooth motion at high frame rates, and more detailed explosions, shields and planets. `--original` restores the original graphics and sound.
 - **Audio**: 3D positional sound with reverb and headphone HRTF.
-- **In Development**: The rest of the front end (pilots, briefings, loadout, settings), the remaining campaign missions, and multiplayer. See the [milestones](../../milestones) for the roadmap.
+- **In Development**: The rest of the front end (the Reliant's rooms, briefings, loadout, settings), the remaining campaign missions, and multiplayer. See the [milestones](../../milestones) for the roadmap.
 
 ---
 
@@ -69,7 +69,7 @@ Insert StarLancer Disc 1 into your CD drive (or prepare `.bin`/`.iso` images) an
 *(On Windows, use `.\openreliant.exe`.)*
 
 ### 3. Launch
-Open the main menu, where **Single Player** starts the first campaign mission:
+Open the main menu, where **Single Player** leads to the pilot roster, whose **Start Game** starts the first campaign mission:
 
 ```bash
 ./openreliant StarLancer

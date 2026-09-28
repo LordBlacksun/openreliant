@@ -6,15 +6,15 @@ The screens the game shows outside a mission: the main menu, the pilots, the set
 
 ## In OpenReliant
 
-[`genilib/interf.zig`](../../src/engine/genilib/interf.zig) runs the screens (`interface_run`) and opens what they draw with. [`game/interface/`](../../src/engine/game/interface) holds the screens: the front end's screen and pointer in [`canvas.zig`](../../src/engine/game/interface/canvas.zig), the main menu in [`main_menu.zig`](../../src/engine/game/interface/main_menu.zig), and the YES or NO dialog in [`dialog.zig`](../../src/engine/game/interface/dialog.zig). The picture behind the screens is `matmanager.Background` ([`game/matmanager.zig`](../../src/engine/game/matmanager.zig)). The loading screens are in [`game/xtrabits/loading.zig`](../../src/engine/game/xtrabits/loading.zig).
+[`genilib/interf.zig`](../../src/engine/genilib/interf.zig) runs the screens (`interface_run`) and opens what they draw with. [`game/interface/`](../../src/engine/game/interface) holds the screens: the front end's screen and pointer in [`canvas.zig`](../../src/engine/game/interface/canvas.zig), the main menu in [`main_menu.zig`](../../src/engine/game/interface/main_menu.zig), the pilot roster in [`pilot_roster.zig`](../../src/engine/game/interface/pilot_roster.zig), and the YES or NO dialog in [`dialog.zig`](../../src/engine/game/interface/dialog.zig). The picture behind the screens is `matmanager.Background` ([`game/matmanager.zig`](../../src/engine/game/matmanager.zig)). The loading screens are in [`game/xtrabits/loading.zig`](../../src/engine/game/xtrabits/loading.zig).
 
 OpenReliant opens in the front end unless `--mission` names a mission. A mission the front end starts flies at once, and when it ends, or LEAVE MISSION leaves it, OpenReliant goes back to the main menu.
 
-Ported so far: the screen loop, the main menu, QUIT's dialog, INSTANT ACTION, and the loading screens. Not yet:
+Ported so far: the screen loop, the main menu, QUIT's dialog, INSTANT ACTION, the pilot roster with SET GAME DIFFICULTY, and the loading screens. Not yet:
 
-- The other screens ([#43](https://github.com/vdmkenny/openreliant/issues/43) maps them). Until the pilot roster ([#397](https://github.com/vdmkenny/openreliant/issues/397)), the Reliant's rooms ([#398](https://github.com/vdmkenny/openreliant/issues/398)) and the briefing ([#73](https://github.com/vdmkenny/openreliant/issues/73)) are ported, SINGLE PLAYER starts the campaign's first mission. MULTI PLAYER ([#404](https://github.com/vdmkenny/openreliant/issues/404)) and GAME OPTIONS ([#400](https://github.com/vdmkenny/openreliant/issues/400)) stay on the main menu.
+- The other screens ([#43](https://github.com/vdmkenny/openreliant/issues/43) maps them). Until the Reliant's rooms ([#398](https://github.com/vdmkenny/openreliant/issues/398)) and the briefing ([#73](https://github.com/vdmkenny/openreliant/issues/73)) are ported, the pilot roster's START GAME flies the campaign's first mission. MULTI PLAYER ([#404](https://github.com/vdmkenny/openreliant/issues/404)) and GAME OPTIONS ([#400](https://github.com/vdmkenny/openreliant/issues/400)) stay on the main menu, and LOAD GAME ([#75](https://github.com/vdmkenny/openreliant/issues/75)) on the pilot roster.
 - The debriefing, which a mission's end goes to ([#73](https://github.com/vdmkenny/openreliant/issues/73)).
-- The intro and the movies between screens ([#401](https://github.com/vdmkenny/openreliant/issues/401)).
+- The intro and the movies between screens ([#401](https://github.com/vdmkenny/openreliant/issues/401)). Until they are, a screen takes no press until the button held as it was entered comes up, as the movie before it gives the press that chose it time to end.
 
 **Improvements**, each marked so in the code:
 
@@ -56,8 +56,9 @@ The front end writes with `hud_text` and `hud_text_wrapped` through `interface_t
 
 | Colour | Where |
 |---|---|
-| `0x40BCFF` | The main menu's labels, and the dialogs |
+| `0x40BCFF` | The main menu's labels, the pilot roster's, and the dialogs |
 | `0xFDB951` | A panel's labels under the pointer |
+| `0xFFFFFF` | On the pilot roster, the call sign while it is typed, the list's call signs, and a button's label under the pointer |
 | `0xFF0000` | The developers' text |
 
 ## The pointer
@@ -72,7 +73,7 @@ A screen chooses what lies under the pointer while the left button is down, rath
 
 ## The main menu
 
-`main_menu` (`0x00428B60`) shows `interface\sl_splash2.tga` behind itself (`background_set`) and reads `interface\frontend.spr` (`main_menu_shapes`), which it frees as it leaves. It starts the pointer at (320, 200), `music\New_Pensive.wav` at 127 where no music is playing, and a new campaign (`campaign_new`). OpenReliant, which has no campaign yet, starts every mission from a new campaign's variables ([Script VM](script-vm.md)).
+`main_menu` (`0x00428B60`) shows `interface\sl_splash2.tga` behind itself (`background_set`) and reads `interface\frontend.spr` (`interface_shapes`, `0x0051D60C`, which holds the shown screen's shapes), which it frees as it leaves. It starts the pointer at (320, 200), `music\New_Pensive.wav` at 127 where no music is playing, and a new campaign (`campaign_new`). OpenReliant, which has no campaign yet, starts every mission from a new campaign's variables ([Script VM](script-vm.md)).
 
 Its items are `main_menu_hotspots` (`0x004E5B90`), six shorts each: the corner and size where the pointer finds the item, what choosing it returns, and the shape a panel shows lit. The buttons' shape, 24, goes unused: the drawing lights them with shape `0x1C`.
 
@@ -139,6 +140,74 @@ The shapes take the palette of their block's set: the pointer's the first, the l
 4. YES to the left of (282, 263), NO to the right of (354, 263), in `interface_font_large`.
 
 `interface_message_draw` (`0x0042ADE0`) draws the front end's other dialog, a message with OK, while `0x0051D7D8` is set.
+
+`interface_box` (`0x00435C60`) frames a box on the screen: its top and left edges in `0x00A7FF`, its right and bottom in `0x005785`, each a pixel short of the corner the other starts from, and a second frame a pixel inside in `0x0086CD`.
+
+## The pilot roster
+
+`pilot_roster` (`0x00430490`), screen 12, which SINGLE PLAYER leads to, shows `interface\main2sin.tga` behind itself and reads `interface\frntend2.spr` (`interface_shapes`), which it frees as it leaves. Its render hook is `pilot_roster_draw` (`0x00430C60`). As it starts, the pilot is a man (`pilot_female`, `0x00562F16`), the call sign is typed afresh (`0x0052019C`) with the characters typed so far let go (`typed_keys_clear`, `0x004AADA0`), its cursor shows (`0x0052016C`), and the list of call signs is closed (`0x005202B8`). While the roster is up (`0x005D6088`), the window's procedure refuses the characters a file's name can't hold, `\/:*?<>|"` (`0x0050954C`), since the call sign names the pilot's saved games.
+
+Its items, in the order `interface_hit` tries them:
+
+| Item | Corner | Size | Does |
+|---|---|---|---|
+| The man | (62, 145) | 111 by 228 | The pilot a man |
+| The woman | (239, 151) | 102 by 275 | The pilot a woman |
+| LOAD GAME | (397, 295) | 133 by 20 | Screen 13, the saved games, after a transition movie |
+| START GAME | (397, 249) | 145 by 20 | SET GAME DIFFICULTY |
+| MAIN MENU | (292, 441) | 25 by 16 | Screen 0, after a transition movie |
+| The call sign | (397, 177) | 138 by 45 | The call sign typed afresh, with the characters typed so far let go |
+| QUIT | (324, 441) | 60 by 16 | QUIT's dialog, whose YES quits the game (`0x004AAA30`) |
+| The list's arrow | (543, 200) | 27 by 15 | Opens or closes the list, once for each press |
+
+Each pass of its loop:
+
+1. Escape leads to the main menu, as MAIN MENU does.
+2. The cursor turns on or off once 25 ticks have passed since it last did (`0x00520164`).
+3. Enter, or the keypad's Enter, ends the typing. So does the left button down anywhere but on the call sign. The pilot's profile takes the call sign as the pilot's name (`0x00562CFC`) and is written (`profile_save`), and `callsign_add` puts the call sign in the list.
+4. While the list is open, its ten rows stand down from (400, 223), each 136 by 20 and 25 below the last, and cover START GAME and LOAD GAME. With the left button down over a row, its call sign becomes the pilot's and the profile's name, the profile is written, the list closes, and the loop waits for the button to come up.
+5. With the left button down over an item, what the table says.
+
+`pilot_roster_draw` types the call sign (`call_sign`, `0x00562DCC`, 32 bytes), one character each frame while it is typed (`text_entry_step`, `0x004812F0`): a backspace takes the last character off, and any other goes on where the call sign stays narrower than 125 pixels in `interface_font_small`.
+
+### The call signs
+
+`callsign_list` (`0x005D5E8C`) holds the call signs of the last ten pilots, 50 bytes each, which `starlancer.ini` keeps as `name00` to `name09` under `[CallsignList]`. Every place is a row of the list, an empty one too (`callsign_count`, `0x00595D98`). As the game starts, `WinMain` reads them (`callsigns_load`, `0x004AAE00`), the first PLAYER (string `0xBF`) where the file has none, and writes them straight back (`callsigns_save`, `0x004AAEE0`, which then reads them again).
+
+`callsign_add` (`0x00430B80`) leaves a call sign the list holds as it is. Another goes in the first empty place, or, once the list is full, in the last, the rest moved up a place and the first let go; then the list is saved.
+
+### SET GAME DIFFICULTY
+
+START GAME puts up `difficulty_dialog` (`0x00430300`) over the roster (`0x0051D534`) and sets the difficulty (`0x00562F14`) to medium. Its two arrows, at (253, 222) and (270, 222), each 16 by 26, step the difficulty down and up, going round; START at (276, 269) and BACK at (338, 269), each 25 by 16, close it. A press acts once, until the button comes up. Escape and BACK go back to the roster, the difficulty as the arrows left it. START ends the roster: it frees the shapes, starts a new campaign (`campaign_new`), resets the campaign's wingmen's pilots (`0x0049CD20`), and returns 1.
+
+### Drawing
+
+`pilot_roster_draw`, the render hook:
+
+1. The pilot chosen, lit: shape 19 at (34, 114) for the man, shape 20 at (200, 114) for the woman.
+2. In blue, in `interface_font_large`: SELECT PILOT (string `0xB7`) centred on (217, 105), CALL SIGN (Alpha 2) (`0xB8`) from (396, 168), START GAME (`0xB9`) from (433, 247) and LOAD GAME (`0xBA`) from (433, 298); in `interface_font_small`, MAIN MENU (`0xBB`) to the left of (288, 440) and QUIT (`0xBC`) from (353, 440).
+3. The call sign's frame, `interface_box` at (398, 192), 140 by 28, and the call sign from (402, 197) in `interface_font_small`, white while it is typed and blue once it isn't. While it is typed and its cursor shows, `_` follows it in blue, at 200 down.
+4. The list's arrow, shape 24 at (543, 200), or shape 25 under the pointer; the large buttons, shape 22 at (398, 249) and (398, 300), and the small ones, shape 26 at (292, 441) and (324, 441).
+5. The button under the pointer lit, shape 23 or 27, with its label again in white.
+6. The list, where it is open: each row framed by `interface_box` at (398, 221 + 25 × row), 140 by 24, wiped black from (400, 223 + 25 × row) to (536, 243 + 25 × row), and its call sign from (404, 225 + 25 × row) in white, in `interface_font_small`.
+7. SET GAME DIFFICULTY, where it is up: its box, shape 34 at (114, 177); the arrows, shape 30 at (253, 222), with the one under the pointer lit, shape 31 there or shape 32 at (270, 222); the buttons, shape 26 at (276, 269) and (338, 269), shape 27 under the pointer. Then in blue, in `interface_font_large`: SET GAME DIFFICULTY (`0x2A6`) centred on (320, 185), EASY, MEDIUM or HARD (`0x2A7`, `0x11C`, `0x2A8`) from (289, 222), BACK (`0xF7`) from (370, 264), and START (`0x14A`) to the left of (268, 264).
+8. QUIT's dialog, where it is up, and the pointer.
+
+### What the missions take
+
+The pilot's sex and the difficulty are what the missions take from the roster: the radio says the pilot's own lines in a woman's voice for a woman ([Radio](radio.md)), and the difficulty scales damage ([Destruction](objects.md#destruction)). Both start at 0 as the game starts: a man, and easy until SET GAME DIFFICULTY sets it, so INSTANT ACTION, chosen first, is flown on easy. The call sign names the pilot's profile and saved games.
+
+OpenReliant keeps what the roster sets in `Interface.pilot`, which flies every mission the front end starts. `--difficulty` sets the difficulty the game starts with. As the game starts, `campaign_new` reads the pilot's profile, `profile.bin` (the 0xD0 bytes at `0x00562CF8`), whose name becomes the call sign (`profile_load`, `0x00475390`); where the game's folder has none, it makes one under the name PLAYER and leaves the call sign empty.
+
+Not ported:
+
+- Writing the pilot's profile, as the roster changes the call sign, as a campaign starts without one, and as each mission starts ([#74](https://github.com/vdmkenny/openreliant/issues/74), [#301](https://github.com/vdmkenny/openreliant/issues/301)). OpenReliant reads the call sign from the profile the game's folder has.
+- The saved games LOAD GAME leads to ([#75](https://github.com/vdmkenny/openreliant/issues/75)), and the transition movies ([#401](https://github.com/vdmkenny/openreliant/issues/401)).
+
+**Fixes:**
+
+- The game copies a call sign into the list, the profile's name or the call sign whatever its length; OpenReliant keeps what fits.
+- The call sign's typing goes on adding characters while the call sign stays narrow enough, whatever room its buffer has, which a call sign of narrow characters overruns; OpenReliant stops at the buffer's end.
 
 ## Backgrounds
 

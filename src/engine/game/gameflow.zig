@@ -1,9 +1,11 @@
 //! `C:\lancer\game\gameflow.cpp`: the campaign's flow from one mission to the next.
-//! **Unverified:** that `campaign_new`, `mission_reset_variables` and `mission_end_record` are this
-//! file's: they lie beside the file's known code, between `explode.cpp`'s and `gameobj.cpp`'s.
+//! **Unverified:** that `campaign_new`, `profile_load`, `mission_reset_variables` and
+//! `mission_end_record` are this file's: they lie beside the file's known code, between
+//! `explode.cpp`'s and `gameobj.cpp`'s.
 //!
 //! Ported so far: the game's variables as a campaign begins and as each attempt at a mission
-//! starts (`restartPoint`), and what a mission's end keeps of the pilot's kills (`endMission`).
+//! starts (`restartPoint`), the call sign the pilot's profile gives (`profileCallSign`), and what a
+//! mission's end keeps of the pilot's kills (`endMission`).
 
 const std = @import("std");
 
@@ -20,12 +22,33 @@ const cleared_variables = 32;
 const campaign_flags = [_]u8{ 14, 16, 17, 18, 19, 20, 21, 5, 22, 23, 29, 30, 31, 32, 35, 13, 8, 7, 6, 36 };
 
 /// `campaign_new` (`0x004751B0`) as a new campaign begins, which `WinMain` runs as the game starts:
-/// clears the first 32 of the game's variables, then sets the campaign's flags (`campaign_flags`). **Not ported:** the rest of what it sets up
-/// for the campaign: mission 1 as the next, the pilot's tallies and each mission's records, and
-/// the pilot's profile ([#74](https://github.com/vdmkenny/openreliant/issues/74)).
+/// clears the first 32 of the game's variables, then sets the campaign's flags (`campaign_flags`).
+/// **Not ported:** the rest of what it sets up for the campaign: mission 1 as the next, the pilot's
+/// tallies and each mission's records, and the pilot's profile but for its call sign
+/// (`profileCallSign`) ([#74](https://github.com/vdmkenny/openreliant/issues/74)).
 pub fn newCampaign(variables: *vm.Variables) void {
     for (0..cleared_variables) |index| variables.slot(@intCast(index)).* = 0;
     for (campaign_flags) |index| variables.slot(index).* = 1;
+}
+
+/// The pilot's profile, `profile.bin` in the game's folder (`0x00500ACC`): the 0xD0 bytes at
+/// `0x00562CF8`, the pilot's name 32 bytes from the fourth (`0x00562CFC`). `campaign_new` reads it,
+/// or makes a new one under the name PLAYER where there is none.
+pub const profile_name = "profile.bin";
+pub const profile_size = 0xD0;
+const pilot_name_at = 4;
+const pilot_name_size = 32;
+
+/// The call sign `profile_load` (`0x00475390`) gives the pilot as `campaign_new` reads the profile,
+/// `bytes` as far as the file has them: the name the profile keeps, up to its terminator
+/// (`0x004753C5`). Where the game's folder has no profile, `campaign_new` makes one and leaves the
+/// call sign as it was, empty as the game starts.
+///
+/// **Fix:** the game copies the name up to its terminator wherever that lies; OpenReliant keeps to
+/// its 32 bytes.
+pub fn profileCallSign(bytes: []const u8) []const u8 {
+    const name = bytes[@min(bytes.len, pilot_name_at)..@min(bytes.len, pilot_name_at + pilot_name_size)];
+    return std.mem.sliceTo(name, 0);
 }
 
 /// `mission_reset_variables` (`0x00475620`) before each attempt at a mission: clears the variables
@@ -120,4 +143,15 @@ test endMission {
     player.ending = .rescued;
     endMission(&player);
     try std.testing.expectEqual(7, player.kills.kept);
+}
+
+test profileCallSign {
+    var bytes: [profile_size]u8 = @splat(0);
+    @memcpy(bytes[4..][0..6], "Maniac");
+    try std.testing.expectEqualStrings("Maniac", profileCallSign(&bytes));
+    // A name with no terminator ends with its 32 bytes, and a short file gives what it holds.
+    @memset(bytes[4..][0..40], 'x');
+    try std.testing.expectEqual(32, profileCallSign(&bytes).len);
+    try std.testing.expectEqualStrings("xx", profileCallSign(bytes[0..6]));
+    try std.testing.expectEqualStrings("", profileCallSign(bytes[0..2]));
 }
