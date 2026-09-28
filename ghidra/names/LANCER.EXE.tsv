@@ -710,7 +710,7 @@ address	kind	name	type	comment
 0058a6b8	data	nebula_requested	int	Set by SetEnvironmentFXNebula, shown by environment_update
 0058a6b4	data	nebula_shown	int	
 00504000	data	nebula_fill_colours	float[21]	Red, green and blue for each of the seven nebulae
-004ff808	data	environment_effects		Thirteen 32-byte entries: switch-on and switch-off handlers, then a name
+004ff808	data	environment_effects		Thirteen 32-byte entries: switch-on and switch-off handlers, none set, then a name; the byte 4 before each entry says whether turning it on or off waits for environment_update
 005db8e8	data	timer_ticks	uint	Every tick of the timer, the paused ones included; tick_timer advances it before it looks at paused
 00587cb0	data	paused_ticks	int	Ticks game_tick has skipped while the game is paused
 00588718	data	simulation_counter	int	game_tick calls since the simulation step last did its work, which it does on the fourth
@@ -1914,3 +1914,60 @@ address	kind	name	type	comment
 0059506c	data	font_01	void **	font_01.fnt, opened with the display's fonts: the main menu's developers' text
 00588744	data	background_name	char[64]	The name of the picture shown behind the frames (background_set)
 00588740	data	background_hook	void *	A routine background_load runs in place of loading background_name, where set
+0041d7d0	function	wgate_tunnel_colours	void __fastcall (void *object, int kind)	A tunnel's colours by ring: black and clear at the mouth and the last ring, the deep colour on the ring before the last, and between them from the mouth's colour to the middle's in a straight line over 0.3 of the rings, then to the end's by the square root; blue, or red for kind 2; a software renderer's white to black
+0041dcd0	function	wgate_wipe_level	float10 __cdecl (float from, float at)	cosine_ease from from down to 0, at clamped to 0 to 1: how bright a collapsing tunnel's wipe leaves a vertex
+0041dd70	function	wgate_tunnel_build	void * __fastcall (float *radii, short kind, float size)	A tunnel's mesh object (Wgate_Mesh): rings of segments by the detail round a centre vertex, a gate's 80 times 1.2 to the 8 less the ring times its size across, a warp's 344 or so; two triangles a segment between rings, warp128 added with a highlight by the normals in a second pass but for the last band, coordinates a unit along for eight rings, flattened, and wgate_tunnel_colours
+0041e280	function	wgates_init	void (void)	The gates' start with each attempt: the tunnels' segments and rings by the detail, their textures (warp128 or ddwarp128, laser2 or ddlaserr), the flags cleared, the warps' two particle templates, and the records cleared
+0041e4a0	function	wgates_free	void (void)	The gates' end with a mission: the particle templates, every record, the warps' beams and emitters, and the Boridin's object let go
+0041fa50	function	wgate_tunnel_shape	void __fastcall (int record)	Each vertex of a record's tunnel at its ring's radius round the axis and at its ring's depth, the last ring at the one before's; at the high detail each sways across and down by up to 41.7 (a gate) or 5.83 times the segments
+0041fdf0	function	wgate_portal_set_up	void __fastcall (void *record)	A record's portal hangs from its tunnel, faces along the axis, and stands at ring rings - 5 as the tunnel stands now
+0041fe60	function	wgate_create	int __fastcall (int slot, int kind, Vec3 *at)	Takes the first free of the 32 records for a tunnel of a kind at an object: a gate's hangs from the object's frame at at, turned a half turn about Y, with two flash squares (warpin3) and its rings' depths; a warp's stands at the object with four beams and emitters; the portal made. -1 where all are taken
+00420830	function	wgate_free	void __fastcall (int record)	Lets a record go, with what its kind made
+00420920	function	wgate_find	int __fastcall (int slot)	The first record whose tunnel stands at an object, or -1
+00420950	function	wgate_tunnel_scroll	int __fastcall (void *object)	A tunnel's hook as it is drawn: scrolls its texture 3.5 across and 0.6 along for each thousandth of a tick since it last did, the first time only noting the tick
+00420a00	function	wgates_frame	void (void)	Each frame, from shield_bubbles_draw, for each record of a gate: its rings' depths sway by its time, its tunnel is shaped and its normals and bounds follow, its portal goes into the scene, and its tunnel too unless the player's ship rides the worm
+004221e0	function	wgate_tunnel_fade	void __thiscall (void *object, float at)	A collapsing gate's tunnel fading: at of its vertices, counted from the centre, take a pale grey, the ring before the last green
+00422380	function	wgate_tunnel_burn	void __thiscall (void *object, float at)	A collapsing gate's tunnel burning out: a share of its vertices flickering by sin(at times 1000), counted from the centre, take a dull red, the ring before the last blue
+00422540	function	wgate_tunnel_dent	void __fastcall (int slot)	A ship dents the tunnel of its record as it passes; the list at +0x80 it is run for is never filled
+00422680	function	node_tree_second_passes	void __fastcall (ModelNode *node, bool on)	Turns the second pass on or off of each group with a second texture of the meshes of a node and every node under it
+00422700	function	worm_create	void * __fastcall (void)	The worm the player's ship rides between gates (Worm_Mesh): 31 rings of 16 segments 10000 across and 200000 apart, drawn solid with warp128 and a highlight added by its normals, coloured by worm_colours
+004229b0	function	worm_wobble	void __thiscall (void **worm, float unused)	Each vertex of the worm sways across and down by up to 2000 about its place round the tube, at its own pace by the frame's tick
+00422ad0	function	worm_colours	void __fastcall (void *object)	The worm's colours by ring, as a proto gate's tunnel's over 31 rings
+00423020	function	wgate_warp_sizes	int __fastcall (int slot)	The entry of wgate_warp_size_table for an object's type, or -1
+00423050	function	node_tree_show_light_sprites	void __fastcall (ModelNode *node, bool shown)	Hides the light sprites (node kind 3) of a node and every node under it, or shows them again
+00469c10	function	environment_effects_create	void (void)	From backdrop_create: the effects cleared, Planet Bombard's flashes and the ice field built
+00469c20	function	environment_effects_free	void (void)	From backdrop_free: Planet Bombard's flashes and the ice field let go
+00469c30	function	environment_effects_clear	void (void)	Every effect off and asked for none, and the objects' flag changes asked for at the next jump dropped
+00469c50	function	environment_effects_frame	void (void)	From backdrop_frame: the ice field while it is on, then environment_effect_2
+00469df0	function	ice_field_create	void (void)	The ice field's rocks, 200, 500 or 800 by the detail, each a farast2 triangle showing one of five pictures, a grey of its own, 2500 from the camera in one of two bands and two arcs, a size and a turn rate of its own
+0046a130	function	ice_field_free	void (void)	Lets the ice field's rocks and their mesh go
+0046a170	function	ice_field_frame	void (void)	While the ice field is on, each rock within about 49 degrees of the camera's axis stands at its place from the camera, facing it and turned by its rate, in the background layer
+0046a250	function	ice_rock_mesh	void * (void)	The ice field's triangle: its point at its place, its base a unit up, drawn with farast2 by the coordinates each rock gives it, lit, and blended by the rock's colours
+0046a500	function	bombard_flashes_create	void (void)	Planet Bombard's ten flashes (Boom_Mesh, pbang), 25000 across one time in ten and 3000 to 18000 otherwise, which nothing draws
+0046a312	function	bombard_flashes_frame	void (void)	Planet Bombard's flashes' frame, which nothing calls
+0046a6f0	function	environment_effect_2	uint (void)	Whether effect 2 is on, which nothing reads
+0051d1a4	data	wgate_records	void *[32]	The gates' records (wgate_create, 0x88 bytes each)
+0051d224	data	wgate_mask	uint	A bit for each record in use
+0051d198	data	wgate_segments	int	The tunnels' segments round, by the detail
+0051d128	data	wgate_rings	int	The tunnels' rings along, by the detail
+0051d130	data	wgate_segment_step	float	One over wgate_segments
+0051d12c	data	wgate_ring_step	float	One over wgate_rings
+0051d1a0	data	wgate_texture	void *	The tunnels' texture: warp128, or ddwarp128 without a hardware renderer
+0051d13c	data	wgate_exiting	bool	Set while a ship goes out through a tunnel, which the next Fixed Gate Jump Out waits for
+0051d13e	data	wgate_riding	bool	Set while the player's ship rides the worm, which leaves the gates' tunnels out of the scene
+0051d19c	data	worm	void *	The worm the player's ship rides, made anew for each of its jumps out
+004e3f68	data	wgate_spread	int	Where the next ship comes out of Fixed Gate Jump In, turned 0.3 about the tunnel's axis a step, from -2 to 2; -2 at the start
+004e3f50	data	wgate_segments_by_detail	int[3]	9, 12 and 16
+004e3f5c	data	wgate_rings_by_detail	int[3]	6, 8 and 12
+00552308	data	ice_rock_count	int	The ice field's rocks: 200, 500 or 800 by the detail
+0054f108	data	ice_rocks	void *[800]	The ice field's rocks' mesh objects
+0054fd88	data	ice_rock_offsets	Vec3[800]	From the camera to each of the ice field's rocks, 2500 long
+00552524	data	ice_rock_spins	float[800]	How fast each of the ice field's rocks turns, in radians a tick
+005524a0	data	ice_texture	void *	The ice field's texture, farast2
+005524a4	data	ice_mesh	void *	The ice field's triangle (ice_rock_mesh)
+004ff990	data	ice_rock_pictures	float[30]	The five pictures of rocks in farast2, three texture coordinates each
+0055249c	data	environment_effects_on	uint	The environment effects on, a bit each
+005531a4	data	environment_effects_asked	uint	The environment effects asked for, which environment_update turns on and off
+004ff748	data	environment_effects_ready	uint	The effects environment_effect_set takes: 0 and 2
+00588338	data	mission_terminated	int	How many times the script has ended the mission (TerminateMission): mission_run zeroes it and ends its loop once it is set, and a mission below 28 then ends as the player's ship's destruction does
+00524fe4	data	simulator_mode	int	The game's mode: 0 none, PREPARING FOR LAUNCH; 1 the Reliant's simulator's training, Calibrating Simulator; 2 Instant Action, Preparing for Instant Action

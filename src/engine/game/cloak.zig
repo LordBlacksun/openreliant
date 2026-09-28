@@ -27,9 +27,9 @@ const table = @import("table.zig");
 const srapiext = @import("../surrender/surrenderlib/srapiext.zig");
 const aigeneric = @import("aigeneric.zig");
 const create = @import("create.zig");
+const ease = @import("../genilib/interf/ease.zig");
 const libcmt = @import("../libcmt.zig");
 const sound3d = @import("sound3d.zig");
-const shield = @import("shield.zig");
 const srofiles = @import("srofiles.zig");
 
 // --- The cloak --------------------------------------------------------------------------------
@@ -429,7 +429,7 @@ const shimmer_full = [3]f32{ 0, 0, 80.0 / 256.0 };
 const shimmer_turn: f32 = 0.3;
 
 /// The shimmer's colour at `strength`, easing in and out from each colour to the next
-/// (`cloak_colour_at`, `0x004631E0`, by `shield.ease`).
+/// (`cloak_colour_at`, `0x004631E0`, by `ease.cosine`).
 ///
 /// **Improvement:** the game reads it from a table of 1024 (`cloak_colour`, `0x004632B0`, from
 /// `cloak_colours`, `0x0054142C`, which `cloak_init`, `0x00463500`, fills), a step at a time; the
@@ -438,9 +438,9 @@ pub fn shimmerColour(strength: f32) [3]f32 {
     var colour: [3]f32 = undefined;
     for (&colour, shimmer_bright, shimmer_full) |*channel, bright, full| {
         channel.* = if (strength < shimmer_turn)
-            shield.ease(0, bright, strength / shimmer_turn)
+            ease.cosine(0, bright, strength / shimmer_turn)
         else
-            shield.ease(bright, full, (strength - shimmer_turn) / (1 - shimmer_turn));
+            ease.cosine(bright, full, (strength - shimmer_turn) / (1 - shimmer_turn));
     }
     return colour;
 }

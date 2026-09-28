@@ -18,8 +18,9 @@ How the payload paces a mission: a timer ticks 100 times a second, the loop runs
 - Unless the game is paused, it then executes the frame work, `mission_frame` (`0x004924B0`). The simulation advances at a fixed rate regardless of display frame rate.
 - The frame work runs every object's [orders](orders.md) via `orders_update`, and flushes script events once per frame.
 - It begins with `frame_begin` (`0x00491E00`), which sets `frame_duration` (`0x588330`) to the ticks elapsed since `frame_start` (`0x5883B0`) and sets `frame_start` to `mission_ticks`; per-frame code measures elapsed time with these values.
+- The loop ends once `mission_frame` says the mission is over, once the script has ended it (`TerminateMission` counts at `0x00588338`, which `mission_run` zeroes as it starts), or once the pause menu leaves it. A mission numbered below 28 that its script ended then ends as one the player's ship is destroyed in (`mission_ending` 1, `0x004941FC`).
 
-`game_tick` runs `simulation_step` (`0x004774D0`) unless the game is paused. `simulation_step` executes on every fourth call (25 times a second):
+`game_tick` counts `mission_ticks` on, and at every hundredth tick takes a second off the script's `countdown` ([Script VM](script-vm.md#the-games-variables)). It runs `simulation_step` (`0x004774D0`) unless the game is paused. `simulation_step` executes on every fourth call (25 times a second):
 
 - Each object's individual updates.
 - `objects_update` (`0x00468FA0`), which moves every object with `object_move` and handles collisions.

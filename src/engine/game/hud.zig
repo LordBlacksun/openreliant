@@ -50,6 +50,7 @@ const libcmt = @import("../libcmt.zig");
 const collision = @import("collision.zig");
 const sound3d = @import("sound3d.zig");
 const main = @import("main.zig");
+const vm = @import("../vm.zig");
 const videoreports = @import("videoreports.zig");
 const Clock = main.Clock;
 const Vector = math.Vector;
@@ -1146,6 +1147,8 @@ pub const Frame = struct {
     sound: ?*hog_snd.Sound = null,
     /// The radio, whose window shows the speaker's face; none where nothing is heard.
     radio: ?*videoreports.Radio = null,
+    /// The game's variables, whose countdown the clock shows where the mission counts down.
+    variables: ?*const vm.Variables = null,
 };
 
 /// `hud_draw` (`0x004843B0`): the display for a frame, in its order. First it takes the player's
@@ -1581,9 +1584,18 @@ pub const clock_offset: [2]i32 = .{ 0, -130 };
 pub const clock_across: f32 = 0.5;
 pub const clock_down: f32 = 1;
 
+/// The minutes and the seconds the clock shows (`0x004861FD`): the countdown, game variable 33,
+/// none below zero, where the mission counts down (`create.Objects.countsDown`); else the time
+/// played.
+pub fn clockTime(all: *const create.Objects, play: main.PlayTime, variables: ?*const vm.Variables) [2]u16 {
+    const counted = if (all.countsDown()) variables else null;
+    const left = counted orelse return .{ play.minutes, play.seconds };
+    const seconds: u32 = @intCast(@max(left.countdown, 0));
+    return .{ @intCast(@min(seconds / 60, std.math.maxInt(u16))), @intCast(seconds % 60) };
+}
+
 /// Draws the mission's clock as `hud_draw` does: the minutes and the seconds, each of two figures,
-/// centred at its place. The game shows the time played, or the mission's own countdown where it
-/// runs one.
+/// centred at its place.
 pub fn drawClock(
     opened: *Opened,
     gpa: Allocator,
@@ -1598,6 +1610,23 @@ pub fn drawClock(
     const text = std.fmt.bufPrint(&buffer, "{d:0>2}:{d:0>2}", .{ minutes, seconds }) catch return;
     const at = place(screen, clock_offset, clock_across, clock_down, scale);
     _ = try drawText(opened, gpa, target, at, text, colour, .centre, scale);
+}
+
+test clockTime {
+    var all: create.Objects = undefined;
+    all.simulator = .{};
+    all.mission_number = 1;
+    const play: main.PlayTime = .{ .minutes = 3, .seconds = 7 };
+    var variables: vm.Variables = .{ .countdown = 110 };
+    // Most missions show the time played.
+    try std.testing.expectEqual([2]u16{ 3, 7 }, clockTime(&all, play, &variables));
+    // Mission 29 shows the countdown, none below zero.
+    all.mission_number = create.instant_action_mission;
+    try std.testing.expectEqual([2]u16{ 1, 50 }, clockTime(&all, play, &variables));
+    variables.countdown = -4;
+    try std.testing.expectEqual([2]u16{ 0, 0 }, clockTime(&all, play, &variables));
+    // Without the variables, the time played.
+    try std.testing.expectEqual([2]u16{ 3, 7 }, clockTime(&all, play, null));
 }
 
 test drawClock {
@@ -2308,7 +2337,8 @@ pub const State = struct {
         stepRadarZoom(state, frame.clock.game_ticks);
         const aims = try drawReticle(state, art, frame.gpa, frame.target, frame.screen, frame.mode, lead, blindFire(state, slot), frame_duration, colour, scale, shake);
         live.blind_fire_aim = @intFromBool(aims);
-        try drawClock(&resources.font, frame.gpa, frame.target, frame.screen, frame.clock.play.minutes, frame.clock.play.seconds, colour, scale);
+        const time = clockTime(frame.all, frame.clock.play, frame.variables);
+        try drawClock(&resources.font, frame.gpa, frame.target, frame.screen, time[0], time[1], colour, scale);
     }
 
     /// The scanner's frame at `game_ticks`: the next, going round, once `game_ticks` is past the

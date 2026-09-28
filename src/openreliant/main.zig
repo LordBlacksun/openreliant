@@ -110,7 +110,7 @@ const Doc = struct {
 
 /// Every option's help, which the compiler holds to having one for each.
 const docs: std.enums.EnumArray(Arg, Doc) = .init(.{
-    .@"--original" = .{ .section = .original, .text = "the original's look and sound: 16-bit colour, one sample a pixel, bilinear filtering, lighting each vertex, light worked out on encoded colours, no shadows, motion that moves on with the game's ticks, a launching ship a frame behind the retainer that lowers it, lights from the latest shots only, muzzle flashes that light nothing and none from the turrets, a jump's flare that lights nothing, the force feedback's own effects only, a blow shaking the camera only while the controller rumbles, an explosion's debris lit by every light, its fireballs, rings, particles and burning bits as few, plain and brief as the original's, the Uber Explode as coarse, unlit and tied to the frame rate as the original's, a damaged ship's smoke as even as the original's, the shields' bubbles as coarse as the original's, the tractor beams as thin as the original's, the hangar's beacons falling short of the launching ship, a ship landing on the Reliant tilted as it came, its tube's door left open, the planets' atmospheres as coarse and fleeting as the original's and their terminators as hard, the sun and its lens flares from their small textures and the sun's glow going out at once behind what hides it, the levels of detail changing as near as the original's, as little drawn a frame as the original allows, the marker for a target out of sight placed as the original misplaces it, a missile's sound left where it was launched, the radio's lines cut flat at their loudest and heard dry, and the sound mixed plainly in stereo" },
+    .@"--original" = .{ .section = .original, .text = "the original's look and sound: 16-bit colour, one sample a pixel, bilinear filtering, lighting each vertex, light worked out on encoded colours, no shadows, motion that moves on with the game's ticks, a launching ship a frame behind the retainer that lowers it, lights from the latest shots only, muzzle flashes that light nothing and none from the turrets, a jump's flare that lights nothing, the force feedback's own effects only, a blow shaking the camera only while the controller rumbles, an explosion's debris lit by every light, its fireballs, rings, particles and burning bits as few, plain and brief as the original's, the Uber Explode as coarse, unlit and tied to the frame rate as the original's, a damaged ship's smoke as even as the original's, the shields' bubbles as coarse as the original's, the tractor beams as thin as the original's, the hangar's beacons falling short of the launching ship, a ship landing on the Reliant tilted as it came, its tube's door left open, the planets' atmospheres as coarse and fleeting as the original's and their terminators as hard, the Ice Field's rocks drawn only near the middle of the view, the gates' tunnels as coarse as the original's, the ride through the worm rumbling the more often the higher the frame rate, the sun and its lens flares from their small textures and the sun's glow going out at once behind what hides it, the levels of detail changing as near as the original's, as little drawn a frame as the original allows, the marker for a target out of sight placed as the original misplaces it, a missile's sound left where it was launched, the radio's lines cut flat at their loudest and heard dry, and the sound mixed plainly in stereo" },
     .@"--mission" = .{ .section = .mission, .value = "<number>", .text = "play this mission at once rather than open the main menu: the number the game names its file by, mission<number>.dte, from the game's missions folder or resource.hog; 0 is OpenReliant's sandbox, which openreliant carries where the game has no mission 0" },
     .@"--ship" = .{ .section = .mission, .value = "<type>", .text = "the ship type to fly, by its number in shipstats.bin, in place of the loadout screen's choice, with its default missiles; the mission's own by default" },
     .@"--view" = .{ .section = .mission, .value = "<0|1|2>", .text = "the view it starts in, as the game's settings keep it: 0 the cockpit; 1 the chase view; 2 no cockpit. The settings' own by default, which the pause menu's video screen changes" },
@@ -269,6 +269,10 @@ const Options = struct {
     sun: game.backdrop.Sun = .smooth,
     /// How the planets' atmospheres are drawn.
     atmospheres: game.create.atmosphere.Style = .haze,
+    /// Which of the Ice Field's rocks are drawn.
+    ice_field: game.environfx.IceField.Reach = .whole_view,
+    /// How finely the gates' tunnels are built, and how often the ride through the worm rumbles.
+    gates: game.wgate.Settings = .{},
     /// How far the finer levels of detail reach.
     detail_reach: game.main.DetailReach = .far,
     /// How much a frame may draw.
@@ -343,6 +347,8 @@ const Options = struct {
                 options.jump_light = .none;
                 options.sun = .original;
                 options.atmospheres = .original;
+                options.ice_field = .original;
+                options.gates = .original;
                 options.detail_reach = .original;
                 options.draw_budget = .original;
                 options.edge_line = .original;
@@ -600,7 +606,8 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
     const space = try game.backdrop.Backdrop.create(arena, &textures, try tga.decode(arena, try resources.readFile(arena, game.backdrop.star_map_name)), &rand, context.projection.near, options.sun);
     const sky = try game.nebula.Sky.create(arena, &textures, try tga.decode(arena, try resources.readFile(arena, game.nebula.dome_image_name)));
     try sky.select(&textures, game.nebula.default_nebula, &space.lights);
-    // What the mission's script asks of its space: the nebula it shows.
+    // What the mission's script asks of its space: the nebula it shows, and the effects it turns
+    // on.
     var environment: game.environfx.Environment = .{ .sky = sky, .textures = &textures, .space = space };
 
     // The engine glows every ship's thrusters burn, built once and shared by them all.
@@ -740,13 +747,16 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
     defer sparks.deinit();
     var shields: game.shield.Shields = try .create(gpa, &textures, explosions.settings.detail, context.hardware, options.shields);
     defer shields.deinit(gpa);
+    environment.ice_field = try .create(arena, &textures, explosions.settings.detail, options.ice_field, &rand);
+    var gates: game.wgate.Gates = try .init(gpa, &textures, explosions.settings.detail, context.hardware, options.gates);
+    defer gates.deinit();
     // The force feedback's effects, and what plays them on the player's controller.
     const found_forces = engine.input.force.load(io, arena, directory);
     var lacking = found_forces.lacking.iterator();
     while (lacking.next()) |effect| std.log.warn("forces\\{s} is missing or isn't an effect file: it plays nothing", .{effect.fileName()});
     var force_feedback: engine.input.force.Forces = .{ .library = &found_forces.library, .settings = options.forces };
     // What the objects run in, the camera's view brought up to date each frame.
-    var world: game.gameobj.World = .{ .forces = &force_feedback, .objects = objects, .player = &player, .clock = &clock, .view = view.view, .shake = &view.hit_shake, .random = &rand, .difficulty = options.difficulty, .hangar_beacons = options.hangar_beacons, .touchdown = options.touchdown, .hearing = hearing, .camera = &view, .explosions = &explosions, .particles = &particles, .smoke = &smoke, .gun_particles = &gun_particles, .shockwaves = &shockwaves, .trails = &trails, .countermeasures = &countermeasures, .sparks = &sparks, .shields = &shields, .rays = &rays, .tractors = &tractors, .rippers = &rippers, .jump_effects = &jump_effects, .atmospheres = &atmospheres, .escort_marker = escort_marker, .flash = &flash, .spawn = .{ .tables = tables, .types = types.types() }, .environment = &environment, .radio = &radio };
+    var world: game.gameobj.World = .{ .forces = &force_feedback, .objects = objects, .player = &player, .clock = &clock, .view = view.view, .shake = &view.hit_shake, .random = &rand, .difficulty = options.difficulty, .hangar_beacons = options.hangar_beacons, .touchdown = options.touchdown, .hearing = hearing, .camera = &view, .explosions = &explosions, .particles = &particles, .smoke = &smoke, .gun_particles = &gun_particles, .shockwaves = &shockwaves, .trails = &trails, .countermeasures = &countermeasures, .sparks = &sparks, .shields = &shields, .rays = &rays, .tractors = &tractors, .rippers = &rippers, .jump_effects = &jump_effects, .atmospheres = &atmospheres, .escort_marker = escort_marker, .flash = &flash, .spawn = .{ .tables = tables, .types = types.types() }, .environment = &environment, .radio = &radio, .gates = &gates };
 
     // The pause menu, which stands in the display's place while the game is paused.
     var pause_menu: game.hudoptions.PauseMenu = .{};
@@ -903,7 +913,10 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
                         error.MissingMission => continue,
                         else => |other| return other,
                     };
-                    if (flight.ship) |ship| objects.loadout_ships[objects.player] = @enumFromInt(ship);
+                    // The flight's ship, else the one `--ship` names, else the mission's ship; and
+                    // the simulator it runs in.
+                    objects.loadout_ships[objects.player] = if (flight.ship orelse options.ship) |ship| @enumFromInt(ship) else null;
+                    objects.simulator = flight.simulator;
                     sound.closeMusic();
                     clock.start(platform.window.ticks());
                     try play.start(orders);
@@ -938,14 +951,16 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
                 // follows the player's.
                 const over = game.main.missionFrame(orders, .of(&clock, options.smooth_motion, options.riders), play.loaded);
                 // The mission over, once the camera has watched the player's end or the pilot's pickup,
-                // once the player's ship has landed, or once its script ends it, the game goes to its
-                // debriefing. Until that is ported, a mission the front end started goes back to it.
+                // once the player's ship has landed, or once its script ends it, the game settles how
+                // it ended and goes to its debriefing. Until that is ported, a mission the front end
+                // started goes back to it.
                 // One `--mission` named pauses into the menu over the last frame, where RESTART, and
                 // CONTINUE with nothing left to continue, fly it again; a screenshot, or a game that
                 // starts flying at once, starts it again straight away.
                 if (over) {
+                    game.main.missionRunEnd(world.player, objects.mission_number);
                     if (from_front_end) {
-                        backToFrontEnd(&play, &front, sound);
+                        backToFrontEnd(&play, &front, sound, objects);
                         in_front_end = true;
                         from_front_end = false;
                     } else if (inPauseMenu(options, frames_left)) {
@@ -998,6 +1013,8 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
                 .shown = .of(&player),
                 .space = space,
                 .sky = sky,
+                .environment = &environment,
+                .gates = &gates,
                 .view = view.view,
                 .cockpit_mode = view.cockpit_mode,
                 .jumping_in = player.jumping_in,
@@ -1050,7 +1067,7 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
                     .restart => try play.again(orders),
                     .leave_mission => {
                         if (!from_front_end) return;
-                        backToFrontEnd(&play, &front, sound);
+                        backToFrontEnd(&play, &front, sound, objects);
                         in_front_end = true;
                         from_front_end = false;
                     },
@@ -1133,10 +1150,12 @@ test inPauseMenu {
     try std.testing.expect(!inPauseMenu(try parsed(&.{ "--mission", "1" }), 2));
 }
 
-/// Goes back to the front end as a mission it started ends, or is left: the mission let go, its
-/// sounds and music ended, and the front end's main menu entered again (`Interface.back`).
-fn backToFrontEnd(play: *Play, front: *engine.genilib.interf.Interface, sound: *game.hog_snd.Sound) void {
+/// Goes back to the front end as a mission it started ends, or is left: the mission let go, out of
+/// the simulator, its sounds and music ended, and the front end's main menu entered again
+/// (`Interface.back`).
+fn backToFrontEnd(play: *Play, front: *engine.genilib.interf.Interface, sound: *game.hog_snd.Sound, all: *game.create.Objects) void {
     play.end();
+    all.simulator = .{};
     sound.endAll();
     sound.closeMusic();
     front.back();
@@ -1329,6 +1348,7 @@ const Display = struct {
             .random = display.random,
             .ready = if (display.play.loaded) |loaded| &loaded.script.variables.ready else &display.idle,
             .edge_line = display.edge_line,
+            .variables = if (display.play.loaded) |loaded| &loaded.script.variables else null,
         });
     }
 };
@@ -1413,6 +1433,10 @@ test Options {
     try std.testing.expectEqual(.original, retro.shields);
     try std.testing.expectEqual(.haze, plain.atmospheres);
     try std.testing.expectEqual(.original, retro.atmospheres);
+    try std.testing.expectEqual(.whole_view, plain.ice_field);
+    try std.testing.expectEqual(.original, retro.ice_field);
+    try std.testing.expectEqual(game.wgate.Settings{}, plain.gates);
+    try std.testing.expectEqual(game.wgate.Settings.original, retro.gates);
     try std.testing.expectEqual(.level, plain.touchdown);
     try std.testing.expectEqual(.original, retro.touchdown);
     try std.testing.expectEqual(game.cbox.Style.original, retro.speech);

@@ -12,6 +12,7 @@ const Vector = math.Vector;
 const srapiext = @import("../../surrender/surrenderlib/srapiext.zig");
 const srcore = @import("../../surrender/surrenderlib/srcore.zig");
 const srtexture = @import("../../surrender/surrenderlib/srtexture.zig");
+const ease = @import("../../genilib/interf/ease.zig");
 const collision = @import("../collision.zig");
 const create = @import("../create.zig");
 const gameobj = @import("../gameobj.zig");
@@ -229,7 +230,7 @@ fn helix(at: f32) Vector {
 
 /// The strands `through` of the way along the beam's time, the ship standing at `ship`: each from
 /// one point of the helix to the next, from `helix_lead` behind that far, as bright as the beam's
-/// time rises and falls (`riseAndFall`). The game lights a strand's first blade alone.
+/// time rises and falls (`ease.riseFall`). The game lights a strand's first blade alone.
 fn strandsAt(strands: *[strand_count]Beam.Strand, ship: math.Place, through: f32) void {
     var points: [strand_count + 1]Vector = undefined;
     for (&points, 0..) |*point, index| {
@@ -237,7 +238,7 @@ fn strandsAt(strands: *[strand_count]Beam.Strand, ship: math.Place, through: f32
         local[2] = @max(local[2], helix_nearest);
         point.* = ship.point(local);
     }
-    const bright = riseAndFall(through);
+    const bright = ease.riseFall(.rising, 0, 1, through);
     for (strands, points[0..strand_count], points[1..]) |*strand, from, to| {
         const length = math.distance(from, to);
         strand.object.position = from;
@@ -250,18 +251,6 @@ fn strandsAt(strands: *[strand_count]Beam.Strand, ship: math.Place, through: f32
 fn grey(level: f32) [4]f32 {
     return .{ level, level, level, 1 };
 }
-
-/// `ease_rise_fall` (`0x00426950`) from nothing to one and back: up as the square root of how far
-/// through the rise it is (`ease_out`) until `peak`, then down as one less the square of how far
-/// through the fall (`ease_in`).
-fn riseAndFall(through: f32) f32 {
-    if (through >= 0 and through <= peak) return @sqrt(through / peak);
-    const falling = (through - peak) / (1 - peak);
-    return 1 - falling * falling;
-}
-
-/// How far through `riseAndFall` it peaks.
-const peak: f32 = 0.5;
 
 /// The beams showing.
 pub const Beams = struct {
@@ -431,14 +420,6 @@ test charges {
     object.gun_mode.all = false;
     object.type = .predator;
     try std.testing.expect(!charges(&object, trigger));
-}
-
-test riseAndFall {
-    try std.testing.expectEqual(0, riseAndFall(0));
-    try std.testing.expectApproxEqAbs(0.5, riseAndFall(0.125), 1e-6);
-    try std.testing.expectEqual(1, riseAndFall(0.5));
-    try std.testing.expectApproxEqAbs(0.75, riseAndFall(0.75), 1e-6);
-    try std.testing.expectEqual(0, riseAndFall(1));
 }
 
 test helix {

@@ -219,9 +219,8 @@ pub const Variables = extern struct {
     ghost_alive: u32 = 0,
     _unknown_31: [2]u32 = @splat(0),
     /// `countdown` (33): seconds left, which mission 29's script sets and the display shows as a
-    /// clock in minutes and seconds (`0x00486221`). The game takes one off at every 100th tick of
-    /// the mission (`game_tick`, `0x00477889`). **Not ported:** the countdown and its clock
-    /// ([#382](https://github.com/vdmkenny/openreliant/issues/382)).
+    /// clock in minutes and seconds (`hud.clockTime`). The game takes one off at every 100th tick
+    /// of the mission (`gameobj.gameTick`).
     countdown: i32 = 0,
     _unknown_34: u32 = 0,
     _unknown_35: [2]u32 = @splat(0),

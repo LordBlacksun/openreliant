@@ -76,6 +76,7 @@ const implementations = table: {
         .{ "CommsFromPilotOnce", commsFromPilot(.once) },
         .{ "WaitForJumpOrLaunch", waitForJumpOrLaunch },
         .{ "SetEnvironmentFXNebula", setEnvironmentFXNebula },
+        .{ "SetEnvironmentFX", setEnvironmentFX },
         .{ "OpenInstrument", openInstrument },
         .{ "CloseInstrument", closeInstrument },
         .{ "SetObjective", setObjective },
@@ -92,7 +93,8 @@ const implementations = table: {
         .{ "SetPlayerTarget", setPlayerTarget },
         .{ "SetTargetable", setTargetable },
         .{ "SetActionCentre", setActionCentre },
-        .{ "DisableGuns", disableGuns },
+        .{ "DisableGuns", flagCommand("guns_disabled") },
+        .{ "DisableEject", flagCommand("eject_disabled") },
         .{ "SetEscortPoint", setEscortPoint },
         .{ "SetPrimaryTarget", setPrimaryTarget },
         .{ "SnapToPoint", snapToPoint },
@@ -109,6 +111,10 @@ const implementations = table: {
         .{ "StopDirectorCam", stopDirectorCam },
         .{ "WaitForDirectorCam", waitForDirectorCam },
         .{ "FriendlyFire", friendlyFire },
+        .{ "DestroySubObject", destroySubObject },
+        .{ "TerminateMission", terminateMission },
+        .{ "TurretSetTarget", turretSetTarget },
+        .{ "ReplenishWeapons", replenishWeapons },
     }) |pair| table[commandIndex(pair[0])] = pair[1];
     break :table table;
 };
@@ -179,6 +185,7 @@ pub fn createShip(game: aigeneric.Context, bound: *const mission.Mission, index:
     };
     if (game.world.atmospheres) |atmospheres| atmospheres.made(all, made);
     create.planetMade(all, made);
+    create.gateMade(game.world, made);
     const first: Order = if (made >= all.players) .do_nothing else if (made == all.player) .player_control else .multiplayer_control;
     _ = aigeneric.push(game, made, first, .none) catch |err| log.warn("mission ship {d} takes no order: {s}", .{ index, @errorName(err) });
     if (made == all.player) if (game.world.camera) |view| {
@@ -541,6 +548,15 @@ fn setEnvironmentFXNebula(call: Call) u32 {
     return 1;
 }
 
+/// `cmd_SetEnvironmentFX` (`0x00459170`, command `0x2C`): turns the environment effect the first
+/// argument numbers on while the second is set, and off while it is not
+/// (`environfx.Environment.setEffect`).
+fn setEnvironmentFX(call: Call) u32 {
+    const game = call.machine.game orelse return 1;
+    if (game.world.environment) |environment| environment.setEffect(call.args[0], call.args[1] != 0);
+    return 1;
+}
+
 /// How far back `WaitForJumpOrLaunch` runs again: over its push of the ships and itself.
 const wait_back = 4;
 
@@ -810,18 +826,109 @@ fn setActionCentre(call: Call) u32 {
     return 1;
 }
 
-/// `cmd_DisableGuns` (`0x00459200`, command `0x2F`): each ship the first argument names fires no
-/// guns, or fires them again (`disableGunsShip`).
-fn disableGuns(call: Call) u32 {
-    vm.Machine.forEachShip(call, disableGunsShip);
+/// The commands that set a flag of each ship the first argument names while the second is set, and
+/// clear it while it is not, each through its `_ship` routine:
+///
+/// | Command | Flag |
+/// |---|---|
+/// | `cmd_DisableGuns` (`0x00459200`, command `0x2F`; `0x00459220`) | `guns_disabled`: its guns do not fire, and its turrets rest |
+/// | `cmd_DisableEject` (`0x00459450`, command `0x35`; `0x00459470`) | `eject_disabled`: the player cannot eject |
+fn flagCommand(comptime flag: []const u8) vm.Implementation {
+    return &struct {
+        fn run(call: Call) u32 {
+            vm.Machine.forEachShip(call, set);
+            return 1;
+        }
+
+        fn set(call: Call, ship: u16) void {
+            @field(call.machine.game.?.world.objects.slots[ship].object.flags, flag) = call.args[0] != 0;
+        }
+    }.run;
+}
+
+/// `cmd_DestroySubObject` (`0x00459750`, command `0x42`): the component the first argument names
+/// (`push_component`) goes at once, with its assembly and nothing to show for it: each part of the
+/// assembly that is shown is taken out (`objects.destroyPart`), an engine taking its share off the
+/// ship's `engines_intact` (`objects.loseEngine`) and a shield generator leaving it without one; a
+/// hidden part, its damaged model, is taken out too, unless the second argument is set, when it
+/// is shown in the component's place.
+fn destroySubObject(call: Call) u32 {
+    const machine = call.machine;
+    const game = machine.game orelse return 1;
+    const all = game.world.objects;
+    const ship = shipSlot(machine, all, call.args[0]) orelse return 1;
+    const slot = &all.slots[ship];
+    const component = slot.component(machine.argumentComponent(call.thread, 0) orelse return 1) orelse return 1;
+    const model = if (slot.model) |*live| live.holding(component) orelse return 1 else return 1;
+    const keeps_damaged = call.args[1] != 0;
+    var each = model.assembly(component.link_id);
+    while (each.next()) |at| {
+        const part = &model.parts[at];
+        if (!part.hidden) {
+            if (part.class == .engine) objects.loseEngine(&slot.object);
+            if (part.class == .shield_generator) slot.object.flags.shield_generator = false;
+        } else if (keeps_damaged) {
+            part.hidden = false;
+            continue;
+        }
+        objects.destroyPart(slot, .{ .model = model, .index = at });
+    }
     return 1;
 }
 
-/// `cmd_DisableGuns_ship` (`0x00459220`): the ship's guns are disabled while the command's second
-/// argument is set, and enabled again while it is not (`GameObject.Flags.guns_disabled`), which
-/// rests its turrets too.
-fn disableGunsShip(call: Call, ship: u16) void {
-    call.machine.game.?.world.objects.slots[ship].object.flags.guns_disabled = call.args[0] != 0;
+/// `cmd_TerminateMission` (`0x00459BB0`, command `0x4D`): the mission ends once the frame is over
+/// (`input.Player.terminated`), as one the player's ship is destroyed in where it is numbered below
+/// 28 (`main.missionRunEnd`).
+fn terminateMission(call: Call) u32 {
+    const game = call.machine.game orelse return 1;
+    game.world.player.terminated +%= 1;
+    return 1;
+}
+
+/// `cmd_TurretSetTarget` (`0x00459BD0`, command `0x4E`): each ship the first argument names aims its
+/// turrets on a component at the ship the second names (`turretSetTargetShip`).
+fn turretSetTarget(call: Call) u32 {
+    vm.Machine.forEachShip(call, turretSetTargetShip);
+    return 1;
+}
+
+/// `cmd_TurretSetTarget_ship` (`0x00459BF0`): where the first argument names one of the ship's
+/// components (`push_component`, or a squad's member), each aimed turret whose base it is aims at
+/// the whole of the ship the second names, which it keeps to until the ship is gone.
+fn turretSetTargetShip(call: Call, ship: u16) void {
+    const machine = call.machine;
+    const slot = &machine.game.?.world.objects.slots[ship];
+    const component = slot.component(machine.argumentComponent(call.thread, 0) orelse return) orelse return;
+    const aimed_at = targetIndex(machine.shipIndex(call.args[0]));
+    for (slot.guns) |*gun| switch (gun.turret) {
+        .aimed => |*aimed| if (&aimed.model.parts[aimed.base] == component) {
+            aimed.target.index = aimed_at;
+            aimed.target.component = aigeneric.Target.whole;
+        },
+        else => {},
+    };
+}
+
+/// `cmd_ReplenishWeapons` (`0x00459FA0`, command `0x59`): the ship the argument names is armed again
+/// (`create.arm`), a player's ship by loadout tier 0 and any other by its `loadout_tier`, and made
+/// whole (`create.makeWhole`); the display's missiles follow the player's
+/// (`hud.missile_display.Ring.build`).
+///
+/// Not ported: a player's ship armed as the loadout screen chose, as the game arms it outside the
+/// simulator where the briefing was not skipped
+/// ([#44](https://github.com/vdmkenny/openreliant/issues/44)).
+fn replenishWeapons(call: Call) u32 {
+    const machine = call.machine;
+    const game = machine.game orelse return 1;
+    const world = game.world;
+    const all = world.objects;
+    const ship = shipSlot(machine, all, call.args[0]) orelse return 1;
+    const slot = &all.slots[ship];
+    const tier: u2 = if (ship < all.players) 0 else std.math.lossyCast(u2, slot.object.loadout_tier);
+    create.arm(all.gpa, slot, tier) catch |err| log.warn("mission ship {d} is not armed again: {s}", .{ ship, @errorName(err) });
+    if (ship == all.player) if (world.display) |display| display.missiles.build(&slot.object);
+    if (slot.combat) |combat| create.makeWhole(&slot.object, combat);
+    return 1;
 }
 
 /// `cmd_SetEscortPoint` (`0x004592F0`, command `0x31`): each ship the first argument names takes
@@ -1388,6 +1495,9 @@ test "the commands mission 1 runs at the convoy" {
     try routine.op(.push_flight_group, &.{1});
     try routine.op(.push_byte, &.{1});
     try routine.command("DisableGuns");
+    try routine.op(.push_ship, &.{0});
+    try routine.op(.push_byte, &.{1});
+    try routine.command("DisableEject");
     // The player escorts the nav point, which also marks where to fly back to, 20000 about it; a
     // Grendel is put on the nav point, and the other disabled.
     try routine.op(.push_ship, &.{0});
@@ -1454,6 +1564,7 @@ test "the commands mission 1 runs at the convoy" {
     try std.testing.expectEqual(50000, all.action_sphere.radius);
     try std.testing.expect(all.slots[1].object.flags.guns_disabled and all.slots[2].object.flags.guns_disabled);
     try std.testing.expect(!all.slots[0].object.flags.guns_disabled);
+    try std.testing.expect(all.slots[0].object.flags.eject_disabled and !all.slots[1].object.flags.eject_disabled);
     try std.testing.expectEqual(gameobj.Slot.of(3), all.slots[0].object.escort_point);
     try std.testing.expectEqual(1, world.player.flyback.count);
     try std.testing.expectEqual(3, world.player.flyback.markers[0].slot);
@@ -1583,6 +1694,109 @@ test "DisableObject acts on each component a squad names" {
     try std.testing.expect(parts[0].hidden and !parts[1].hidden);
     try std.testing.expect(!parts[2].hidden and parts[3].hidden);
     try std.testing.expect(!slot.object.flags.disabled);
+}
+
+test "the commands of Instant Action's bosses and its end" {
+    const gpa = std.testing.allocator;
+    const shp = @import("../../formats/shp.zig");
+    const srofiles = @import("srofiles.zig");
+    const guns = @import("guns.zig");
+    const Routine = vm.machine.testing.Routine;
+    var routine: Routine = .init(gpa);
+    defer routine.deinit();
+    // The turret base, component 0, goes with its damaged model; the engine, component 1, goes and
+    // leaves its damaged model shown.
+    try routine.op(.push_component, &.{ 1, 0 });
+    try routine.op(.push_byte, &.{0});
+    try routine.command("DestroySubObject");
+    try routine.op(.push_component, &.{ 1, 1 });
+    try routine.op(.push_byte, &.{1});
+    try routine.command("DestroySubObject");
+    // The turret on component 2 aims at the player's ship.
+    try routine.op(.push_component, &.{ 1, 2 });
+    try routine.op(.push_ship, &.{0});
+    try routine.command("TurretSetTarget");
+    try routine.op(.push_ship, &.{0});
+    try routine.command("ReplenishWeapons");
+    try routine.op(.push_byte, &.{0});
+    try routine.op(.push_byte, &.{1});
+    try routine.command("SetEnvironmentFX");
+    try routine.command("TerminateMission");
+    try routine.op(.push_byte, &.{1});
+    try routine.op(.@"return", &.{});
+    const code = try routine.finish();
+    defer gpa.free(code);
+
+    var fixture: vm.machine.testing.Fixture = undefined;
+    try fixture.init(gpa, &.{.{ .code = code, .start = true }}, .{
+        .ships = &.{
+            testShip(0, dte.Ship.no_flight_group, @intFromEnum(gameobj.Type.predator), dte.Ship.no_pilot),
+            testShip(1, dte.Ship.no_flight_group, @intFromEnum(gameobj.Type.kurgan), dte.Ship.no_pilot),
+        },
+    });
+    defer fixture.deinit();
+    var world: gameobj.testing.Mission = undefined;
+    try world.init(gpa);
+    defer world.deinit();
+    const player = try world.add(.predator, @splat(0));
+    const boss = try world.add(.kurgan, @splat(0));
+    var environment: @import("environfx.zig").Environment = .{ .sky = undefined, .textures = undefined, .space = undefined };
+    var game = world.orders();
+    game.world.environment = &environment;
+
+    // The boss's components are parts 0, 2 and 4; parts 1 and 3 are the damaged models of the
+    // first two, which share their links. Part 2 is an engine.
+    var data: [5]shp.PartData = @splat(objects.testing.part());
+    for (&data, [_]bool{ true, false, true, false, true }, [_]u32{ 1, 1, 2, 2, 3 }) |*part, component, link| {
+        part.part.parent = -1;
+        part.part.flags.component = component;
+        part.part.flags.damaged = !component;
+        part.part.link_id = link;
+    }
+    data[2].part.class = .engine;
+    var loaded_parts: [5]srofiles.LoadedPart = @splat(.{ .flags = .{}, .levels = &.{}, .meshes = &.{} });
+    const source: shp.Model = .{ .header = std.mem.zeroes(shp.Header), .parts = &data, .trailing_bytes = 0 };
+    const loaded: srofiles.Loaded = .{ .parts = &loaded_parts };
+    const slot = world.slot(boss);
+    slot.model = try objects.Model.create(gpa, &source, &loaded, .{});
+    defer {
+        slot.model.?.deinit(gpa);
+        slot.model = null;
+    }
+    create.collectComponents(slot);
+    slot.object.engines = 1;
+    // Its turret stands on component 2, aimed at nothing.
+    var muzzle = std.mem.zeroes(shp.Attachment);
+    const model = &slot.model.?;
+    slot.dropGuns(gpa);
+    slot.guns = try gpa.dupe(guns.Fitted, &.{.{ .turret = .{ .aimed = .{
+        .barrel = .{ .muzzle = .{ .model = model, .part = 4, .attachment = &muzzle }, .type = .turret_lasers },
+        .model = model,
+        .base = 4,
+        .pitch = 4,
+        .slots = @splat(null),
+    } } }});
+    // The player's ship spent.
+    const ship = &world.slot(player).object;
+    ship.countermeasures = 0;
+    ship.gun_charge = 0;
+    ship.afterburner_fuel = 0;
+    ship.armor = .all(1);
+
+    fixture.machine.game = game;
+    try fixture.machine.start();
+    const parts = model.parts;
+    try std.testing.expect(parts[0].removed and parts[1].removed);
+    try std.testing.expect(parts[2].removed and !parts[3].removed and !parts[3].hidden);
+    try std.testing.expectEqual(0, slot.object.engines_intact);
+    try std.testing.expectEqual(null, slot.component(0));
+    try std.testing.expectEqual(@as(i16, @intCast(player)), slot.guns[0].turret.aimed.target.index);
+    try std.testing.expectEqual(gameobj.countermeasures_when_created, ship.countermeasures);
+    try std.testing.expectEqual(100, ship.gun_charge);
+    try std.testing.expectEqual(6000, ship.afterburner_fuel);
+    try std.testing.expectEqual(gameobj.Quadrants.all(29), ship.armor);
+    try std.testing.expect(environment.asked.ice_field and !environment.effects.ice_field);
+    try std.testing.expectEqual(1, world.player.terminated);
 }
 
 test shipType {

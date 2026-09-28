@@ -3,16 +3,20 @@
 //! makes once at start-up and every ship's attachments of kind `engine_glow` then draw, and the
 //! capital ships' exhaust, which burns the player's ship flying into it (`Exhaust`). The file also
 //! holds the environment effects a script turns on (`environment_effect_set`, `0x00469C60`), which
-//! [`backdrop.zig`](backdrop.zig) draws. Only that one asserts, so only its code names the file;
-//! the glows and the exhaust lie in the stretch the linker gave it, between `Create.cpp`'s code
-//! and `erayfx.cpp`'s ([`sources.zig`](../sources.zig)).
+//! the backdrop draws with its own ([`backdrop.zig`](backdrop.zig)): the ice field (`IceField`).
+//! Only `environment_effect_set` asserts, so only its code names the file; the glows, the exhaust
+//! and the ice field lie in the stretch the linker gave it, between `Create.cpp`'s code and
+//! `erayfx.cpp`'s ([`sources.zig`](../sources.zig)).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
+const ease = @import("../genilib/interf/ease.zig");
+const libcmt = @import("../libcmt.zig");
 const math = @import("../surrender/math.zig");
 const srapi = @import("../surrender/surrenderlib/srapi.zig");
 const srapiext = @import("../surrender/surrenderlib/srapiext.zig");
+const srcore = @import("../surrender/surrenderlib/srcore.zig");
 const srtexture = @import("../surrender/surrenderlib/srtexture.zig");
 const aigeneric = @import("aigeneric.zig");
 const collision = @import("collision.zig");
@@ -23,16 +27,16 @@ const objects = @import("objects.zig");
 const Vector = math.Vector;
 const backdrop = @import("backdrop.zig");
 const nebula = @import("nebula.zig");
+const xtrabits = @import("xtrabits.zig");
+const Detail = @import("explode.zig").Detail;
 const log = std.log.scoped(.environfx);
 
 /// What a mission's script asks of the space it is flown in, which `environment_update`
 /// (`0x00469D30`) applies: the nebula it asks for, shown on the sky, whose fill lights take the
-/// nebula's colour (`nebula.Sky.select`).
+/// nebula's colour (`nebula.Sky.select`), and the environment effects it turns on (`setEffect`).
 ///
-/// Not ported: the rest of `environment_update`, the objects' flag `0x400` it sets and clears as
-/// asked, and the environment effects it turns on and off, which commands of other missions ask
-/// for (`DisableObjectAtNextJump`, `SetEnvironmentFX`,
-/// [#281](https://github.com/vdmkenny/openreliant/issues/281)).
+/// Not ported: the objects' flag `0x400`, which `environment_update` sets and clears as
+/// `DisableObjectAtNextJump` asks ([#281](https://github.com/vdmkenny/openreliant/issues/281)).
 pub const Environment = struct {
     sky: *nebula.Sky,
     textures: *srtexture.Table,
@@ -42,18 +46,301 @@ pub const Environment = struct {
     /// `nebula_requested` (`0x0058A6B8`): the nebula `SetEnvironmentFXNebula` asks for, the
     /// first until one does. A mission's start leaves it as the one before asked.
     requested: u32 = nebula.default_nebula,
+    /// The environment effects on (`0x0055249C`), and those asked for (`0x005531A4`), which an
+    /// effect that waits for `update` turns on and off.
+    effects: Effects = .{},
+    asked: Effects = .{},
+    /// The ice field's rocks, which the renderer's start builds (`backdrop_create`); none leaves
+    /// the ice field unseen.
+    ice_field: ?*IceField = null,
 
     /// `environment_update` (`0x00469D30`), as a fixed gate's jump ends or the script asks
     /// (`UpdateEnvironmentFXState`): the nebula asked for shows where the sky shows another
-    /// (`nebula_select`, `0x00498D00`).
+    /// (`nebula_select`, `0x00498D00`), then the effects asked for are on, and the rest off.
     ///
     /// **Fix:** the game stops with the assertion "Error in script: Invalid nebula" for a nebula
     /// past the seventh; OpenReliant logs it, and keeps the nebula it shows.
     pub fn update(environment: *Environment) void {
-        if (environment.sky.nebula == environment.requested) return;
-        environment.sky.select(environment.textures, environment.requested, &environment.space.lights) catch |err| {
-            log.warn("nebula {d} is left out: {s}", .{ environment.requested, @errorName(err) });
+        if (environment.sky.nebula != environment.requested) {
+            environment.sky.select(environment.textures, environment.requested, &environment.space.lights) catch |err| {
+                log.warn("nebula {d} is left out: {s}", .{ environment.requested, @errorName(err) });
+            };
+        }
+        environment.effects = environment.asked;
+    }
+
+    /// `environment_effect_set` (`0x00469C60`), as the script asks (`SetEnvironmentFX`): turns the
+    /// effect `number` names on or off. One that waits (`Effect.waits`) is asked for, for `update`
+    /// to turn on or off; any other is on or off at once, and what is asked for is then what is
+    /// on. The game logs an effect it has not implemented, and does nothing with it. No effect has
+    /// routines of its own to run as it turns on or off.
+    ///
+    /// **Fix:** the game reads the table past its thirteen effects for a number past them, whose
+    /// bit it takes from the number's low five bits; OpenReliant takes the effect of those bits
+    /// throughout.
+    pub fn setEffect(environment: *Environment, number: u32, on: bool) void {
+        const effect: Effect = @enumFromInt(@as(u5, @truncate(number)));
+        if (!effect.implemented()) {
+            log.info("Environmental Effect \"{f}\" not yet implemented!", .{effect});
+            return;
+        }
+        if (effect.waits()) {
+            environment.asked.set(effect, on);
+        } else {
+            environment.effects.set(effect, on);
+            environment.asked = environment.effects;
+        }
+    }
+
+    /// Turns every effect off, as a mission starts.
+    ///
+    /// **Fix:** the game turns them off only as its renderer starts (`backdrop_create`,
+    /// `0x00469C30`), which it does as it starts and as the display's settings change, so that an
+    /// effect one mission leaves on shows in the next, the ice field of Instant Action's last wave
+    /// among them. OpenReliant turns them off for each mission.
+    pub fn resetEffects(environment: *Environment) void {
+        environment.effects = .{};
+        environment.asked = .{};
+    }
+
+    /// The effects' frame (`0x00469C50`), which `backdrop_frame` runs after the lights, before the
+    /// star fields: the ice field's rocks, while it is on, around the camera at `camera`
+    /// (`IceField.frame`), at the frame's tick `frame_start`.
+    pub fn frame(environment: *const Environment, gpa: Allocator, scene: *srcore.Scene, camera: math.Place, frame_start: i32) Allocator.Error!void {
+        if (!environment.effects.ice_field) return;
+        if (environment.ice_field) |field| try field.frame(gpa, scene, camera, frame_start);
+    }
+};
+
+/// An environment effect, by the number a script names it by (`SetEnvironmentFX`), as
+/// `environment_effects` (`0x004FF804`, 32 bytes each) lists them: whether it waits for
+/// `environment_update`, the routines that turn it on and off, which none has, and its name. The
+/// game takes the low five bits of the number for its bit.
+pub const Effect = enum(u5) {
+    ice_field = 0,
+    planet_bombard = 1,
+    _,
+
+    /// The one effect beside the ice field that the game has implemented: it has no name, and
+    /// nothing reads it (`0x0046A6F0`).
+    const unnamed = 2;
+
+    /// Whether the game has implemented it (`0x004FF748`): the ice field and effect 2.
+    pub fn implemented(effect: Effect) bool {
+        return effect == .ice_field or @intFromEnum(effect) == unnamed;
+    }
+
+    /// Whether it waits for `environment_update` to turn on or off, as the table's first two do.
+    pub fn waits(effect: Effect) bool {
+        return switch (effect) {
+            .ice_field, .planet_bombard => true,
+            _ => false,
         };
+    }
+
+    /// Its name, as the table has it, or its number for one the table leaves undefined.
+    pub fn format(effect: Effect, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+        return switch (effect) {
+            .ice_field => writer.writeAll("Ice Field"),
+            .planet_bombard => writer.writeAll("Planet Bombard"),
+            _ => writer.print("effect {d}", .{@intFromEnum(effect)}),
+        };
+    }
+};
+
+/// The environment effects, a bit each by its number (`0x0055249C`, `0x005531A4`).
+pub const Effects = packed struct(u32) {
+    ice_field: bool = false,
+    planet_bombard: bool = false,
+    _unknown_2: bool = false,
+    _unknown_3: u29 = 0,
+
+    /// Turns `effect`'s bit on or off.
+    pub fn set(effects: *Effects, effect: Effect, on: bool) void {
+        const bit = @as(u32, 1) << @intFromEnum(effect);
+        const word: u32 = @bitCast(effects.*);
+        effects.* = @bitCast(if (on) word | bit else word & ~bit);
+    }
+};
+
+comptime {
+    for (std.enums.values(Effect)) |effect| {
+        std.debug.assert(@bitOffsetOf(Effects, @tagName(effect)) == @intFromEnum(effect));
+    }
+}
+
+/// Effect 0, the ice field: rocks of ice all about the camera, far off, each a triangle facing it
+/// and turning, drawn with the backdrop. `0x00469DF0` builds them as the renderer starts, and
+/// `0x0046A130` lets them go.
+pub const IceField = struct {
+    /// The triangle every rock shows (`0x0046A250`, `0x005524A4`).
+    mesh: srapiext.Mesh,
+    level: [1]srapiext.Level,
+    rocks: []Rock,
+    reach: Reach,
+
+    /// Which of the rocks are drawn.
+    pub const Reach = enum {
+        /// **Improvement:** every rock ahead of the camera, so that the field fills the whole view
+        /// however wide it is, and no rock appears or vanishes within it as the view turns.
+        whole_view,
+        /// Those within about 49 degrees of the camera's forward axis, as the game draws them
+        /// (`ahead_beyond`), which leaves the corners of the view bare, and the sides of a wide
+        /// one.
+        original,
+
+        /// How far along the camera's forward axis a rock must lie to be drawn.
+        fn beyond(reach: Reach) f32 {
+            return switch (reach) {
+                .whole_view => 0,
+                .original => ahead_beyond,
+            };
+        }
+    };
+
+    pub const Rock = struct {
+        object: srapiext.MeshObject,
+        /// Its own texture coordinates, a pair for each corner, which pick one of the texture's
+        /// rocks (`rock_pictures`).
+        uv: [3][2]f32,
+        /// Its own colours, a grey for each corner, with no alpha.
+        colours: [3][4]f32,
+        /// From the camera to it (`0x0054FD88`).
+        offset: Vector,
+        /// How fast it turns, in radians a tick (`0x00552524`).
+        spin: f32,
+    };
+
+    /// How many rocks the field has, by the detail (`0x00469E03`, `0x00469E0F`, `0x00469E1B`).
+    pub fn count(detail: Detail) usize {
+        return switch (detail) {
+            .low => 200,
+            .medium => 500,
+            .high => 800,
+        };
+    }
+
+    /// The rocks' texture (`0x004FFAC0`), which holds their pictures.
+    pub const texture_name = "farast2";
+
+    /// The triangle's corners: its point, where it stands, and the two ends of its base, a unit
+    /// above (`0x0046A250`).
+    const points = [3]Vector{ .{ 0, 0, 0 }, .{ -0.5, 1, 0 }, .{ 0.5, 1, 0 } };
+
+    /// The pictures of rocks in the texture, each a triangle's texture coordinates, one for each
+    /// fifth of a random number (`0x004FF990`): a quarter of the texture each, then a middle one.
+    const rock_pictures = [5][3][2]f32{
+        .{ .{ 0.25, 0 }, .{ 0, 0.5 }, .{ 0.5, 0.5 } },
+        .{ .{ 0.75, 0 }, .{ 0.5, 0.5 }, .{ 1, 0.5 } },
+        .{ .{ 0.25, 0.5 }, .{ 0, 1 }, .{ 0.5, 1 } },
+        .{ .{ 0.75, 0.5 }, .{ 0.5, 1 }, .{ 1, 1 } },
+        .{ .{ 0.25, 0 }, .{ 0.5, 0.5 }, .{ 0.75, 0 } },
+    };
+
+    /// The rocks' turns: the seven turn rates `spin_step` apart, from three steps one way to three
+    /// the other, in turn (`0x004DC784`, in radians a tick).
+    const spin_step: f32 = 0.0005;
+    const spins = 7;
+
+    /// How the rocks lie about the camera. Most lie in a thin band, `flat_pitch` across, the rest
+    /// in one `steep_pitch` across (`0x004DC7FC`, `0x004DC420`, `0x004DC484`); each lies in one of
+    /// two arcs `arc` wide, a half turn apart (`0x004DC7F8`), `first_arc_share` of them in the
+    /// first (`0x004DC408`), and `distance` from the camera (`0x0046A0E4`).
+    const flat_share: f32 = 0.65;
+    const flat_pitch: f32 = 0.1;
+    const steep_pitch: f32 = 0.7;
+    const arc: f32 = 2.1991148;
+    const first_arc_share: f32 = 0.5;
+    const distance: f32 = 2500;
+
+    /// The least grey a rock takes, from which a random number takes it up to full (`0x004DC408`).
+    const least_grey: f32 = 0.5;
+
+    /// The rocks' sizes: most from `small[0]` to `small[0] + small[1]`, the few that are large, a
+    /// share of `large_share`, from `large[0]` to `large[0] + large[1]` (`0x004DC7F4`, `0x004DC7F0`,
+    /// `0x004DC56C`, `0x004DC75C`, `0x004DC584`).
+    const large_share: f32 = 0.06;
+    const small = [2]f32{ 5, 25 };
+    const large = [2]f32{ 30, 70 };
+
+    /// How far along the camera's forward axis a rock must lie to be drawn (`0x004DC800`): 0.65 of
+    /// `distance`, within about 49 degrees of it.
+    const ahead_beyond: f32 = 1625;
+
+    /// `0x00469DF0`: builds the field's rocks, as many as `detail` has (`count`), each drawn from
+    /// `random` in the game's order: which of the texture's pictures it shows, its grey, from half
+    /// to full, the band and the arc it lies in and where in them, and its size. Each turns at the
+    /// next of the seven turn rates. `reach` says which are drawn.
+    pub fn create(gpa: Allocator, textures: *srtexture.Table, detail: Detail, reach: Reach, random: *libcmt.Rand) (Allocator.Error || matmanager.Error)!*IceField {
+        const image = try matmanager.textureRequire(textures, texture_name);
+        const field = try gpa.create(IceField);
+        errdefer gpa.destroy(field);
+        field.reach = reach;
+        field.mesh = try triangle(gpa, image);
+        errdefer field.mesh.deinit(gpa);
+        field.level = .{.{ .mesh = &field.mesh, .until = std.math.inf(f32) }};
+        field.rocks = try gpa.alloc(Rock, count(detail));
+        for (field.rocks, 0..) |*rock, index| {
+            const picture = std.math.lossyCast(usize, random.fraction() * rock_pictures.len);
+            rock.uv = rock_pictures[@min(picture, rock_pictures.len - 1)];
+            rock.spin = @as(f32, @floatFromInt(@as(i32, @intCast(index % spins)) - spins / 2)) * spin_step;
+            const grey = ease.linear(least_grey, 1, random.fraction());
+            rock.colours = @splat(.{ grey, grey, grey, 0 });
+            const pitch = if (random.fraction() < flat_share) random.centred() * flat_pitch else random.centred() * steep_pitch;
+            const yaw = if (random.fraction() < first_arc_share) random.fraction() * arc else random.fraction() * arc + std.math.pi;
+            const turn = math.turned(math.turned(math.identity, .x, pitch), .y, yaw);
+            rock.offset = math.normalize(math.transform(turn, .{ 1, 0, 0 })) * @as(Vector, @splat(distance));
+            const size = if (random.fraction() < large_share) random.fraction() * large[1] + large[0] else random.fraction() * small[1] + small[0];
+            rock.object = .{
+                .flags = .{ .not_culled = true, .baked_object = true, .own_first = true },
+                .position = rock.offset,
+                .scale = size,
+                .radius = field.mesh.radius,
+                .levels = &field.level,
+                .own_uv = .{ &rock.uv, null },
+                .baked = &rock.colours,
+            };
+        }
+        return field;
+    }
+
+    /// `0x0046A130`: lets the rocks and their mesh go.
+    pub fn destroy(field: *IceField, gpa: Allocator) void {
+        gpa.free(field.rocks);
+        field.mesh.deinit(gpa);
+        gpa.destroy(field);
+    }
+
+    /// `0x0046A250`: the triangle, over texture coordinates the rocks give it, lit, and added over
+    /// what is behind it by its own colours (`premultiplied`).
+    fn triangle(gpa: Allocator, image: *srtexture.Image) Allocator.Error!srapiext.Mesh {
+        var mesh: srapiext.Mesh = try .create(gpa, .{ .polygons = 1, .vertices = points.len, .indices = points.len });
+        errdefer mesh.deinit(gpa);
+        @memcpy(mesh.positions, &points);
+        mesh.numberPolygons(points.len);
+        for (mesh.indices, 0..) |*index, point| index.* = @intCast(point);
+        mesh.surfaces[0] = .{
+            .polygons = 1,
+            .material = .onePass(.{ .coordinates = .generated, .lit = true, .blend = .premultiplied }),
+            .textures = .{ .{ .image = image }, .none },
+        };
+        srapi.findBoundingBox(&mesh);
+        return mesh;
+    }
+
+    /// `0x0046A170`: each rock that lies ahead of the camera at `camera` (`Reach`) stands `offset`
+    /// from it, facing it and turned by its `spin` for each tick of `frame_start`, and goes into
+    /// the background layer.
+    pub fn frame(field: *IceField, gpa: Allocator, scene: *srcore.Scene, camera: math.Place, frame_start: i32) Allocator.Error!void {
+        const ahead = math.forward(camera.orientation);
+        const ticks: f32 = @floatFromInt(frame_start);
+        const beyond = field.reach.beyond();
+        for (field.rocks) |*rock| {
+            if (!(math.dot(ahead, rock.offset) > beyond)) continue;
+            rock.object.position = camera.position + rock.offset;
+            rock.object.orientation = math.turned(math.lookAt(-rock.offset), .z, ticks * rock.spin);
+            try xtrabits.sceneAdd(gpa, scene, .{ .mesh = &rock.object }, .background);
+        }
     }
 };
 
@@ -331,6 +618,72 @@ fn glowDepth(bounds: [2]Vector, scale: Vector, local: Vector) f32 {
     const far = math.length(high);
     if (!(far > 0)) return 0;
     return 1 - math.length(local) / far;
+}
+
+test "Environment.setEffect" {
+    var environment: Environment = .{ .sky = undefined, .textures = undefined, .space = undefined };
+    // The ice field waits for the update to show.
+    environment.setEffect(0, true);
+    try std.testing.expect(environment.asked.ice_field and !environment.effects.ice_field);
+    // Effect 2 is on at once, and what is asked for is then what is on.
+    environment.setEffect(2, true);
+    try std.testing.expect(environment.effects._unknown_2 and !environment.asked.ice_field);
+    // The planets' bombardment is not implemented, and nothing changes.
+    environment.setEffect(1, true);
+    try std.testing.expectEqual(@as(Effects, .{ ._unknown_2 = true }), environment.asked);
+    // A number past 31 is its low five bits'.
+    environment.setEffect(32, true);
+    try std.testing.expect(environment.asked.ice_field);
+    environment.resetEffects();
+    try std.testing.expectEqual(@as(Effects, .{}), environment.effects);
+    try std.testing.expectEqual(@as(Effects, .{}), environment.asked);
+}
+
+test Effect {
+    var buffer: [32]u8 = undefined;
+    try std.testing.expectEqualStrings("Ice Field", try std.fmt.bufPrint(&buffer, "{f}", .{Effect.ice_field}));
+    try std.testing.expectEqualStrings("effect 5", try std.fmt.bufPrint(&buffer, "{f}", .{@as(Effect, @enumFromInt(5))}));
+}
+
+test IceField {
+    const gpa = std.testing.allocator;
+    const textures = try srtexture.testing.Textures.init(gpa, &.{IceField.texture_name});
+    defer textures.deinit(gpa);
+    var random: libcmt.Rand = .{};
+    const field = try IceField.create(gpa, &textures.table, .low, .original, &random);
+    defer field.destroy(gpa);
+    try std.testing.expectEqual(200, field.rocks.len);
+    for (field.rocks, 0..) |rock, index| {
+        try std.testing.expectApproxEqAbs(2500, math.length(rock.offset), 0.1);
+        try std.testing.expect(rock.object.scale >= 5 and rock.object.scale <= 100);
+        try std.testing.expect(rock.colours[0][0] >= 0.5 and rock.colours[0][0] <= 1 and rock.colours[0][3] == 0);
+        // The seven turn rates in turn.
+        try std.testing.expectApproxEqAbs(@as(f32, @floatFromInt(@as(i32, @intCast(index % 7)) - 3)) * 0.0005, rock.spin, 1e-9);
+    }
+
+    // Looking along Z, the rocks within about 49 degrees of it stand around the camera, facing
+    // it.
+    var scene: srcore.Scene = .{};
+    defer scene.deinit(gpa);
+    const camera: math.Place = .{ .position = .{ 100, 0, 0 }, .orientation = math.identity };
+    try field.frame(gpa, &scene, camera, 0);
+    var ahead: usize = 0;
+    for (field.rocks) |rock| ahead += @intFromBool(rock.offset[2] > 1625);
+    const drawn = scene.layers.get(.background).items;
+    try std.testing.expectEqual(ahead, drawn.len);
+    const rock = drawn[0].mesh;
+    const toward = math.normalize(camera.position - rock.position);
+    const facing = math.forward(rock.orientation);
+    inline for (0..3) |axis| try std.testing.expectApproxEqAbs(toward[axis], facing[axis], 1e-4);
+
+    // Filling the whole view, every rock ahead of the camera is drawn.
+    field.reach = .whole_view;
+    scene.clear();
+    try field.frame(gpa, &scene, camera, 0);
+    var in_front: usize = 0;
+    for (field.rocks) |each| in_front += @intFromBool(each.offset[2] > 0);
+    try std.testing.expectEqual(in_front, scene.layers.get(.background).items.len);
+    try std.testing.expect(in_front > ahead);
 }
 
 pub const testing = struct {

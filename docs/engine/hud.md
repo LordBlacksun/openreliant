@@ -486,7 +486,9 @@ is.
 It draws the contacts level with the plane or below it first, then the rings, `hud_radar_rings`
 (`0x0057BC50`), one of shapes `0x161` to `0x16B` with the wedge of the view ahead, `0x42` left and
 `0x20` above a point placed half of the way across, at the foot of the screen, 1 right and 51 up,
-then the contacts above it. The clock stands 79 above the radar's point.
+then the contacts above it. The clock stands 79 above the radar's point: the play time in minutes
+and seconds, or, in Instant Action's simulator and in mission 29, the seconds the script's
+`countdown` has left, none below 0 (`0x004861FD`).
 
 | Range | Reach (`0x00501CA8`) | A pixel is (`0x00501CB8`) | Rings |
 | --- | --- | --- | --- |

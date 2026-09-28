@@ -761,7 +761,8 @@ pub const Condition = enum(u8) {
     object_scooped = 0x07,
     player_ready_to_jump = 0x08,
     jumped_in = 0x09,
-    flight_group_jumped_in = 0x0A,
+    /// `TT_FG_JUMPED_IN`: a ship has come in through a fixed gate (`FixedGateJumpedIn`).
+    fixed_gate_jumped_in = 0x0A,
     player_ready_to_warp = 0x0B,
     jumped_through_hoop = 0x0C,
     player_wants_backup = 0x0D,

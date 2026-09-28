@@ -10,10 +10,9 @@ The screens the game shows outside a mission: the main menu, the pilots, the set
 
 OpenReliant opens in the front end unless `--mission` names a mission. A mission the front end starts flies at once, and when it ends, or LEAVE MISSION leaves it, OpenReliant goes back to the main menu.
 
-Ported so far: the screen loop, the main menu, and QUIT's dialog. Not yet:
+Ported so far: the screen loop, the main menu, QUIT's dialog, and INSTANT ACTION. Not yet:
 
 - The other screens ([#43](https://github.com/vdmkenny/openreliant/issues/43) maps them). Until the pilot roster ([#397](https://github.com/vdmkenny/openreliant/issues/397)), the Reliant's rooms ([#398](https://github.com/vdmkenny/openreliant/issues/398)) and the briefing ([#73](https://github.com/vdmkenny/openreliant/issues/73)) are ported, SINGLE PLAYER starts the campaign's first mission. MULTI PLAYER ([#404](https://github.com/vdmkenny/openreliant/issues/404)) and GAME OPTIONS ([#400](https://github.com/vdmkenny/openreliant/issues/400)) stay on the main menu.
-- INSTANT ACTION ([#399](https://github.com/vdmkenny/openreliant/issues/399)), which does nothing yet.
 - The debriefing, which a mission's end goes to ([#73](https://github.com/vdmkenny/openreliant/issues/73)).
 - The intro and the movies between screens ([#401](https://github.com/vdmkenny/openreliant/issues/401)).
 
@@ -93,7 +92,20 @@ Each pass of its loop:
 
 `interface_confirm` asks whether to quit, with Do you really want to Quit? (string `0x374`). YES returns 3.
 
-INSTANT ACTION flies mission 29 in ship type 2, with `simulator` (`0x0057E044`) set, again and again until the player leaves it, then comes back to the main menu.
+INSTANT ACTION (`0x0042905B` to `0x004290E4`) flies mission 29 in ship type 2 in the simulator:
+`simulator` (`0x0057E044`) set, and the game's mode (`simulator_mode`, `0x00524FE4`) 2, which the
+loading screen names "Preparing for Instant Action", as it names mode 1, the Reliant's simulator's
+training, "Calibrating Simulator". The music fades, the loadout's ship is type 2, and the mission
+starts again for as long as the pause menu's RESTART asks (`mission_restart`); then `mission_number`
+and the pilot's kills go back to what they were, and the main menu comes back.
+
+In the simulator the wingmen's keys go unheard ([Controls](controls.md)), the display's clock
+counts the script's `countdown` down ([Display](hud.md#the-radar)), the player's ship is armed by
+loadout tier 0 where the script replenishes it (`ReplenishWeapons`), and the wing takes no pilots
+from the roster.
+
+OpenReliant flies mission 29 so, RESTART starting it again as for any mission, and comes back to
+the main menu as it ends.
 
 ### The developers' keys
 

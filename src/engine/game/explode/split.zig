@@ -348,8 +348,8 @@ pub const Split = struct {
     fn release(split: *Split, world: gameobj.World) void {
         split.cutting = false;
         const all = world.objects;
-        if (all.slots[split.object].model) |*model| clipTree(model, null);
-        if (split.other) |other| if (all.slots[other].model) |*model| clipTree(model, null);
+        if (all.slots[split.object].model) |*model| xtrabits.clipTree(model, null);
+        if (split.other) |other| if (all.slots[other].model) |*model| xtrabits.clipTree(model, null);
     }
 
     /// A bursts split's frame: a Stalag flashes the view one frame in `stalag_flash_odds`; after
@@ -531,22 +531,6 @@ fn otherHalfEnd(half: *gameobj.GameObject, orientation: math.Matrix) void {
     half.velocity = gameobj.vec3(math.transform(orientation, drift));
 }
 
-/// Clips part `index` of `model` and every part of each model it carries, however deep, by
-/// `portal`, or, where null, by none, the flag left as it was (`node_tree_clip`, `0x004ADEE0`;
-/// `node_tree_unclip`, `0x004ADF40`).
-fn clipPart(model: *objects.Model, index: usize, portal: ?*const srapiext.Portal) void {
-    const part = &model.parts[index];
-    part.object.portal = portal;
-    if (portal != null) part.object.flags.portal_clipped = true;
-    var each = model.carriedBy(index);
-    while (each.next()) |mount| clipTree(&mount.model, portal);
-}
-
-/// `clipPart` for every part of `model`.
-fn clipTree(model: *objects.Model, portal: ?*const srapiext.Portal) void {
-    for (0..model.parts.len) |index| clipPart(model, index, portal);
-}
-
 /// `explode_capship_component`'s split of the ship in slot `index`, as its hull is destroyed
 /// (`split_create` first):
 ///
@@ -600,7 +584,7 @@ pub fn start(world: gameobj.World, index: u16) void {
     for (model.parts, 0..) |*part, at| {
         if (object.type == .czar_docked and part.link_id == Split.czar_kept_link) continue;
         if (!part.flags.damaged) {
-            clipPart(model, at, &split.portals[0]);
+            xtrabits.clipPart(model, at, &split.portals[0]);
             if (part.class == .hull) split.hull = at;
             continue;
         }

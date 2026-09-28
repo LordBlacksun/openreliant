@@ -22,6 +22,8 @@ const srapiext = @import("../surrender/surrenderlib/srapiext.zig");
 const srcore = @import("../surrender/surrenderlib/srcore.zig");
 const srtexture = @import("../surrender/surrenderlib/srtexture.zig");
 const backdrop = @import("backdrop.zig");
+const environfx = @import("environfx.zig");
+const wgate = @import("wgate.zig");
 const camera = @import("camera.zig");
 const ai = @import("ai.zig");
 const aigeneric = @import("aigeneric.zig");
@@ -278,6 +280,8 @@ pub const Frame = struct {
     shown: Shown = .{},
     space: *backdrop.Backdrop,
     sky: *nebula.Sky,
+    /// The environment's effects, which go into the background layer with the backdrop.
+    environment: ?*const environfx.Environment = null,
     view: camera.View,
     cockpit_mode: camera.CockpitMode,
     /// Whether the player's ship jumps in, which cuts the dust's streaks shorter
@@ -321,6 +325,8 @@ pub const Frame = struct {
     display: ?*const hud.State = null,
     /// The shields' bubbles, which go into the world's layer after the objects.
     shields: ?*shield.Shields = null,
+    /// The gates' tunnels, which go into the world's layer before the shields' bubbles.
+    gates: ?*wgate.Gates = null,
     /// The electric rays, which go into the world's layer after the explosions.
     rays: ?*erayfx.Rays = null,
     /// The tractors, which go into the world's layer after the objects.
@@ -530,7 +536,9 @@ pub fn controlsFrame(controls: Controls) void {
 /// seconds past (`mission.Loaded.tickClock`).
 ///
 /// Whether the mission is over: as the camera has it (`missionOver`), which sets the script's
-/// `mission_over`, or as the script has it, which ends the mission before the frame's work.
+/// `mission_over`, or as the script has it, which ends the mission before the frame's work; or,
+/// once the frame's work is done, where the script has ended it (`TerminateMission`), as
+/// `mission_run` finds after the frame (`0x004941AF`).
 pub fn missionFrame(orders: aigeneric.Context, timing: objects.Timing, loaded: ?*Loaded) bool {
     input.nextNavPoint(orders.world);
     const over = missionOver(orders.world);
@@ -567,7 +575,30 @@ pub fn missionFrame(orders: aigeneric.Context, timing: objects.Timing, loaded: ?
     if (orders.world.display) |display| {
         if (orders.world.view.showsLock()) display.lock.frame(orders.world, &display.missiles);
     }
-    return over;
+    return over or player.terminated != 0;
+}
+
+/// The first mission whose script can end it (`TerminateMission`) without its ending as one the
+/// player's ship is destroyed in (`0x00494204`).
+const terminated_ends_well_from = 28;
+
+/// `mission_run`'s work once its loop is over (`0x004941FC`): a mission numbered below
+/// `terminated_ends_well_from` that its script ended (`TerminateMission`) ends as one the player's
+/// ship is destroyed in.
+pub fn missionRunEnd(player: *input.Player, mission_number: u16) void {
+    if (player.terminated != 0 and mission_number < terminated_ends_well_from) player.ending = .destroyed;
+}
+
+test missionRunEnd {
+    var player: input.Player = .{ .terminated = 1 };
+    missionRunEnd(&player, create.instant_action_mission);
+    try std.testing.expectEqual(.playing, player.ending);
+    missionRunEnd(&player, 5);
+    try std.testing.expectEqual(.destroyed, player.ending);
+    // A mission its script leaves running ends as it ends.
+    player = .{ .ending = .rescued };
+    missionRunEnd(&player, 5);
+    try std.testing.expectEqual(.rescued, player.ending);
 }
 
 /// `mission_frame`'s care of the ship the player launched from (`0x004932D4`): once that ship
@@ -733,8 +764,9 @@ fn frameObject(slot: *create.Slot, timing: objects.Timing, glide: ?math.Vector, 
 }
 
 /// Puts the frame's scene together and draws it, in `mission_frame`'s order: the objects
-/// (`drawObjects`), the backdrop, the sky; the star streaks are reset when the view has changed
-/// since the last frame, or the camera has switched view (`camera_set_view`); then `sr_render`. `arena` holds what the frame needs until it is drawn.
+/// (`drawObjects`), the environment's effects and the backdrop, the sky; the star streaks are
+/// reset when the view has changed since the last frame, or the camera has switched view
+/// (`camera_set_view`); then `sr_render`. `arena` holds what the frame needs until it is drawn.
 pub fn drawFrame(gpa: Allocator, arena: Allocator, scene: *srcore.Scene, context: *srapi.Context, frame: Frame, driver: srcore.Driver) Allocator.Error!void {
     scene.clear();
     // How far off an object stops being worth drawing follows the frame's own projection, so the
@@ -758,6 +790,7 @@ pub fn drawFrame(gpa: Allocator, arena: Allocator, scene: *srcore.Scene, context
         const aim: ?math.Vector = if (ship.object.blind_fire_aim != 0) display.lead_point else null;
         try seen_behind.draw(gpa, scene, ship.drawn, display.reticle_bright, aim, display.chase_pointer, display.chase_nav_roll);
     };
+    if (frame.gates) |gates| try gates.draw(gpa, scene, frame.objects, attachments.frame_start);
     if (frame.shields) |bubbles| try bubbles.draw(gpa, arena, scene, frame.objects, .{
         .camera = attachments.camera,
         .inside = camera.inCockpit(frame.view, frame.cockpit_mode),
@@ -782,6 +815,7 @@ pub fn drawFrame(gpa: Allocator, arena: Allocator, scene: *srcore.Scene, context
     };
     if (frame.shockwaves) |waves| try waves.draw(gpa, scene, frame.ahead);
     frame.space.shortenDust(frame.jumping_in);
+    if (frame.environment) |environment| try environment.frame(gpa, scene, context.camera, attachments.frame_start);
     try frame.space.frame(gpa, scene, context, frame.view, frame.cockpit_mode);
     if (frame.atmospheres) |atmospheres| try atmospheres.frame(gpa, scene, frame.objects, context.camera.position, frame.space.sun_direction, context.hardware, frame.space.flare_brightness, frame.attachments.frame_start);
     if (frame.escort_marker) |marker| try marker.frame(gpa, scene, frame.objects, context.camera.position, frame.view, frame.ticks);
@@ -1544,6 +1578,9 @@ pub fn startMission(gpa: Allocator, start: Start, image: []u8, number: u16) !*Lo
 
     if (world.hearing) |hearing| sound3d.endAll(hearing.sound);
     world.player.ending = .playing;
+    world.player.terminated = 0;
+    if (world.environment) |environment| environment.resetEffects();
+    if (world.gates) |gates| gates.reset();
     world.player.showing = .everything;
     world.player.rescue_odds = .{};
     world.player.carrier = null;
