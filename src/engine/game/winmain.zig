@@ -1,9 +1,12 @@
 //! `C:\lancer\game\winmain.cpp`: the game's entry, `WinMain` (`0x004A8B10`), and its message pump.
-//! **Unverified:** the pump (`0x004AAB20`) lies after the last of the file's code that its
-//! assertions place; by what it does it is this file's.
+//! **Unverified:** the pump (`0x004AAB20`), the queue of characters typed (`0x004AADA0` on) and the
+//! list of call signs' reading and writing (`0x004AAE00`, `0x004AAEE0`) lie after the last of the
+//! file's code that its assertions place; by what they do they are this file's.
 //!
 //! Ported so far: what the pump does as the game's window goes inactive and active again, as far
-//! as the sound and the pause go. `openreliant`'s own frame loop stands in for the rest.
+//! as the sound and the pause go; the characters typed, which the window's procedure queues; and
+//! the list of call signs the settings keep. `openreliant`'s own frame loop stands in for the
+//! rest.
 
 const std = @import("std");
 
@@ -13,7 +16,10 @@ const input = @import("../input.zig");
 const camera = @import("camera.zig");
 const hog_snd = @import("hog_snd.zig");
 const hudoptions = @import("hudoptions.zig");
-const Profile = @import("../profile.zig").Profile;
+const pilot_roster = @import("interface/pilot_roster.zig");
+const CallSigns = pilot_roster.CallSigns;
+const profile = @import("../profile.zig");
+const Profile = profile.Profile;
 const Sound = hog_snd.Sound;
 
 /// The window's activation, as the pump follows it.
@@ -115,10 +121,10 @@ pub const Device = struct {
     const gamma_key = "Gamma";
     const default_gamma = 100;
 
-    pub fn read(profile: Profile) Device {
+    pub fn read(settings: Profile) Device {
         return .{
-            .view = @enumFromInt(profile.int(video.section, video.view_key, 0)),
-            .brightness = @as(f32, @floatFromInt(profile.int(video.section, gamma_key, default_gamma))) / video.gamma_scale,
+            .view = @enumFromInt(settings.int(video.section, video.view_key, 0)),
+            .brightness = @as(f32, @floatFromInt(settings.int(video.section, gamma_key, default_gamma))) / video.gamma_scale,
         };
     }
 };
@@ -200,4 +206,113 @@ test missionPath {
     try std.testing.expectEqualStrings(".\\missions\\mission3.dte", missionPath(&buffer, 3, false, false));
     try std.testing.expectEqualStrings(".\\missions\\mission311.dte", missionPath(&buffer, 3, false, true));
     try std.testing.expectEqualStrings(".\\missions\\mission65535.dte", missionPath(&buffer, 65535, false, false));
+}
+
+/// The characters typed into the game's window (`typed_keys`, `0x005D547C`, and their count,
+/// `0x00595D70`), in the game's code page, as its procedure queues them from `WM_CHAR`
+/// (`window_proc`, `0x004A83CF`): a hundred at most. While `file_names` is set (`0x005D6088`), as the pilot roster sets it for the
+/// call sign that names the pilot's saves, the characters a file's name can't hold are refused
+/// (`file_name_refused`).
+pub const Typed = struct {
+    characters: [capacity]u8 = undefined,
+    count: usize = 0,
+    file_names: bool = false,
+
+    pub const capacity = 100;
+
+    /// The characters a file's name can't hold (`0x0050954C`).
+    pub const file_name_refused = "\\/:*?<>|\"";
+
+    /// Queues `character`, unless the queue is full or it is refused.
+    pub fn push(typed: *Typed, character: u8) void {
+        if (typed.count >= capacity) return;
+        if (typed.file_names and std.mem.indexOfScalar(u8, file_name_refused, character) != null) return;
+        typed.characters[typed.count] = character;
+        typed.count += 1;
+    }
+
+    /// `typed_key_pop` (`0x004AADB0`): the first character queued, taken off, or null for none.
+    pub fn pop(typed: *Typed) ?u8 {
+        if (typed.count == 0) return null;
+        const first = typed.characters[0];
+        std.mem.copyForwards(u8, typed.characters[0 .. typed.count - 1], typed.characters[1..typed.count]);
+        typed.count -= 1;
+        return first;
+    }
+
+    /// `typed_keys_clear` (`0x004AADA0`).
+    pub fn clear(typed: *Typed) void {
+        typed.count = 0;
+    }
+};
+
+test Typed {
+    var typed: Typed = .{};
+    for ("A1:") |character| typed.push(character);
+    try std.testing.expectEqual('A', typed.pop().?);
+    // A call sign's file name holds no colon.
+    typed.file_names = true;
+    typed.push('?');
+    typed.push('b');
+    try std.testing.expectEqual('1', typed.pop().?);
+    try std.testing.expectEqual(':', typed.pop().?);
+    try std.testing.expectEqual('b', typed.pop().?);
+    try std.testing.expectEqual(null, typed.pop());
+    // A hundred at most.
+    for (0..Typed.capacity + 5) |_| typed.push('x');
+    try std.testing.expectEqual(Typed.capacity, typed.count);
+    typed.clear();
+    try std.testing.expectEqual(null, typed.pop());
+}
+
+/// The settings' section of the call signs, and the key of each place, `name%02d` (`0x00509BC8`,
+/// `0x00509BD8`).
+const call_signs_section = "CallsignList";
+
+fn callSignKey(buffer: *[8]u8, place: usize) []const u8 {
+    return std.fmt.bufPrint(buffer, "name{d:0>2}", .{place}) catch unreachable;
+}
+
+/// `callsigns_load` (`0x004AAE00`): the call sign of each of the list's places from `settings`,
+/// the first `player` where the settings have none (string `0xBF`, `pilot_roster.String.player`),
+/// the rest empty. `WinMain` reads the list as the game starts, and writes it straight back
+/// (`saveCallSigns`, `0x004A919B`).
+pub fn loadCallSigns(settings: Profile, player: []const u8) CallSigns {
+    var list: CallSigns = .{};
+    for (&list.names, 0..) |*name, place| {
+        var key: [8]u8 = undefined;
+        const default: []const u8 = if (place == 0) player else "";
+        name.set(settings.value(call_signs_section, callSignKey(&key, place)) orelse default);
+    }
+    return list;
+}
+
+/// `callsigns_save` (`0x004AAEE0`): each place's call sign to `settings`, then the list read back
+/// from them (`loadCallSigns`), as the settings give each call sign, without spaces at its ends.
+pub fn saveCallSigns(list: *CallSigns, settings: *profile.File) std.mem.Allocator.Error!void {
+    for (&list.names, 0..) |*name, place| {
+        var key: [8]u8 = undefined;
+        try settings.write(call_signs_section, callSignKey(&key, place), name.slice());
+    }
+    // Every place is in the settings now, so the first needs no call sign in its place.
+    list.* = loadCallSigns(settings.profile, "");
+}
+
+test loadCallSigns {
+    const gpa = std.testing.allocator;
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    // Without the settings, the first place is PLAYER and the rest are empty.
+    var list = loadCallSigns(.empty, "PLAYER");
+    try std.testing.expectEqualStrings("PLAYER", list.names[0].slice());
+    try std.testing.expectEqual(0, list.names[1].len);
+    // The settings keep them, and give them back without spaces at their ends.
+    list.names[1].set("Ace ");
+    var settings: profile.File = .{ .arena = arena_state.allocator(), .profile = .empty };
+    try saveCallSigns(&list, &settings);
+    try std.testing.expect(settings.changed);
+    try std.testing.expectEqualStrings("PLAYER", settings.profile.value(call_signs_section, "name00").?);
+    try std.testing.expectEqualStrings("", settings.profile.value(call_signs_section, "name09").?);
+    try std.testing.expectEqualStrings("Ace", list.names[1].slice());
+    try std.testing.expectEqualStrings("Ace", loadCallSigns(settings.profile, "PLAYER").names[1].slice());
 }

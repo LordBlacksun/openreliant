@@ -552,8 +552,9 @@ anything, one that only a player can hit from anyone else. One in the last state
 Armour below zero destroys the object (`object_destroyed`, `0x00401F30`), telling it that it may
 spin out, and that a player's pilot has no time to eject where the blow was over 1000.
 
-Outside multiplayer the game's difficulty (`0x00562F14`: 0 easy, 1 medium, 2 hard, which SET GAME
-DIFFICULTY starts at medium) scales damage (`damage_by_difficulty`, `0x00463D70`):
+Outside multiplayer the game's difficulty (`0x00562F14`: 0 easy, 1 medium, 2 hard, 0 as the game
+starts, and medium as SET GAME DIFFICULTY starts, [Front end](front-end.md#set-game-difficulty))
+scales damage (`damage_by_difficulty`, `0x00463D70`):
 
 | Difficulty | A shot on a hostile object | Anything on the player's ship |
 |---|---|---|
@@ -566,8 +567,8 @@ the damage before the scaling. `object_armor_damage` scales its damage twice, on
 `recent_damage` and that again for the armour, and `component_damage` (`0x004645C0`) once. So at
 medium a hit on the player's ship takes half off its shield and a quarter of what gets through off
 its armour. The game tells a shot by comparing the damage's kind with the player's slot, which is
-0, a shot's kind, in a single-player game. OpenReliant takes the difficulty from `--difficulty`,
-medium by default.
+0, a shot's kind, in a single-player game. OpenReliant flies a mission the front end starts at the
+difficulty the pilot roster set, and one `--mission` names at medium; `--difficulty` sets either.
 
 - An AI ship's pilot ejects where the ship is in the player's wing, `0x74C` 0, and its roll at
   `0x70C` is below 40, or where the ship was told to eject before exploding. The ship spins on under

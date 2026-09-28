@@ -20,7 +20,7 @@ const Pointer = canvas_module.Pointer;
 const Rect = canvas_module.Rect;
 const dialog = @import("dialog.zig");
 
-/// What the menu shows behind itself (`background_set`), its shapes (`main_menu_shapes`), and the
+/// What the menu shows behind itself (`background_set`), its shapes (`interface_shapes`), and the
 /// music it starts when none is playing, at 127.
 pub const background_name = "interface\\sl_splash2.tga";
 pub const shapes_name = "interface\\frontend.spr";

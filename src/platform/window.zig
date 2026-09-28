@@ -27,8 +27,15 @@ pub const Event = union(enum) {
     pointer: struct { at: [2]f32, moved: [2]f32 },
     /// A mouse button went down or up: the left or the right one, which the game reads.
     button: struct { which: Button, down: bool },
+    /// A character typed while the window takes text (`takeText`), as `WM_CHAR` gives one: each
+    /// character of what the system's text input makes, and a backspace, 8, at each press of the
+    /// key and at each of its repeats.
+    typed: u21,
 
     pub const Button = enum { left, right };
+
+    /// The character a backspace types.
+    pub const backspace = 8;
 };
 
 pub const Window = struct {
@@ -36,6 +43,15 @@ pub const Window = struct {
     gpu: *c.SDL_GPUDevice,
     /// A frame drawn in memory, and the texture it goes up to on its way to the screen.
     frame: ?struct { width: u32, height: u32, transfer: *c.SDL_GPUTransferBuffer, texture: *c.SDL_GPUTexture } = null,
+    /// Whether it takes text (`takeText`), the text the system's input made that `poll` has yet to
+    /// hand out a character at a time, and a backspace to hand out after its key.
+    taking_text: bool = false,
+    text: [text_room]u8 = undefined,
+    text_left: []const u8 = &.{},
+    backspace_owed: bool = false,
+
+    /// The most of one of the system's text events kept, the room SDL gives one.
+    const text_room = 32;
 
     /// A window of `width` by `height` points, or filling the display, drawn into at the display's
     /// own density.
@@ -82,6 +98,11 @@ pub const Window = struct {
     /// The next event waiting, or null. Alt and Enter, added for OpenReliant, switch between the
     /// window and the full screen, and do not reach the game.
     pub fn poll(window: *Window) ?Event {
+        if (window.backspace_owed) {
+            window.backspace_owed = false;
+            return .{ .typed = Event.backspace };
+        }
+        if (window.nextTyped()) |character| return .{ .typed = character };
         var event: c.SDL_Event = undefined;
         while (c.SDL_PollEvent(&event)) {
             switch (event.type) {
@@ -91,8 +112,17 @@ pub const Window = struct {
                         if (event.key.down and !event.key.repeat) window.toggleFullscreen();
                         continue;
                     }
+                    if (window.taking_text and event.key.down and event.key.scancode == c.SDL_SCANCODE_BACKSPACE) window.backspace_owed = true;
                     const scan = keyboard.directInput(event.key.scancode) orelse continue;
                     return .{ .key = .{ .scan = scan, .down = event.key.down } };
+                },
+                c.SDL_EVENT_TEXT_INPUT => {
+                    if (!window.taking_text) continue;
+                    const made = std.mem.span(event.text.text);
+                    const kept = made[0..@min(made.len, text_room)];
+                    @memcpy(window.text[0..kept.len], kept);
+                    window.text_left = window.text[0..kept.len];
+                    if (window.nextTyped()) |character| return .{ .typed = character };
                 },
                 c.SDL_EVENT_JOYSTICK_ADDED, c.SDL_EVENT_JOYSTICK_REMOVED => return .controllers,
                 c.SDL_EVENT_WINDOW_FOCUS_GAINED => return .{ .active = true },
@@ -119,6 +149,36 @@ pub const Window = struct {
             }
         }
         return null;
+    }
+
+    /// The next character of the text the system's input made, or null once it is all handed out.
+    /// A byte that starts no character of UTF-8, and a character cut short, are passed over.
+    fn nextTyped(window: *Window) ?u21 {
+        while (window.text_left.len > 0) {
+            const length = std.unicode.utf8ByteSequenceLength(window.text_left[0]) catch {
+                window.text_left = window.text_left[1..];
+                continue;
+            };
+            if (length > window.text_left.len) {
+                window.text_left = &.{};
+                return null;
+            }
+            const bytes = window.text_left[0..length];
+            window.text_left = window.text_left[length..];
+            return std.unicode.utf8Decode(bytes) catch continue;
+        }
+        return null;
+    }
+
+    /// Takes the text typed into the window from now on, character by character (`Event.typed`),
+    /// or stops taking it, as a line to type into comes and goes. The system may show its own
+    /// keyboard or its input's window while the window takes text.
+    pub fn takeText(window: *Window, on: bool) void {
+        if (window.taking_text == on) return;
+        window.taking_text = on;
+        window.text_left = &.{};
+        window.backspace_owed = false;
+        _ = if (on) c.SDL_StartTextInput(window.handle) else c.SDL_StopTextInput(window.handle);
     }
 
     /// Shows the system's pointer over the window, or hides it where the game draws its own.

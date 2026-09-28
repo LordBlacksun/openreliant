@@ -52,6 +52,7 @@ const sound3d = @import("sound3d.zig");
 const main = @import("main.zig");
 const vm = @import("../vm.zig");
 const videoreports = @import("videoreports.zig");
+const winmain = @import("winmain.zig");
 const Clock = main.Clock;
 const Vector = math.Vector;
 
@@ -759,6 +760,28 @@ pub fn drawText(
     return @intFromFloat(x);
 }
 
+/// `text_entry_step` (`0x004812F0`), with the line set up for it each frame (`text_entry_set_up`,
+/// `0x004812B0`): takes the next character typed (`winmain.Typed.pop`) into the line, the first
+/// `length` of `buffer`. A backspace takes the last character off; any other goes on the end where
+/// the line stays narrower than `max_width` pixels in `font`, and is taken back off otherwise.
+///
+/// **Fix:** the game goes on adding characters while the line stays narrow enough, whatever room
+/// its buffer has, which a line of narrow characters overruns; OpenReliant stops at the buffer's
+/// end.
+pub fn typeInto(typed: *winmain.Typed, buffer: []u8, length: *usize, font: *const Opened, max_width: u32) void {
+    const character = typed.pop() orelse return;
+    if (character == backspace) {
+        length.* -|= 1;
+        return;
+    }
+    if (length.* >= buffer.len) return;
+    buffer[length.*] = character;
+    if (font.textWidth(buffer[0 .. length.* + 1]) < max_width) length.* += 1;
+}
+
+/// The character a backspace types, which `typeInto` takes as one taken off.
+pub const backspace = 8;
+
 /// The room `hud_text_wrapped` copies a line into (`0x00480FEC`).
 pub const wrapped_line_room = 0x400;
 
@@ -1030,6 +1053,27 @@ test "a ramp font's glyphs are levels of grey" {
         try std.testing.expectEqual(pixel[0], pixel[2]);
         try std.testing.expectEqual(@as(u8, if (level == 0) 0 else 255), pixel[3]);
     }
+}
+
+test typeInto {
+    const opened: Opened = .open(try fnt.Font.parse(comptime fnt.testing.font(true)), null);
+    const width: u32 = opened.widths[1];
+    var typed: winmain.Typed = .{};
+    var buffer: [4]u8 = undefined;
+    var length: usize = 0;
+    // Code 1 is the fixture's one glyph: two of them stay narrower than three, a third doesn't.
+    for (0..3) |_| typed.push(1);
+    for (0..3) |_| typeInto(&typed, &buffer, &length, &opened, width * 3);
+    try std.testing.expectEqual(2, length);
+    // A backspace takes the last off, and with nothing typed nothing changes.
+    typed.push(backspace);
+    typeInto(&typed, &buffer, &length, &opened, width * 3);
+    typeInto(&typed, &buffer, &length, &opened, width * 3);
+    try std.testing.expectEqual(1, length);
+    // Code 2 has no glyph and no width, and the line stops at the buffer's end.
+    for (0..6) |_| typed.push(2);
+    for (0..6) |_| typeInto(&typed, &buffer, &length, &opened, width * 3);
+    try std.testing.expectEqual(buffer.len, length);
 }
 
 test drawText {
@@ -2398,12 +2442,20 @@ pub fn drawLine(target: device.Device, from: Point, to: Point, colour: [4]f32, w
     const length = distance(start, end);
     const along: Point = if (length > 0) (end - start) / @as(Point, @splat(length)) * half else .{ half[0], 0 };
     const across: Point = .{ -along[1], along[0] };
+    fillQuad(target, .{ start - along - across, end + along - across, end + along + across, start - along + across }, colour);
+}
+
+/// Fills `edges` with `colour`, as `VFX_pane_wipe` fills a pane.
+pub fn drawFilled(target: device.Device, edges: Clip, colour: [4]f32) void {
+    fillQuad(target, .{ .{ edges.left, edges.top }, .{ edges.right, edges.top }, .{ edges.right, edges.bottom }, .{ edges.left, edges.bottom } }, colour);
+}
+
+/// Fills the quad whose corners run round it in order with `colour`, over the frame.
+fn fillQuad(target: device.Device, corners: [4]Point, colour: [4]f32) void {
     const tint = device.pack(colour);
-    var corners: [4]device.Vertex = undefined;
-    for (&corners, [4]Point{ start - along - across, end + along - across, end + along + across, start - along + across }) |*corner, at| {
-        corner.* = .{ .x = at[0], .y = at[1], .z = 1, .rhw = 1, .diffuse = tint };
-    }
-    target.draw(overlayState(null), .fan, &corners, null);
+    var vertices: [4]device.Vertex = undefined;
+    for (&vertices, corners) |*vertex, at| vertex.* = .{ .x = at[0], .y = at[1], .z = 1, .rhw = 1, .diffuse = tint };
+    target.draw(overlayState(null), .fan, &vertices, null);
 }
 
 /// How far the object at `index` is from the player's ship, in whole kilometres of a thousand of

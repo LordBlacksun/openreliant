@@ -53,6 +53,12 @@ pub const Language = struct {
     }
 };
 
+/// A character typed, as `WM_CHAR` gives it in the game's code page, 1252 (`codePage1252`): a
+/// question mark for one the page doesn't hold.
+pub fn fromUnicode(character: u21) u8 {
+    return codePage1252(std.math.cast(u16, character) orelse return '?');
+}
+
 /// A UTF-16 unit as `LoadStringA` writes it under Windows' Western code page, 1252: itself below
 /// `0x80` and from `0xA0` to `0xFF`, the page's own byte for the characters it holds between, and
 /// a question mark for the rest. **Unverified:** that the game's strings meet the Western page;
@@ -97,6 +103,13 @@ test Language {
     try std.testing.expectEqualStrings("External Camera", language.string(3).?);
     try std.testing.expectEqual(null, language.string(0));
     try std.testing.expectEqual(null, language.string(5));
+}
+
+test fromUnicode {
+    try std.testing.expectEqual('A', fromUnicode('A'));
+    try std.testing.expectEqual(0xE9, fromUnicode(0xE9));
+    try std.testing.expectEqual(0x80, fromUnicode(0x20AC));
+    try std.testing.expectEqual('?', fromUnicode(0x1F600));
 }
 
 test codePage1252 {

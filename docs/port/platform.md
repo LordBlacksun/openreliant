@@ -44,7 +44,7 @@ zig build -Dtarget=aarch64-macos               # Apple silicon, from any Zig
 | `--mission <number>` | The mission to play at once, by the number the game names its file by, rather than open the front end; 0 is OpenReliant's sandbox |
 | `--ship <type>` | The ship type to fly, by its number in `shipstats.bin`, in place of the loadout screen's choice; the mission's own by default |
 | `--view <0\|1\|2>` | The view it starts in, as the game's settings keep it: 0 the cockpit, the default; 1 the chase view; 2 no cockpit |
-| `--difficulty <easy\|medium\|hard>` | The game's difficulty: how hard hits land on your ship, and shots on the enemy; medium by default, as in the game |
+| `--difficulty <easy\|medium\|hard>` | The game's difficulty: how hard hits land on your ship, and shots on the enemy. By default, as in the game, medium with `--mission`, where a new campaign's starts, and easy in the main menu until SET GAME DIFFICULTY sets it |
 | `--music <file>` | A piece of `music` to play from the start, until the mission's script plays its own; none by default |
 
 **Display.**
