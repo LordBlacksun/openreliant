@@ -1,8 +1,8 @@
 //! The movies' packets, decoded by FFmpeg's Bink decoders (`deps/ffmpeg`) for the engine's
 //! stand-in for Bink ([`engine/bink.zig`](../engine/bink.zig)'s `Codec`). Each decoder is set up as
-//! FFmpeg's own reader of the container sets it up: the video's with the file's signature as its
-//! tag and the header's flags as its extra data, an audio track's with its rate, its channels and
-//! the file's signature.
+//! FFmpeg's reader of the container, its Bink demuxer, sets it up: the video's with the file's
+//! signature as its tag and the header's flags as its extra data, an audio track's with its rate,
+//! its channels and the file's signature.
 //!
 //! FFmpeg is built without threads, so it is used from the thread the game runs on alone.
 
@@ -13,11 +13,9 @@ const c = @import("av");
 const openreliant = @import("openreliant");
 const bink = openreliant.engine.bink;
 
-const log = std.log.scoped(.video);
-
 /// The decoders, which hold nothing between the streams they open.
 pub const Decoders = struct {
-    /// Quiets FFmpeg's own messages: a packet it cannot decode fails the call, which says so.
+    /// Quiets FFmpeg's messages: a packet it cannot decode fails the call, which says so.
     pub fn init() Decoders {
         c.av_log_set_level(c.AV_LOG_QUIET);
         return .{};
@@ -46,45 +44,53 @@ const Stream = struct {
 };
 
 fn openVideo(_: *anyopaque, video: bink.Video) bink.Error!bink.Stream {
-    return open(c.AV_CODEC_ID_BINKVIDEO, struct {
-        fn setUp(context: *c.AVCodecContext, setup: bink.Video) void {
-            context.width = @intCast(setup.width);
-            context.height = @intCast(setup.height);
-            context.codec_tag = signature(setup.revision);
-            std.mem.writeInt(u32, context.extradata[0..4], @bitCast(setup.flags), .little);
-        }
-    }.setUp, video);
+    return open(.{ .video = video });
 }
 
 fn openAudio(_: *anyopaque, audio: bink.Audio) bink.Error!bink.Stream {
-    return open(if (audio.dct) c.AV_CODEC_ID_BINKAUDIO_DCT else c.AV_CODEC_ID_BINKAUDIO_RDFT, struct {
-        fn setUp(context: *c.AVCodecContext, setup: bink.Audio) void {
-            context.sample_rate = @intCast(setup.rate);
-            c.av_channel_layout_default(&context.ch_layout, setup.channels);
-            std.mem.writeInt(u32, context.extradata[0..4], signature(setup.revision), .little);
-        }
-    }.setUp, audio);
+    return open(.{ .audio = audio });
 }
 
-/// A decoder of `id`, its 4 bytes of extra data and the rest set by `setUp` from `setup`.
-fn open(id: c.enum_AVCodecID, comptime setUp: anytype, setup: anytype) bink.Error!bink.Stream {
+/// What a stream's decoder is set up for.
+const Setup = union(enum) {
+    video: bink.Video,
+    audio: bink.Audio,
+};
+
+/// A decoder set up for `setup`. Its 4 bytes of extra data hold the video's flags, or an audio
+/// track's movie's signature.
+fn open(setup: Setup) bink.Error!bink.Stream {
+    const id: c.enum_AVCodecID = switch (setup) {
+        .video => c.AV_CODEC_ID_BINKVIDEO,
+        .audio => |audio| if (audio.dct) c.AV_CODEC_ID_BINKAUDIO_DCT else c.AV_CODEC_ID_BINKAUDIO_RDFT,
+    };
     const decoder = c.avcodec_find_decoder(id) orelse return error.Decoding;
     var context: ?*c.AVCodecContext = c.avcodec_alloc_context3(decoder) orelse return error.OutOfMemory;
     errdefer c.avcodec_free_context(&context);
     const extradata: [*]u8 = @ptrCast(c.av_mallocz(4 + c.AV_INPUT_BUFFER_PADDING_SIZE) orelse return error.OutOfMemory);
-    context.?.extradata = extradata;
-    context.?.extradata_size = 4;
-    setUp(context.?, setup);
+    const set_up = context.?;
+    set_up.extradata = extradata;
+    set_up.extradata_size = 4;
+    switch (setup) {
+        .video => |video| {
+            set_up.width = @intCast(video.width);
+            set_up.height = @intCast(video.height);
+            set_up.codec_tag = signature(video.revision);
+            std.mem.writeInt(u32, extradata[0..4], @bitCast(video.flags), .little);
+        },
+        .audio => |audio| {
+            set_up.sample_rate = @intCast(audio.rate);
+            c.av_channel_layout_default(&set_up.ch_layout, audio.channels);
+            std.mem.writeInt(u32, extradata[0..4], signature(audio.revision), .little);
+        },
+    }
     if (c.avcodec_open2(context, decoder, null) < 0) return error.Decoding;
     var packet: ?*c.AVPacket = c.av_packet_alloc() orelse return error.OutOfMemory;
     errdefer c.av_packet_free(&packet);
-    const frame: ?*c.AVFrame = c.av_frame_alloc() orelse return error.OutOfMemory;
-    const stream = std.heap.c_allocator.create(Stream) catch {
-        var unused = frame;
-        c.av_frame_free(&unused);
-        return error.OutOfMemory;
-    };
-    stream.* = .{ .context = context.?, .packet = packet.?, .frame = frame.? };
+    var frame: ?*c.AVFrame = c.av_frame_alloc() orelse return error.OutOfMemory;
+    errdefer c.av_frame_free(&frame);
+    const stream = try std.heap.c_allocator.create(Stream);
+    stream.* = .{ .context = set_up, .packet = packet.?, .frame = frame.? };
     return stream;
 }
 
@@ -147,7 +153,7 @@ fn samples(_: *anyopaque, handle: bink.Stream, packet: []const u8, gpa: Allocato
 }
 
 /// A float sample from -1 to 1 as a 16-bit one, rounded to the nearest and a half to the even one,
-/// as FFmpeg's own conversion rounds (`lrintf`).
+/// as FFmpeg's conversion rounds (`lrintf`).
 fn sample16(level: f32) i16 {
     const scaled = level * 32768;
     var rounded = @round(scaled);

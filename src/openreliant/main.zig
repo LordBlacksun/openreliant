@@ -635,6 +635,9 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
     // The movies: FFmpeg's decoders behind the stand-in for Bink, and what plays them in a loop of
     // their own. As the renderer first starts, before its loading screens, `renderer_load` plays the
     // intro; a mission `--mission` names, or a screenshot, starts without it.
+    // What draws the frames outside the game's loop: the movies', and the loading screens'.
+    var presenter: Presenter = .{ .window = &window, .screen = screen, .driver = &driver, .context = &context, .wanted = options.settings.size, .arena = arena };
+    defer presenter.close(gpa);
     var decoders: platform.video.Decoders = .init();
     var movies: Movies = .{
         .gpa = gpa,
@@ -642,7 +645,7 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
         .directory = directory,
         .codec = decoders.codec(),
         .sound = if (output) |open| open.driver() else null,
-        .presenter = .{ .window = &window, .screen = screen, .driver = &driver, .context = &context, .wanted = options.settings.size, .arena = arena },
+        .presenter = &presenter,
         .devices = &devices,
         .pacer = &pacer,
         .frame_rate = options.frameRate(window),
@@ -651,7 +654,6 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
         .transitions = device_settings.transitions,
         .hardware = !options.software,
     };
-    defer movies.presenter.close(gpa);
     if (options.mission == null and options.screenshot == null) {
         for (game.xtrabits.movie.intro) |name| if (!try movies.play(name, .cleared)) return;
     }
@@ -660,7 +662,7 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
     var loading: Loading = .{
         .resources = try .open(gpa, resources),
         .archive = &resources,
-        .presenter = .{ .window = &window, .screen = screen, .driver = &driver, .context = &context, .wanted = options.settings.size, .arena = arena },
+        .presenter = &presenter,
         .strings = &strings,
         .splash = options.loading_splash,
     };
@@ -915,6 +917,10 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
         if (!try movies.play(game.xtrabits.movie.splash_to_menu, .over_screen)) return;
     }
     while (true) {
+        if (movies.controllers_changed) {
+            movies.controllers_changed = false;
+            if (options.screenshot == null) connectController(arena, &devices, &controller, settings_file.profile);
+        }
         while (window.poll()) |event| switch (event) {
             .quit => return,
             .key => |key| if (options.screenshot == null) {
@@ -1299,7 +1305,7 @@ const Movies = struct {
     codec: engine.bink.Codec,
     /// The Miles driver the movies' sound plays through, where there is sound.
     sound: ?engine.mss.Driver,
-    presenter: Presenter,
+    presenter: *Presenter,
     devices: *engine.input.Devices,
     pacer: *platform.window.Pacer,
     /// The frames a second the loop keeps to, where the display does not keep it.
@@ -1310,13 +1316,20 @@ const Movies = struct {
     /// whether a movie plays (`game.xtrabits.movie.Kind.plays`).
     transitions: bool,
     hardware: bool,
+    /// Whether a controller was connected or taken out while a movie played, which the game's loop
+    /// then takes up.
+    controllers_changed: bool = false,
 
     /// Plays the movie `name` names in the game's folder as `kind` has it, until it ends or is
     /// skipped. False where the window was closed meanwhile, which quits the game, as it quits the
     /// game's loop (`game_exit`). A movie the folder lacks, or that cannot be decoded, is left out.
     fn play(movies: *Movies, name: []const u8, kind: game.xtrabits.movie.Kind) !bool {
         if (!kind.plays(movies.transitions, movies.hardware)) return true;
-        const file = (engine.files.readFile(movies.io, movies.gpa, movies.directory, name, .limited(engine.files.max_file_size)) catch null) orelse {
+        const found = engine.files.readFile(movies.io, movies.gpa, movies.directory, name, .limited(engine.files.max_file_size)) catch |err| {
+            std.log.warn("the movie {s} is left out: {s}", .{ name, @errorName(err) });
+            return true;
+        };
+        const file = found orelse {
             std.log.warn("the movie {s} is left out: the game's folder has none", .{name});
             return true;
         };
@@ -1337,7 +1350,8 @@ const Movies = struct {
                 },
                 // The message pump pauses the movie while the window is away (`BinkPause`).
                 .active => |active| player.bink.pause(!active, platform.window.nanoseconds()),
-                .typed, .controllers => {},
+                .controllers => movies.controllers_changed = true,
+                .typed => {},
             };
             devices.keyboard.read();
             const over = player.pass(&devices.keyboard, devices.mouse.buttons.right, platform.window.nanoseconds()) catch |err| over: {
@@ -1372,12 +1386,11 @@ const Movies = struct {
 const Loading = struct {
     resources: game.xtrabits.loading.Resources,
     archive: *const game.bigfile.Hog,
-    presenter: Presenter,
+    presenter: *Presenter,
     strings: *const game.language.Language,
     splash: game.xtrabits.loading.Splash,
 
     fn close(loading: *Loading) void {
-        loading.presenter.close(loading.resources.gpa);
         loading.resources.close();
     }
 

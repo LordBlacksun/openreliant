@@ -174,6 +174,14 @@ pub fn fit(screen: [2]u32, base: [2]u32) f32 {
     return least;
 }
 
+/// Where the top left corner of something `base` pixels across and down stands on `screen`, drawn
+/// `scale` times its size in the middle.
+pub fn centred(screen: [2]u32, base: [2]u32, scale: f32) [2]f32 {
+    var corner: [2]f32 = undefined;
+    for (&corner, screen, base) |*at, size, across| at.* = (@as(f32, @floatFromInt(size)) - @as(f32, @floatFromInt(across)) * scale) / 2;
+    return corner;
+}
+
 /// The menus' fonts in `resource.hog`, which the pause menu (`pause_menu_open`) and the front end
 /// (`interface_init`) each open: the titles and labels, and the smaller text.
 pub const large_menu_font = "interface\\optfnt.fnt";

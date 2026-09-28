@@ -9,7 +9,7 @@ Two functions play a movie in a loop of their own, in `xtrabits.cpp`:
 
 | Function | Plays | Over | At |
 |---|---|---|---|
-| `play_bink_movie` (`0x004AB850`) | The intro | A screen cleared to black once | The movie's own rate, at full volume (`BinkSetVolume`, `0x8000`) |
+| `play_bink_movie` (`0x004AB850`) | The intro | A screen cleared to black once | The movie's rate, at full volume (`BinkSetVolume`, `0x8000`) |
 | `play_bink_movie_no_clear` (`0x004AB6E0`) | The front end's transitions | What the screen last showed | 15 frames a second (`BinkSetFrameRate(15, 1)` and `BINKFRAMERATE`) |
 
 A pass of the loop (`0x004AB7B2`) runs the message pump, reads the keyboard and moves the pointer.
@@ -58,7 +58,7 @@ is left out, and the game goes on.
   a dark or flat area once a movie is drawn large, as in the front end's transitions. Where three
   levels either side are even, the step is spread over the four nearest it, as H.264's strong
   filter spreads one; otherwise the two at the edge are brought nearer. Steps past that are edges
-  of the picture's own, and stay.
+  in the picture, and stay.
 - Each pixel's colour is blended from the four nearest samples of the half-size colour planes,
   three quarters of the nearer and a quarter of the farther each way, where Bink gives a 2 by 2
   block of pixels one colour, which shows as steps along a coloured edge.

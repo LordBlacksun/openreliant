@@ -60,8 +60,8 @@ pub fn build(b: *std.Build) void {
     platform.addImport("al", openal_c.createModule());
     platform.linkLibrary(openal_library);
     // The movies: FFmpeg's Bink decoders in place of RAD's Bink library, which deps/ffmpeg builds
-    // from source for the target. It is built optimized whatever the game's own mode, as OpenAL
-    // Soft is, so that a movie decodes in time in a debug build too.
+    // from source for the target. It is built optimized whatever mode the game is built in, as
+    // OpenAL Soft is, so that a movie decodes in time in a debug build too.
     const ffmpeg_library = b.dependency("ffmpeg", .{ .target = target, .optimize = .ReleaseFast }).artifact("avcodec");
     const ffmpeg_c = b.addTranslateC(.{
         .root_source_file = b.path("src/platform/ffmpeg.h"),

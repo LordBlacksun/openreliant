@@ -18,6 +18,13 @@ pub const Picture = struct {
     strides: [4]usize,
 };
 
+/// The size of each of a picture `width` by `height` pixels' planes, Y, U and V: Y the picture's,
+/// U and V half of it across and down, rounded up.
+pub fn planeSizes(width: u32, height: u32) [3][2]usize {
+    const half: [2]usize = .{ (width + 1) / 2, (height + 1) / 2 };
+    return .{ .{ width, height }, half, half };
+}
+
 /// OpenReliant's improvements on the pictures.
 pub const Look = struct {
     /// **Improvement:** the steps at the edges of the 8 by 8 blocks Bink codes a picture in,
@@ -37,8 +44,7 @@ pub const Look = struct {
 /// `smooth_colour`, blended from the nearest four (`smoothChroma`). Alpha, where the movie has
 /// none, is full.
 pub fn convert(picture: Picture, rgba: []u8, pitch: usize, at: [2]usize, smooth_colour: bool) void {
-    const chroma_width = (picture.width + 1) / 2;
-    const chroma_height = (picture.height + 1) / 2;
+    const chroma_width, const chroma_height = planeSizes(picture.width, picture.height)[1];
     for (0..picture.height) |row| {
         const out = rgba[(at[1] + row) * pitch + at[0] * 4 ..][0 .. picture.width * 4];
         const y = picture.y[row * picture.strides[0] ..];
@@ -102,7 +108,7 @@ fn clampLevel(level: i32) u8 {
 pub const block = 8;
 
 /// The largest step at a block's edge that is smoothed, in levels: past it the edge is taken for
-/// one of the picture's own.
+/// an edge in the picture.
 pub const largest_step = 12;
 
 /// How far the levels either side of an edge may differ and still be taken as even.
@@ -181,7 +187,7 @@ test deblock {
     var plane: [16]u8 = .{ 40, 40, 40, 40, 40, 40, 40, 40, 48, 48, 48, 48, 48, 48, 48, 48 };
     deblock(&plane, 16, 1, 16);
     try std.testing.expectEqualSlices(u8, &.{ 40, 40, 40, 40, 40, 40, 42, 43, 45, 46, 48, 48, 48, 48, 48, 48 }, &plane);
-    // A step past the largest is the picture's own edge, and stays.
+    // A step past the largest is an edge in the picture, and stays.
     var edge: [16]u8 = .{ 40, 40, 40, 40, 40, 40, 40, 40, 80, 80, 80, 80, 80, 80, 80, 80 };
     deblock(&edge, 16, 1, 16);
     try std.testing.expectEqual(40, edge[7]);

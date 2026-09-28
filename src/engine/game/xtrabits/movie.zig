@@ -23,6 +23,7 @@ const hud = @import("../hud.zig");
 const canvas = @import("../interface/canvas.zig");
 const srtexture = @import("../../surrender/surrenderlib/srtexture.zig");
 const device = @import("../../surrender/srd3d/device.zig");
+const container = @import("../../../formats/bink.zig");
 
 /// The movies `renderer_load` plays as the renderer first starts (`0x004AB4D5` on), before its
 /// loading screens.
@@ -40,7 +41,7 @@ pub const single_to_main = "interface\\sin2main.bik";
 
 /// How a movie plays.
 pub const Kind = enum {
-    /// `play_bink_movie`: at its own rate, on a screen it clears to black first. `renderer_load`
+    /// `play_bink_movie`: at the movie's rate, on a screen it clears to black first. `renderer_load`
     /// plays the intro so.
     cleared,
     /// `play_bink_movie_no_clear`: at 15 frames a second (`transition_rate`), over what the screen
@@ -63,7 +64,7 @@ pub const Size = enum {
     screen,
 };
 
-/// The rate `play_bink_movie_no_clear` plays at, whatever the movie's own (`BinkSetFrameRate` with
+/// The rate `play_bink_movie_no_clear` plays at, whatever the movie's (`BinkSetFrameRate` with
 /// `BINKFRAMERATE`, `0x004AB752`).
 pub const transition_rate: bink.Rate = .{ .frames = 15, .seconds = 1 };
 
@@ -89,13 +90,12 @@ pub const Player = struct {
         errdefer movie.close();
         const rgba = try gpa.alloc(u8, @as(usize, movie.width) * movie.height * 4);
         @memset(rgba, 0);
-        const picture = srtexture.Image.single(gpa, movie.width, movie.height, rgba) catch |err| {
+        var picture = srtexture.Image.single(gpa, movie.width, movie.height, rgba) catch |err| {
             gpa.free(rgba);
             return err;
         };
-        var upscaled = picture;
-        upscaled.magnify = .edge_adaptive;
-        return .{ .gpa = gpa, .bink = movie, .picture = upscaled, .pixels = rgba };
+        picture.magnify = .edge_adaptive;
+        return .{ .gpa = gpa, .bink = movie, .picture = picture, .pixels = rgba };
     }
 
     pub fn close(player: *Player) void {
@@ -129,24 +129,19 @@ pub const Player = struct {
             .fitted => hud.fit(window, size),
             .screen => canvas.scaleFor(window),
         };
-        var corner: [2]f32 = undefined;
-        for (&corner, window, size) |*at, pixels, across| {
-            at.* = (@as(f32, @floatFromInt(pixels)) - @as(f32, @floatFromInt(across)) * scale) / 2;
-        }
-        hud.drawImage(target, &player.picture, corner, .{ 1, 1, 1, 1 }, scale, .{});
+        hud.drawImage(target, &player.picture, hud.centred(window, size, scale), .{ 1, 1, 1, 1 }, scale, .{});
     }
 };
 
 test "a movie plays its frames as each falls due, and ends" {
     const gpa = std.testing.allocator;
-    const container = @import("../../../formats/bink.zig");
     var buffer: [256]u8 = undefined;
-    const bytes = container.testMovie(&buffer, 2, &.{});
-    var codec: TestCodec = .{};
+    const bytes = container.testing.movie(&buffer, 2, &.{});
+    var codec: bink.testing.Decoders = .{};
     var player: Player = try .open(gpa, codec.codec(), try gpa.dupe(u8, bytes), .over_screen, null, .{});
     defer player.close();
     var keyboard: input.Keyboard = .{};
-    // The first frame shows at once, grey; the second when it is due, then the movie is over.
+    // The first frame shows at once; the second when it is due, then the movie is over.
     try std.testing.expect(!try player.pass(&keyboard, false, 0));
     try std.testing.expectEqual(1, codec.pictures);
     try std.testing.expect(player.picture.changed);
@@ -159,10 +154,9 @@ test "a movie plays its frames as each falls due, and ends" {
 
 test "Escape and the right button end a movie" {
     const gpa = std.testing.allocator;
-    const container = @import("../../../formats/bink.zig");
     var buffer: [256]u8 = undefined;
-    const bytes = container.testMovie(&buffer, 5, &.{});
-    var codec: TestCodec = .{};
+    const bytes = container.testing.movie(&buffer, 5, &.{});
+    var codec: bink.testing.Decoders = .{};
     var player: Player = try .open(gpa, codec.codec(), try gpa.dupe(u8, bytes), .cleared, null, .original);
     defer player.close();
     var keyboard: input.Keyboard = .{};
@@ -178,34 +172,3 @@ test Kind {
     try std.testing.expect(Kind.cleared.plays(false, true));
     try std.testing.expect(!Kind.cleared.plays(false, false));
 }
-
-/// A codec for the tests: every picture 8 by 6 and grey.
-const TestCodec = struct {
-    pictures: u32 = 0,
-    grey: [48]u8 = @splat(126),
-    chroma: [12]u8 = @splat(128),
-
-    fn codec(test_codec: *TestCodec) bink.Codec {
-        return .{ .context = test_codec, .vtable = &.{
-            .openVideo = openVideo,
-            .openAudio = openAudio,
-            .picture = picture,
-            .samples = samples,
-            .close = close,
-        } };
-    }
-
-    fn openVideo(context: *anyopaque, _: bink.Video) bink.Error!bink.Stream {
-        return context;
-    }
-    fn openAudio(context: *anyopaque, _: bink.Audio) bink.Error!bink.Stream {
-        return context;
-    }
-    fn picture(context: *anyopaque, _: bink.Stream, _: []const u8) bink.Error!bink.Picture {
-        const test_codec: *TestCodec = @ptrCast(@alignCast(context));
-        test_codec.pictures += 1;
-        return .{ .width = 8, .height = 6, .y = &test_codec.grey, .u = &test_codec.chroma, .v = &test_codec.chroma, .strides = .{ 8, 4, 4, 0 } };
-    }
-    fn samples(_: *anyopaque, _: bink.Stream, _: []const u8, _: Allocator, _: *std.ArrayList(i16)) bink.Error!void {}
-    fn close(_: *anyopaque, _: bink.Stream) void {}
-};

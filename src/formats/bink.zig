@@ -151,47 +151,51 @@ pub const AudioPackets = struct {
     }
 };
 
-/// A movie of `frames` frames for the tests, 8 by 6 at 15 a second, with one mono track whose
-/// packets are `audio`, and each frame's video its number, padded to a whole number of words as
-/// frames are: a frame starts at an even offset, as bit 0 of its entry in the index is taken.
-pub fn testMovie(buffer: []u8, frames: u8, audio: []const u8) []u8 {
-    var writer: std.Io.Writer = .fixed(buffer);
-    const index_at = @sizeOf(Header) + 3 * @sizeOf(u32);
-    const frame_size = std.mem.alignForward(usize, @sizeOf(u32) + audio.len + 1, @sizeOf(u32));
-    const size = index_at + frames * @sizeOf(u32) + frames * frame_size;
-    writer.writeStruct(Header{
-        .signature = "BIK".*,
-        .revision = 'f',
-        .size = @intCast(size - 8),
-        .frames = frames,
-        .largest_frame = @intCast(frame_size),
-        ._unknown_10 = frames,
-        .width = 8,
-        .height = 6,
-        .rate = 15,
-        .rate_divisor = 1,
-        .flags = .{},
-        .audio_tracks = 1,
-    }, .little) catch unreachable;
-    writer.writeInt(u32, 0, .little) catch unreachable;
-    writer.writeStruct(AudioTrack{ .rate = 22050, .flags = .{ .sixteen_bit = true } }, .little) catch unreachable;
-    writer.writeInt(u32, 0, .little) catch unreachable;
-    for (0..frames) |number| {
-        const at: u32 = @intCast(index_at + frames * @sizeOf(u32) + number * frame_size);
-        writer.writeInt(u32, at | @intFromBool(number == 0), .little) catch unreachable;
+/// What the tests of the readers of movies share.
+pub const testing = struct {
+    /// A movie of `frames` frames for the tests, 8 by 6 at 15 a second, with one mono track whose
+    /// packets are `audio`, and each frame's video its number, padded to a whole number of words as
+    /// frames are: a frame starts at an even offset, as bit 0 of its entry in the index is taken.
+    pub fn movie(buffer: []u8, frames: u8, audio: []const u8) []u8 {
+        var writer: std.Io.Writer = .fixed(buffer);
+        // The one track's unused word, its rate and flags, and its id.
+        const index_at = @sizeOf(Header) + @sizeOf(u32) + @sizeOf(AudioTrack) + @sizeOf(u32);
+        const frame_size = std.mem.alignForward(usize, @sizeOf(u32) + audio.len + 1, @sizeOf(u32));
+        const size = index_at + frames * @sizeOf(u32) + frames * frame_size;
+        writer.writeStruct(Header{
+            .signature = "BIK".*,
+            .revision = 'f',
+            .size = @intCast(size - 8),
+            .frames = frames,
+            .largest_frame = @intCast(frame_size),
+            ._unknown_10 = frames,
+            .width = 8,
+            .height = 6,
+            .rate = 15,
+            .rate_divisor = 1,
+            .flags = .{},
+            .audio_tracks = 1,
+        }, .little) catch unreachable;
+        writer.writeInt(u32, 0, .little) catch unreachable;
+        writer.writeStruct(AudioTrack{ .rate = 22050, .flags = .{ .sixteen_bit = true } }, .little) catch unreachable;
+        writer.writeInt(u32, 0, .little) catch unreachable;
+        for (0..frames) |number| {
+            const at: u32 = @intCast(index_at + frames * @sizeOf(u32) + number * frame_size);
+            writer.writeInt(u32, at | @intFromBool(number == 0), .little) catch unreachable;
+        }
+        for (0..frames) |number| {
+            writer.writeInt(u32, @intCast(audio.len), .little) catch unreachable;
+            writer.writeAll(audio) catch unreachable;
+            writer.writeByte(@intCast(number)) catch unreachable;
+            writer.splatByteAll(0, frame_size - (@sizeOf(u32) + audio.len + 1)) catch unreachable;
+        }
+        return writer.buffered();
     }
-    for (0..frames) |number| {
-        writer.writeInt(u32, @intCast(audio.len), .little) catch unreachable;
-        writer.writeAll(audio) catch unreachable;
-        writer.writeByte(@intCast(number)) catch unreachable;
-        writer.splatByteAll(0, frame_size - (@sizeOf(u32) + audio.len + 1)) catch unreachable;
-    }
-    return writer.buffered();
-}
+};
 
 test Movie {
     var buffer: [256]u8 = undefined;
-    const bytes = testMovie(&buffer, 3, &.{ 8, 0, 0, 0, 0xAA });
+    const bytes = testing.movie(&buffer, 3, &.{ 8, 0, 0, 0, 0xAA });
     const movie: Movie = try .parse(bytes);
     try std.testing.expectEqual(3, movie.header.frames);
     try std.testing.expectEqual(15, movie.frameRate());
@@ -207,14 +211,14 @@ test Movie {
     }
     // A track with nothing in a frame.
     var empty_buffer: [256]u8 = undefined;
-    var empty = try (try Movie.parse(testMovie(&empty_buffer, 1, &.{}))).frame(0);
+    var empty = try (try Movie.parse(testing.movie(&empty_buffer, 1, &.{}))).frame(0);
     try std.testing.expectEqual(0, empty.audio.next().?.len);
     try std.testing.expectEqual(0, empty.video[0]);
 }
 
 test "a damaged movie is refused" {
     var buffer: [256]u8 = undefined;
-    const bytes = testMovie(&buffer, 2, &.{ 0, 0, 0, 0 });
+    const bytes = testing.movie(&buffer, 2, &.{ 0, 0, 0, 0 });
     var riff = buffer;
     @memcpy(riff[0..4], "RIFF");
     try std.testing.expectError(error.NotABink, Movie.parse(riff[0..bytes.len]));
