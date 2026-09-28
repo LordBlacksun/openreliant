@@ -30,6 +30,7 @@ Guides for installing, configuring and playing OpenReliant:
 | [`formats/speech.md`](formats/speech.md) | Speech files: the radio's lines, their scrambling and their codec. |
 | [`formats/fm8.md`](formats/fm8.md) | Face films: the pilots' faces the radio's window plays, their chunks and their codec. |
 | [`formats/fnt.md`](formats/fnt.md) | `.fnt` bitmap fonts. |
+| [`formats/bink.md`](formats/bink.md) | `.bik` movies: the Bink container. |
 | [`formats/frc.md`](formats/frc.md) | `.frc` force-feedback effects. |
 | [`formats/dte.md`](formats/dte.md) | `.DTE` missions: directory, ships, triggers, and the script VM. |
 | [`formats/stats.md`](formats/stats.md) | Ship, gun, missile and pilot stat tables. |
@@ -46,6 +47,7 @@ Guides for installing, configuring and playing OpenReliant:
 | [`engine/sound.md`](engine/sound.md) | Sound: the banks' sounds on their voices, the 3D effects, the player's engine, the music and the speech. |
 | [`engine/loop.md`](engine/loop.md) | The game loop: the 100 Hz tick, the 25 Hz simulation step, collisions. |
 | [`engine/front-end.md`](engine/front-end.md) | The front end: its screens, the main menu, the pilot roster, the dialogs and the backgrounds. |
+| [`engine/movies.md`](engine/movies.md) | Movies: how the game plays them, the intro and the transitions, and the stand-in for Bink. |
 | [`engine/controls.md`](engine/controls.md) | Player input: devices, bindings, settings, steering and throttle. |
 | [`engine/hud.md`](engine/hud.md) | The head-up display: how it is reached, where an element stands, its text and its art. |
 | [`engine/radio.md`](engine/radio.md) | The radio: the lines the pilots say, their queue, the window with the speaker's face, and the speech. |

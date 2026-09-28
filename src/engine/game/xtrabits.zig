@@ -6,7 +6,8 @@
 //! assertions place, the last after the last code they place.
 //!
 //! The loading screens the game shows as it starts and before each attempt at a mission are in
-//! [`xtrabits/loading.zig`](xtrabits/loading.zig).
+//! [`xtrabits/loading.zig`](xtrabits/loading.zig), and the movies it plays in a loop of their own
+//! in [`xtrabits/movie.zig`](xtrabits/movie.zig).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -21,6 +22,7 @@ const create = @import("create.zig");
 const objects = @import("objects.zig");
 
 pub const loading = @import("xtrabits/loading.zig");
+pub const movie = @import("xtrabits/movie.zig");
 
 /// A scene object of any kind `scene_add` takes.
 pub const Object = union(enum) {
@@ -232,4 +234,5 @@ test clipLine {
 
 test {
     _ = loading;
+    _ = movie;
 }

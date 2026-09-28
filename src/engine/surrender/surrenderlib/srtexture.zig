@@ -30,12 +30,16 @@ pub const Image = struct {
     magnify: Magnify = .sharp,
 
     /// How a device that filters its textures magnifies one, where its filter magnifies at all.
-    pub const Magnify = enum(u1) {
+    pub const Magnify = enum(u2) {
         /// By the device's own filter.
         sharp,
         /// **Improvement:** with a smooth cubic filter, which neither rings nor sharpens, for a
         /// soft image stretched far, as the nebulae are.
         smooth,
+        /// **Improvement:** with FSR 1's edge-adaptive upscale (AMD's FidelityFX Super Resolution
+        /// 1.0), which keeps the edges of a picture stretched far sharp without steps, as the
+        /// movies are.
+        edge_adaptive,
     };
 
     /// An image of one level, `across` by `down` pixels of `rgba`, which it takes: `deinit` frees

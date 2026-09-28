@@ -10,11 +10,13 @@ The screens the game shows outside a mission: the main menu, the pilots, the set
 
 OpenReliant opens in the front end unless `--mission` names a mission. A mission the front end starts flies at once, and when it ends, or LEAVE MISSION leaves it, OpenReliant goes back to the main menu.
 
-Ported so far: the screen loop, the main menu, QUIT's dialog, INSTANT ACTION, the pilot roster with SET GAME DIFFICULTY, and the loading screens. Not yet:
+Ported so far: the screen loop, the main menu, QUIT's dialog, INSTANT ACTION, the pilot roster with SET GAME DIFFICULTY, the loading screens, and the intro and the transitions between the screens ported ([Movies](movies.md)). Not yet:
 
 - The other screens ([#43](https://github.com/vdmkenny/openreliant/issues/43) maps them). Until the Reliant's rooms ([#398](https://github.com/vdmkenny/openreliant/issues/398)) and the briefing ([#73](https://github.com/vdmkenny/openreliant/issues/73)) are ported, the pilot roster's START GAME flies the campaign's first mission. MULTI PLAYER ([#404](https://github.com/vdmkenny/openreliant/issues/404)) and GAME OPTIONS ([#400](https://github.com/vdmkenny/openreliant/issues/400)) stay on the main menu, and LOAD GAME ([#75](https://github.com/vdmkenny/openreliant/issues/75)) on the pilot roster.
 - The debriefing, which a mission's end goes to ([#73](https://github.com/vdmkenny/openreliant/issues/73)).
-- The intro and the movies between screens ([#401](https://github.com/vdmkenny/openreliant/issues/401)). Until they are, a screen takes no press until the button held as it was entered comes up, as the movie before it gives the press that chose it time to end.
+- The movies between the screens not yet ported, which come with their screens ([Movies](movies.md)).
+
+**Fix:** a screen takes no press until the button held as it was entered comes up. The movie between two screens gives the press that chose the second time to end; where the transitions are off, the game lets it go on to what lies under the pointer on the new screen.
 
 **Improvements**, each marked so in the code:
 

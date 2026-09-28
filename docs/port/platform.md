@@ -10,11 +10,18 @@ The `openreliant` executable runs the game on SDL3, which stands in for everythi
 | [`platform/joystick.zig`](../../src/platform/joystick.zig) | DirectInput's joystick: SDL's joysticks and gamepads as the device the game reads into `DIJOYSTATE` |
 | [`platform/audio.zig`](../../src/platform/audio.zig) | The wave-out device Miles played through; OpenAL Soft or OpenReliant's own mixer plays the game's sound into it ([Sound](sound.md)) |
 | [`platform/openal.zig`](../../src/platform/openal.zig) | Miles's 3D providers: the game's sound calls played by OpenAL Soft ([Sound](sound.md#openal-soft)) |
+| [`platform/video.zig`](../../src/platform/video.zig) | Bink's decoders: the movies' packets decoded by FFmpeg ([Movies](#movies)) |
 | [`platform/macos.zig`](../../src/platform/macos.zig) | Nothing: what macOS needs before SDL starts |
 | [`openreliant/main.zig`](../../src/openreliant/main.zig) | `WinMain`: opening the game's files and running the frame loop |
 | [`openreliant/install.zig`](../../src/openreliant/install.zig) | The installer on disc 1, `SETUP.EXE`: unpacking `LANCER.CAB` and copying the disc's `GAME/CAB` files |
 
-SDL comes from the [castholm/SDL](https://github.com/castholm/SDL) package, which builds it from source for the target, so no SDL has to be installed. `build.zig` translates its header into the `sdl` module the platform layer imports. OpenAL Soft is built from source the same way, by [`deps/openal-soft`](../../deps/openal-soft/build.zig), into the `al` module.
+SDL comes from the [castholm/SDL](https://github.com/castholm/SDL) package, which builds it from source for the target, so no SDL has to be installed. `build.zig` translates its header into the `sdl` module the platform layer imports. OpenAL Soft is built from source the same way, by [`deps/openal-soft`](../../deps/openal-soft/build.zig), into the `al` module, and FFmpeg by [`deps/ffmpeg`](../../deps/ffmpeg/build.zig), into the `av` module.
+
+## Movies
+
+The game's movies ([Movies](../engine/movies.md)) are decoded by [FFmpeg](https://ffmpeg.org)'s Bink decoders, in place of RAD's library. [`deps/ffmpeg`](../../deps/ffmpeg/build.zig) builds FFmpeg 9.0.2, pinned in its manifest by the release's tag and commit, as a static library of the Bink video and audio decoders and the part of `libavcodec` and `libavutil` they reach: the files a program using the decoding calls links, as FFmpeg's `configure --disable-everything --enable-decoder=bink,binkaudio_rdft,binkaudio_dct --disable-asm --disable-pthreads` builds them, and the settings those files read. It is plain C for any processor, without assembly or threads, and built optimized whatever the game's own build, as OpenAL Soft is. None of FFmpeg's GPL parts is built.
+
+[`platform/video.zig`](../../src/platform/video.zig) sets each decoder up as FFmpeg's reader of the container would, and hands the engine the pictures, 4:2:0 in BT.601's limited range, and the sound, as 16-bit samples rounded as FFmpeg's own conversion rounds. The pictures and the sound come out as the `ffmpeg` tool decodes the same files. Built without threads, FFmpeg is called from the game's thread alone.
 
 ## Running
 

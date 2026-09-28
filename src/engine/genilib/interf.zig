@@ -24,6 +24,7 @@ const interface = game.interface;
 const canvas = interface.canvas;
 const main_menu = interface.main_menu;
 const pilot_roster = interface.pilot_roster;
+const movie = game.xtrabits.movie;
 const device = @import("../surrender/srd3d/device.zig");
 
 pub const ease = @import("interf/ease.zig");
@@ -196,17 +197,22 @@ pub const Interface = struct {
     /// Whether the press held as the shown screen was entered is still held, which the screen
     /// does not take.
     held: bool = false,
+    /// The movie a screen plays as it leads to another (`play_bink_movie_no_clear`), which the
+    /// driver plays before the next frame (`game.xtrabits.movie`).
+    movie: ?[]const u8 = null,
 
     /// A frame of `interface_run`: the shown screen entered where it has just been chosen, the
     /// pointer brought up to date (`interface_pointer_update`), then the screen's frame. Returns
     /// what the front end ends in, once it does.
     ///
-    /// Not ported: the screens besides the main menu and the pilot roster (#43 lists them), and
-    /// the movies played between screens (#401). Until they are, START GAME flies the campaign's
-    /// first mission, and MULTI PLAYER, GAME OPTIONS and LOAD GAME stay on their screen. And a
-    /// screen takes no press until the button held as it was entered comes up, as the movie
-    /// before it gives the press that chose it time to end: the press would otherwise go on to
-    /// what lies under the pointer on the new screen.
+    /// Not ported: the screens besides the main menu and the pilot roster (#43 lists them). Until
+    /// they are, START GAME flies the campaign's first mission, and MULTI PLAYER, GAME OPTIONS and
+    /// LOAD GAME stay on their screen, without their movies.
+    ///
+    /// **Fix:** a screen takes no press until the button held as it was entered comes up. The
+    /// movie between two screens gives the press that chose the second time to end; where the
+    /// transitions are off, the game lets it go on to what lies under the pointer on the new
+    /// screen.
     pub fn frame(front: *Interface, context: Context) ?Outcome {
         if (front.entered != front.screen) front.enter(context);
         front.pointer.update(context.devices.mouse, context.window, context.elapsed);
@@ -226,6 +232,7 @@ pub const Interface = struct {
                     .fly => |flight| .{ .fly = flight },
                     .pilot_roster => {
                         front.screen = .pilot_roster;
+                        front.movie = movie.main_to_single;
                         return null;
                     },
                     .instant_action => .{ .fly = main_menu.instant_action },
@@ -246,7 +253,10 @@ pub const Interface = struct {
                     .settings = context.settings,
                 }) orelse return null;
                 switch (choice) {
-                    .main_menu => front.screen = .main_menu,
+                    .main_menu => {
+                        front.screen = .main_menu;
+                        front.movie = movie.single_to_main;
+                    },
                     .saved_games => log.info("LOAD GAME's saved games are not ported yet", .{}),
                     .start_game => {
                         front.leave(context);

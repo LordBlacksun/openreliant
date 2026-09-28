@@ -89,7 +89,7 @@ For complete setup instructions, see the [Installation Guide](docs/guide/install
 
 ## Building from Source
 
-Building OpenReliant requires [Zig 0.16](https://ziglang.org). Dependencies (SDL3, OpenAL Soft, libarchive) are fetched and built automatically:
+Building OpenReliant requires [Zig 0.16](https://ziglang.org). Dependencies (SDL3, OpenAL Soft, FFmpeg, libarchive) are fetched and built automatically:
 
 ```bash
 # Build optimized release binary
@@ -154,4 +154,5 @@ Copyright 2026 the OpenReliant contributors.
 
 - Source code is licensed under the [Mozilla Public License 2.0](LICENSE).
 - Documentation under `docs/` is licensed under [Creative Commons Attribution-ShareAlike 4.0](docs/LICENSE).
-- Statically linked libraries: [OpenAL Soft](https://github.com/kcat/openal-soft) is licensed under the GNU LGPL 2.1.
+- Statically linked libraries: [OpenAL Soft](https://github.com/kcat/openal-soft) is licensed under the GNU LGPL 2.1, and the part of [FFmpeg](https://ffmpeg.org) that decodes the movies under the GNU LGPL 2.1 or later.
+- The movies' upscale is ported from [AMD FidelityFX Super Resolution 1.0](https://github.com/GPUOpen-Effects/FidelityFX-FSR), under the MIT licence.

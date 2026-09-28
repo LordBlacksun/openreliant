@@ -110,7 +110,7 @@ const Doc = struct {
 
 /// Every option's help, which the compiler holds to having one for each.
 const docs: std.enums.EnumArray(Arg, Doc) = .init(.{
-    .@"--original" = .{ .section = .original, .text = "the original's look and sound: 16-bit colour, one sample a pixel, bilinear filtering, lighting each vertex, light worked out on encoded colours, no shadows, motion that moves on with the game's ticks, a launching ship a frame behind the retainer that lowers it, lights from the latest shots only, muzzle flashes that light nothing and none from the turrets, a jump's flare that lights nothing, the force feedback's own effects only, a blow shaking the camera only while the controller rumbles, an explosion's debris lit by every light, its fireballs, rings, particles and burning bits as few, plain and brief as the original's, the Uber Explode as coarse, unlit and tied to the frame rate as the original's, a damaged ship's smoke as even as the original's, the shields' bubbles as coarse as the original's, the tractor beams as thin as the original's, the hangar's beacons falling short of the launching ship, a ship landing on the Reliant tilted as it came, its tube's door left open, the planets' atmospheres as coarse and fleeting as the original's and their terminators as hard, the Ice Field's rocks drawn only near the middle of the view, the loading screen's picture picked by the screen's width, the gates' tunnels as coarse as the original's, the ride through the worm rumbling the more often the higher the frame rate, the sun and its lens flares from their small textures and the sun's glow going out at once behind what hides it, the levels of detail changing as near as the original's, as little drawn a frame as the original allows, the marker for a target out of sight placed as the original misplaces it, a missile's sound left where it was launched, the radio's lines cut flat at their loudest and heard dry, and the sound mixed plainly in stereo" },
+    .@"--original" = .{ .section = .original, .text = "the original's look and sound: 16-bit colour, one sample a pixel, bilinear filtering, lighting each vertex, light worked out on encoded colours, no shadows, motion that moves on with the game's ticks, a launching ship a frame behind the retainer that lowers it, lights from the latest shots only, muzzle flashes that light nothing and none from the turrets, a jump's flare that lights nothing, the force feedback's own effects only, a blow shaking the camera only while the controller rumbles, an explosion's debris lit by every light, its fireballs, rings, particles and burning bits as few, plain and brief as the original's, the Uber Explode as coarse, unlit and tied to the frame rate as the original's, a damaged ship's smoke as even as the original's, the shields' bubbles as coarse as the original's, the tractor beams as thin as the original's, the hangar's beacons falling short of the launching ship, a ship landing on the Reliant tilted as it came, its tube's door left open, the planets' atmospheres as coarse and fleeting as the original's and their terminators as hard, the Ice Field's rocks drawn only near the middle of the view, the loading screen's picture picked by the screen's width, the movies drawn at their size in the middle of the screen with Bink's blocks and its colour in steps of two pixels, the gates' tunnels as coarse as the original's, the ride through the worm rumbling the more often the higher the frame rate, the sun and its lens flares from their small textures and the sun's glow going out at once behind what hides it, the levels of detail changing as near as the original's, as little drawn a frame as the original allows, the marker for a target out of sight placed as the original misplaces it, a missile's sound left where it was launched, the radio's lines cut flat at their loudest and heard dry, and the sound mixed plainly in stereo" },
     .@"--mission" = .{ .section = .mission, .value = "<number>", .text = "play this mission at once rather than open the main menu: the number the game names its file by, mission<number>.dte, from the game's missions folder or resource.hog; 0 is OpenReliant's sandbox, which openreliant carries where the game has no mission 0" },
     .@"--ship" = .{ .section = .mission, .value = "<type>", .text = "the ship type to fly, by its number in shipstats.bin, in place of the loadout screen's choice, with its default missiles; the mission's own by default" },
     .@"--view" = .{ .section = .mission, .value = "<0|1|2>", .text = "the view it starts in, as the game's settings keep it: 0 the cockpit; 1 the chase view; 2 no cockpit. The settings' own by default, which the pause menu's video screen changes" },
@@ -273,6 +273,8 @@ const Options = struct {
     atmospheres: game.create.atmosphere.Style = .haze,
     /// Which of its pictures the loading screen shows before a mission.
     loading_splash: game.xtrabits.loading.Splash = .largest,
+    movie_size: game.xtrabits.movie.Size = .fitted,
+    movie_look: engine.bink.Look = .{},
     /// Which of the Ice Field's rocks are drawn.
     ice_field: game.environfx.IceField.Reach = .whole_view,
     /// How finely the gates' tunnels are built, and how often the ride through the worm rumbles.
@@ -352,6 +354,8 @@ const Options = struct {
                 options.sun = .original;
                 options.atmospheres = .original;
                 options.loading_splash = .by_width;
+                options.movie_size = .screen;
+                options.movie_look = .original;
                 options.ice_field = .original;
                 options.gates = .original;
                 options.detail_reach = .original;
@@ -607,18 +611,57 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
         .finer = options.detail_reach.finer(),
         .budget = options.draw_budget.limit(),
     };
+    var devices: engine.input.Devices = .{};
+    // The characters typed into the window, which its procedure queues (`WM_CHAR`).
+    var typed: game.winmain.Typed = .{};
+    // The game's settings file, which `load_key_config` reads the input settings from and the
+    // pause menu's screens write to. If it's missing, every setting keeps its default.
+    var settings_file: engine.profile.File = .{ .arena = arena, .profile = .read(io, arena, directory) };
+    // Sound: Miles's calls, played by OpenAL Soft or OpenReliant's own mixer through SDL3's audio,
+    // with the voices `WinMain` asks `sound_init` for, the volumes of `[Sound]`, and the 3D
+    // provider it opens; silent where there is no device, or with `--no-sound`.
+    const output: ?*platform.audio.Output = if (options.sound) |chosen| platform.audio.Output.create(gpa, chosen) catch |err| none: {
+        std.log.warn("playing without sound: {s}", .{@errorName(err)});
+        break :none null;
+    } else null;
+    defer if (output) |open| open.destroy();
+    const sound = try arena.create(game.hog_snd.Sound);
+    sound.init(if (output) |open| open.driver() else null, sound_voices, .{ .gpa = gpa, .io = io, .dir = directory });
+    defer sound.shutdown();
+    sound.volumes = .read(settings_file.profile);
+    // What `WinMain` reads from `[Device]`: the options' cockpit setting, the brightness, and
+    // whether the transitions play.
+    const device_settings: game.winmain.Device = .read(settings_file.profile);
+    // The movies: FFmpeg's decoders behind the stand-in for Bink, and what plays them in a loop of
+    // their own. As the renderer first starts, before its loading screens, `renderer_load` plays the
+    // intro; a mission `--mission` names, or a screenshot, starts without it.
+    var decoders: platform.video.Decoders = .init();
+    var movies: Movies = .{
+        .gpa = gpa,
+        .io = io,
+        .directory = directory,
+        .codec = decoders.codec(),
+        .sound = if (output) |open| open.driver() else null,
+        .presenter = .{ .window = &window, .screen = screen, .driver = &driver, .context = &context, .wanted = options.settings.size, .arena = arena },
+        .devices = &devices,
+        .pacer = &pacer,
+        .frame_rate = options.frameRate(window),
+        .size = options.movie_size,
+        .look = options.movie_look,
+        .transitions = device_settings.transitions,
+        .hardware = !options.software,
+    };
+    defer movies.presenter.close(gpa);
+    if (options.mission == null and options.screenshot == null) {
+        for (game.xtrabits.movie.intro) |name| if (!try movies.play(name, .cleared)) return;
+    }
     // The loading screen the renderer's start shows as the game loads, and each mission's start
     // after it: the picture alone, then with LOADING before each part of the game it loads.
     var loading: Loading = .{
         .resources = try .open(gpa, resources),
         .archive = &resources,
-        .window = &window,
-        .screen = screen,
-        .driver = &driver,
-        .context = &context,
+        .presenter = .{ .window = &window, .screen = screen, .driver = &driver, .context = &context, .wanted = options.settings.size, .arena = arena },
         .strings = &strings,
-        .wanted = options.settings.size,
-        .arena = arena,
         .splash = options.loading_splash,
     };
     defer loading.close();
@@ -670,12 +713,6 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
     objects.bullets.looks = try game.guns.Looks.create(arena, &textures);
     objects.bullets.shot_lights = options.shot_lights;
     var player: engine.input.Player = .{};
-    var devices: engine.input.Devices = .{};
-    // The characters typed into the window, which its procedure queues (`WM_CHAR`).
-    var typed: game.winmain.Typed = .{};
-    // The game's settings file, which `load_key_config` reads the input settings from and the
-    // pause menu's screens write to. If it's missing, every setting keeps its default.
-    var settings_file: engine.profile.File = .{ .arena = arena, .profile = .read(io, arena, directory) };
     // The joystick or gamepad the game uses, opened as `input_init` opens a joystick, and again
     // whenever a controller is connected or disconnected.
     try platform.joystick.init(.game);
@@ -687,23 +724,11 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
     if (options.screenshot == null) connectController(arena, &devices, &controller, settings_file.profile);
 
     try loading.show(game.xtrabits.loading.startup_step);
-    // Sound: Miles's calls, played by OpenAL Soft or OpenReliant's own mixer through SDL3's audio,
-    // with the voices `WinMain` asks `sound_init` for, the volumes of `[Sound]`, and the 3D
-    // provider it opens; silent where there is no device, or with `--no-sound`.
-    const output: ?*platform.audio.Output = if (options.sound) |chosen| platform.audio.Output.create(gpa, chosen) catch |err| none: {
-        std.log.warn("playing without sound: {s}", .{@errorName(err)});
-        break :none null;
-    } else null;
-    defer if (output) |open| open.destroy();
-    const sound = try arena.create(game.hog_snd.Sound);
-    sound.init(if (output) |open| open.driver() else null, sound_voices, .{ .gpa = gpa, .io = io, .dir = directory });
     // The radio's lines, from the game's speech archive, said through the sound's speech sample,
     // and the films of the speakers' faces.
     var radio: game.videoreports.Radio = .open(gpa, io, directory);
     defer radio.deinit(sound);
     radio.style = options.speech;
-    defer sound.shutdown();
-    sound.volumes = .read(settings_file.profile);
     sound.objects = objects;
     sound.missile_sound = options.missile_sound;
     // `bank_stdsmp`, which the positional sounds of a frame play from, and `smp3d.fat`, which the
@@ -713,10 +738,8 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
     sound.stdsmp = stdsmp;
     sound.open3D(try openreliant.fat.Bank.parse(try resources.readFile(arena, "smp3d.fat")));
 
-    // The options' cockpit setting and the brightness, as `WinMain` reads them from `[Device]`, and
-    // the camera, which keeps the setting and starts in the cockpit mode it picks, as a mission's
-    // start does.
-    const device_settings: game.winmain.Device = .read(settings_file.profile);
+    // The camera, which keeps the options' cockpit setting and starts in the cockpit mode it picks,
+    // as a mission's start does.
     const cockpit_setting = options.cockpit orelse device_settings.view;
     var brightness = device_settings.brightness;
     var view: camera.Camera = .{ .setting = cockpit_setting, .cockpit_mode = cockpit_setting.mode(), .missiles = &objects.missiles };
@@ -887,6 +910,10 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
     // Whether the system's pointer shows over the window, and whether the window holds the mouse.
     var pointer_shown = true;
     var mouse_held = false;
+    // As `WinMain` opens the front end, the splash leads into the main menu (`0x004AB6A0`).
+    if (in_front_end and options.screenshot == null) {
+        if (!try movies.play(game.xtrabits.movie.splash_to_menu, .over_screen)) return;
+    }
     while (true) {
         while (window.poll()) |event| switch (event) {
             .quit => return,
@@ -960,6 +987,11 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
                     from_front_end = true;
                 },
             };
+        }
+        // The movie a screen of the front end plays as it leads to another.
+        if (front.movie) |name| {
+            front.movie = null;
+            if (!try movies.play(name, .over_screen)) return;
         }
         // The window takes text while the front end has a line to type into.
         window.takeText(in_front_end and front.takesText());
@@ -1223,44 +1255,144 @@ const FrontEndDisplay = struct {
 /// The loading screens as the driver shows them (`game.xtrabits.loading`): each frame drawn over an
 /// empty scene at once and put on the window, the system's events gathered for the loop meanwhile
 /// (`message_pump`).
-const Loading = struct {
-    resources: game.xtrabits.loading.Resources,
-    archive: *const game.bigfile.Hog,
+/// Frames drawn outside the game's loop, as the loading screens' and the movies' are: an overlay
+/// drawn over an empty scene and put on the window at once.
+const Presenter = struct {
     window: *platform.window.Window,
     screen: *Screen,
     driver: *srd3d.srd3d.Driver,
     context: *srapi.Context,
-    strings: *const game.language.Language,
     /// The size `--size` asks the frames to be drawn at, where it does.
     wanted: ?[2]u32,
     /// What the software device is made in.
     arena: Allocator,
-    splash: game.xtrabits.loading.Splash,
     /// The scene, empty, and what a frame is drawn in.
     scene: srcore.Scene = .{},
     frame_arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator),
 
+    fn close(presenter: *Presenter, gpa: Allocator) void {
+        presenter.scene.deinit(gpa);
+        presenter.frame_arena.deinit();
+    }
+
+    /// The size the frames are drawn at.
+    fn size(presenter: *Presenter) ![2]u32 {
+        return frameSize(presenter.screen, presenter.window, presenter.wanted, presenter.arena);
+    }
+
+    /// Draws a frame `pixels` in size of `overlay` alone and puts it on the window.
+    fn present(presenter: *Presenter, pixels: [2]u32, overlay: srcore.Overlay) !void {
+        _ = presenter.frame_arena.reset(.retain_capacity);
+        const arena = presenter.frame_arena.allocator();
+        try srcore.render(arena, presenter.context, &presenter.scene, presenter.driver.interface(), overlay);
+        if (presenter.screen.* == .software) try presenter.window.present(try presenter.screen.software.rgba(arena), pixels[0], pixels[1]);
+    }
+};
+
+/// The movies as the driver plays them (`game.xtrabits.movie`): each in a loop of its own, as the
+/// game plays them, each frame drawn over an empty scene and put on the window, with the window's
+/// messages read as the message pump reads them.
+const Movies = struct {
+    gpa: Allocator,
+    io: Io,
+    directory: Io.Dir,
+    codec: engine.bink.Codec,
+    /// The Miles driver the movies' sound plays through, where there is sound.
+    sound: ?engine.mss.Driver,
+    presenter: Presenter,
+    devices: *engine.input.Devices,
+    pacer: *platform.window.Pacer,
+    /// The frames a second the loop keeps to, where the display does not keep it.
+    frame_rate: ?f32,
+    size: game.xtrabits.movie.Size,
+    look: engine.bink.Look,
+    /// The video settings' `Transitions`, and whether the renderer is a hardware one, which decide
+    /// whether a movie plays (`game.xtrabits.movie.Kind.plays`).
+    transitions: bool,
+    hardware: bool,
+
+    /// Plays the movie `name` names in the game's folder as `kind` has it, until it ends or is
+    /// skipped. False where the window was closed meanwhile, which quits the game, as it quits the
+    /// game's loop (`game_exit`). A movie the folder lacks, or that cannot be decoded, is left out.
+    fn play(movies: *Movies, name: []const u8, kind: game.xtrabits.movie.Kind) !bool {
+        if (!kind.plays(movies.transitions, movies.hardware)) return true;
+        const file = (engine.files.readFile(movies.io, movies.gpa, movies.directory, name, .limited(engine.files.max_file_size)) catch null) orelse {
+            std.log.warn("the movie {s} is left out: the game's folder has none", .{name});
+            return true;
+        };
+        var player = game.xtrabits.movie.Player.open(movies.gpa, movies.codec, file, kind, movies.sound, movies.look) catch |err| {
+            std.log.warn("the movie {s} is left out: {s}", .{ name, @errorName(err) });
+            return true;
+        };
+        defer player.close();
+        const devices = movies.devices;
+        while (true) {
+            while (movies.presenter.window.poll()) |event| switch (event) {
+                .quit => return false,
+                .key => |key| devices.keyboard.down[@intFromEnum(key.scan)] = key.down,
+                .pointer => |pointer| devices.mouse.at = pointer.at,
+                .button => |button| switch (button.which) {
+                    .left => devices.mouse.buttons.left = button.down,
+                    .right => devices.mouse.buttons.right = button.down,
+                },
+                // The message pump pauses the movie while the window is away (`BinkPause`).
+                .active => |active| player.bink.pause(!active, platform.window.nanoseconds()),
+                .typed, .controllers => {},
+            };
+            devices.keyboard.read();
+            const over = player.pass(&devices.keyboard, devices.mouse.buttons.right, platform.window.nanoseconds()) catch |err| over: {
+                std.log.warn("the movie {s} stops short: {s}", .{ name, @errorName(err) });
+                break :over true;
+            };
+            if (over) return true;
+            const pixels = try movies.presenter.size();
+            var shown: Shown = .{ .movies = movies, .player = &player, .window = pixels };
+            try movies.presenter.present(pixels, shown.overlay());
+            if (movies.frame_rate) |rate| movies.pacer.wait(rate);
+        }
+    }
+
+    /// A frame's overlay: the movie's frame, over the cleared frame.
+    const Shown = struct {
+        movies: *Movies,
+        player: *game.xtrabits.movie.Player,
+        window: [2]u32,
+
+        fn overlay(shown: *Shown) srcore.Overlay {
+            return .{ .context = shown, .draw = draw };
+        }
+
+        fn draw(context: *anyopaque) Allocator.Error!void {
+            const shown: *Shown = @ptrCast(@alignCast(context));
+            shown.player.draw(shown.movies.presenter.screen.interface(), shown.window, shown.movies.size);
+        }
+    };
+};
+
+const Loading = struct {
+    resources: game.xtrabits.loading.Resources,
+    archive: *const game.bigfile.Hog,
+    presenter: Presenter,
+    strings: *const game.language.Language,
+    splash: game.xtrabits.loading.Splash,
+
     fn close(loading: *Loading) void {
-        loading.scene.deinit(loading.resources.gpa);
-        loading.frame_arena.deinit();
+        loading.presenter.close(loading.resources.gpa);
         loading.resources.close();
     }
 
     /// The size the frames are drawn at.
     fn size(loading: *Loading) ![2]u32 {
-        return frameSize(loading.screen, loading.window, loading.wanted, loading.arena);
+        return loading.presenter.size();
     }
 
     /// Draws `frame` and puts it on the window.
     fn show(loading: *Loading, frame: game.xtrabits.loading.Frame) !void {
-        loading.window.pump();
+        loading.presenter.window.pump();
         loading.resources.show(loading.archive.*, frame);
-        _ = loading.frame_arena.reset(.retain_capacity);
-        const arena = loading.frame_arena.allocator();
         const pixels = try loading.size();
         var shown: Shown = .{ .loading = loading, .window = pixels, .line = if (frame.line) |id| loading.strings.string(@intFromEnum(id)) else null };
-        try srcore.render(arena, loading.context, &loading.scene, loading.driver.interface(), shown.overlay());
-        if (loading.screen.* == .software) try loading.window.present(try loading.screen.software.rgba(arena), pixels[0], pixels[1]);
+        try loading.presenter.present(pixels, shown.overlay());
     }
 
     /// A frame's overlay: the loading screen, on the front end's screen fitted to the window.
@@ -1278,7 +1410,7 @@ const Loading = struct {
             const resources = &shown.loading.resources;
             try resources.draw(.{
                 .gpa = resources.gpa,
-                .target = shown.loading.screen.interface(),
+                .target = shown.loading.presenter.screen.interface(),
                 .window = shown.window,
                 .fonts = .{ .large = &resources.font, .small = &resources.font },
                 .strings = shown.loading.strings,
@@ -1565,6 +1697,9 @@ test Options {
     try std.testing.expectEqual(.original, retro.atmospheres);
     try std.testing.expectEqual(.largest, plain.loading_splash);
     try std.testing.expectEqual(.by_width, retro.loading_splash);
+    try std.testing.expectEqual(.fitted, plain.movie_size);
+    try std.testing.expectEqual(.screen, retro.movie_size);
+    try std.testing.expect(plain.movie_look.deblock and !retro.movie_look.deblock);
     try std.testing.expectEqual(.whole_view, plain.ice_field);
     try std.testing.expectEqual(.original, retro.ice_field);
     try std.testing.expectEqual(game.wgate.Settings{}, plain.gates);

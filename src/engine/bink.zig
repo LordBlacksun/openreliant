@@ -1,0 +1,389 @@
+//! RAD's Bink (`BINKW32.DLL`), as far as the game calls it: a movie opened from its file, decoded
+//! a frame at a time and copied into the screen, timed by its frame rate, with its sound played
+//! through Miles (`BinkSetSoundSystem` with `BinkOpenMiles`). OpenReliant's own stand-in: the
+//! library is not the game's, and nothing of it is carried over but the calls' meanings. Each
+//! function stands for the `Bink` call it names.
+//!
+//! OpenReliant reads the container itself (`formats/bink.zig`), and a `Codec` decodes the
+//! packets: FFmpeg's decoders, in the platform (`platform/video.zig`). The stand-in decodes a
+//! movie's sound whole as the movie opens, and plays it as a Miles stream, where Bink fills a Miles
+//! sample as it plays.
+
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+
+const container = @import("../formats/bink.zig");
+const wave = @import("../formats/wave.zig");
+const mss = @import("mss.zig");
+
+pub const picture = @import("bink/picture.zig");
+pub const Picture = picture.Picture;
+pub const Look = picture.Look;
+
+pub const Error = container.Error || Allocator.Error || error{Decoding};
+
+/// A stream a `Codec` decodes: a movie's video, or one of its audio tracks.
+pub const Stream = *anyopaque;
+
+/// What decodes a movie's packets.
+pub const Codec = struct {
+    context: *anyopaque,
+    vtable: *const VTable,
+
+    pub const VTable = struct {
+        openVideo: *const fn (*anyopaque, Video) Error!Stream,
+        openAudio: *const fn (*anyopaque, Audio) Error!Stream,
+        /// The picture of the video's next packet, which holds until the next.
+        picture: *const fn (*anyopaque, Stream, []const u8) Error!Picture,
+        /// Appends the samples of the audio's next packet to `pcm`, 16-bit and interleaved.
+        samples: *const fn (*anyopaque, Stream, []const u8, Allocator, *std.ArrayList(i16)) Error!void,
+        close: *const fn (*anyopaque, Stream) void,
+    };
+
+    pub fn openVideo(codec: Codec, video: Video) Error!Stream {
+        return codec.vtable.openVideo(codec.context, video);
+    }
+    pub fn openAudio(codec: Codec, audio: Audio) Error!Stream {
+        return codec.vtable.openAudio(codec.context, audio);
+    }
+    pub fn picture(codec: Codec, stream: Stream, packet: []const u8) Error!Picture {
+        return codec.vtable.picture(codec.context, stream, packet);
+    }
+    pub fn samples(codec: Codec, stream: Stream, packet: []const u8, gpa: Allocator, pcm: *std.ArrayList(i16)) Error!void {
+        return codec.vtable.samples(codec.context, stream, packet, gpa, pcm);
+    }
+    pub fn close(codec: Codec, stream: Stream) void {
+        codec.vtable.close(codec.context, stream);
+    }
+};
+
+/// A movie's video, as its decoder is set up: the header's revision, size and flags.
+pub const Video = struct {
+    revision: u8,
+    width: u32,
+    height: u32,
+    flags: container.VideoFlags,
+};
+
+/// One of a movie's audio tracks, as its decoder is set up.
+pub const Audio = struct {
+    revision: u8,
+    rate: u32,
+    channels: u8,
+    dct: bool,
+};
+
+/// A rate a movie plays at: `frames` every `seconds`.
+pub const Rate = struct {
+    frames: u32,
+    seconds: u32,
+
+    /// The time frame `number`, from 0, is due after the first, in nanoseconds.
+    fn due(rate: Rate, number: u32) u64 {
+        return @as(u64, number) * rate.seconds * std.time.ns_per_s / rate.frames;
+    }
+};
+
+/// What `BinkOpen` goes by, besides the file: the settings made before it.
+pub const Options = struct {
+    /// `BinkSetFrameRate`, with `BinkOpen`'s `BINKFRAMERATE`: the rate it plays at in place of its
+    /// own.
+    rate: ?Rate = null,
+    /// `BinkSetSoundSystem(BinkOpenMiles, driver)`: the Miles driver its sound plays through; none
+    /// plays it without sound.
+    sound: ?mss.Driver = null,
+    /// OpenReliant's: its improvements on the pictures `copyToBuffer` copies.
+    look: Look = .{},
+};
+
+/// The volume Bink plays a movie's sound at unless told otherwise, full (`BinkSetVolume`).
+pub const full_volume = 0x8000;
+
+/// A movie open (`HBINK`).
+pub const Bink = struct {
+    gpa: Allocator,
+    codec: Codec,
+    /// The movie's file, which it keeps.
+    file: []const u8,
+    movie: container.Movie,
+    video: Stream,
+    /// Its size (`Width`, `Height`), its frames (`Frames`), and the frame `doFrame` decodes next,
+    /// counting from 1 (`FrameNum`).
+    width: u32,
+    height: u32,
+    frames: u32,
+    frame_number: u32 = 1,
+    rate: Rate,
+    look: Look,
+    /// The last frame decoded.
+    picture: ?Picture = null,
+    /// Where a picture is deblocked (`Look.deblock`): its planes, Y, U and V, the picture's size
+    /// and half of it, a row straight after another.
+    planes: ?[3][]u8 = null,
+    sound: ?Sound = null,
+    /// When the first frame was decoded, from which the others are due, in nanoseconds; and when
+    /// it was paused.
+    start: ?u64 = null,
+    paused_at: ?u64 = null,
+
+    /// Its sound, as a WAVE file a Miles stream plays.
+    const Sound = struct {
+        driver: mss.Driver,
+        stream: mss.Stream,
+        file: []u8,
+    };
+
+    /// `BinkOpen`: the movie of `file`, which it takes, to be freed as it closes; its first frame
+    /// next. Its first audio track's sound is decoded whole, and waits for the first frame.
+    pub fn open(gpa: Allocator, codec: Codec, file: []const u8, options: Options) Error!Bink {
+        errdefer gpa.free(file);
+        const movie: container.Movie = try .parse(file);
+        const header = movie.header;
+        const video = try codec.openVideo(.{ .revision = header.revision, .width = header.width, .height = header.height, .flags = header.flags });
+        errdefer codec.close(video);
+        var bink: Bink = .{
+            .gpa = gpa,
+            .codec = codec,
+            .file = file,
+            .movie = movie,
+            .video = video,
+            .width = header.width,
+            .height = header.height,
+            .frames = header.frames,
+            .rate = options.rate orelse .{ .frames = header.rate, .seconds = header.rate_divisor },
+            .look = options.look,
+        };
+        if (options.look.deblock) {
+            const chroma = @as(usize, (header.width + 1) / 2) * ((header.height + 1) / 2);
+            const buffer = try gpa.alloc(u8, @as(usize, header.width) * header.height + 2 * chroma);
+            const luma = buffer.len - 2 * chroma;
+            bink.planes = .{ buffer[0..luma], buffer[luma..][0..chroma], buffer[luma + chroma ..] };
+        }
+        errdefer if (bink.planes) |planes| gpa.free(levels(planes));
+        if (options.sound) |driver| if (movie.tracks.len > 0) {
+            bink.sound = try openSound(gpa, codec, movie, driver);
+        };
+        return bink;
+    }
+
+    /// The one allocation the deblocking planes lie in.
+    fn levels(planes: [3][]u8) []u8 {
+        return planes[0].ptr[0 .. planes[0].len + planes[1].len + planes[2].len];
+    }
+
+    /// The first audio track's sound, decoded whole, as a stream of `driver`; none where it has
+    /// none, or the driver has no stream left.
+    fn openSound(gpa: Allocator, codec: Codec, movie: container.Movie, driver: mss.Driver) Error!?Sound {
+        const track = movie.tracks[0];
+        const channels: u8 = if (track.flags.stereo) 2 else 1;
+        const audio = try codec.openAudio(.{ .revision = movie.header.revision, .rate = track.rate, .channels = channels, .dct = track.flags.dct });
+        defer codec.close(audio);
+        var pcm: std.ArrayList(i16) = .empty;
+        defer pcm.deinit(gpa);
+        for (0..movie.index.len) |number| {
+            var frame = try movie.frame(number);
+            const packet = frame.audio.next().?;
+            // A packet of fewer than 4 bytes holds no samples.
+            if (packet.len >= 4) try codec.samples(audio, packet, gpa, &pcm);
+        }
+        if (pcm.items.len == 0) return null;
+        const file = try wave.pcm16(gpa, track.rate, channels, pcm.items);
+        errdefer gpa.free(file);
+        const stream = driver.openStream(file) orelse {
+            gpa.free(file);
+            return null;
+        };
+        driver.setStreamVolume(stream, mss.max_level);
+        return .{ .driver = driver, .stream = stream, .file = file };
+    }
+
+    /// `BinkClose`.
+    pub fn close(bink: *Bink) void {
+        if (bink.sound) |sound| {
+            sound.driver.closeStream(sound.stream);
+            bink.gpa.free(sound.file);
+        }
+        if (bink.planes) |planes| bink.gpa.free(levels(planes));
+        bink.codec.close(bink.video);
+        bink.gpa.free(bink.file);
+        bink.* = undefined;
+    }
+
+    /// `BinkDoFrame`: decodes the frame `frame_number` names, at `now`. The first starts the
+    /// movie's clock, and its sound.
+    pub fn doFrame(bink: *Bink, now: u64) Error!void {
+        if (bink.start == null) {
+            bink.start = now;
+            if (bink.sound) |sound| sound.driver.startStream(sound.stream);
+        }
+        const frame = try bink.movie.frame(bink.frame_number - 1);
+        bink.picture = try bink.codec.picture(bink.video, frame.video);
+    }
+
+    /// `BinkCopyToBuffer`, in 32-bit RGBA: the last frame decoded into `rgba`, `pitch` bytes to a
+    /// row, its top left corner at `at`, turned into colours by BT.601 in its limited range
+    /// (`picture.convert`), deblocked first as its look has it.
+    pub fn copyToBuffer(bink: Bink, rgba: []u8, pitch: usize, at: [2]usize) void {
+        var shown = bink.picture orelse return;
+        if (bink.planes) |planes| shown = deblocked(shown, planes);
+        picture.convert(shown, rgba, pitch, at, bink.look.smooth_colour);
+    }
+
+    /// `decoded` with its planes copied into `planes` and deblocked there (`picture.deblock`).
+    fn deblocked(decoded: Picture, planes: [3][]u8) Picture {
+        const sizes = [3][2]usize{
+            .{ decoded.width, decoded.height },
+            .{ (decoded.width + 1) / 2, (decoded.height + 1) / 2 },
+            .{ (decoded.width + 1) / 2, (decoded.height + 1) / 2 },
+        };
+        for (planes, [3][]const u8{ decoded.y, decoded.u, decoded.v }, decoded.strides[0..3], sizes) |plane, from, stride, size| {
+            for (0..size[1]) |row| @memcpy(plane[row * size[0] ..][0..size[0]], from[row * stride ..][0..size[0]]);
+            picture.deblock(plane, size[0], size[1], size[0]);
+        }
+        var shown = decoded;
+        shown.y, shown.u, shown.v = .{ planes[0], planes[1], planes[2] };
+        shown.strides = .{ sizes[0][0], sizes[1][0], sizes[2][0], decoded.strides[3] };
+        return shown;
+    }
+
+    /// `BinkNextFrame`: the next frame next.
+    pub fn nextFrame(bink: *Bink) void {
+        bink.frame_number = @min(bink.frame_number + 1, bink.frames);
+    }
+
+    /// `BinkWait`: whether the frame `frame_number` names is not yet due at `now`, which it never
+    /// is while paused. The first frame is due at once.
+    pub fn wait(bink: Bink, now: u64) bool {
+        if (bink.paused_at != null) return true;
+        const start = bink.start orelse return false;
+        return now < start + bink.rate.due(bink.frame_number - 1);
+    }
+
+    /// `BinkPause`: stops the movie at `now`, its sound too, or plays it on from where it stopped.
+    pub fn pause(bink: *Bink, paused: bool, now: u64) void {
+        if (paused == (bink.paused_at != null)) return;
+        if (paused) {
+            bink.paused_at = now;
+        } else {
+            if (bink.start) |*start| start.* += now - bink.paused_at.?;
+            bink.paused_at = null;
+        }
+        if (bink.sound) |sound| sound.driver.pauseStream(sound.stream, paused);
+    }
+
+    /// `BinkSetVolume`: its sound's volume, `full_volume` for full and up to twice that, which
+    /// Miles plays at its loudest.
+    pub fn setVolume(bink: Bink, volume: u32) void {
+        const sound = bink.sound orelse return;
+        const level = @min(@as(u64, volume) * mss.max_level / full_volume, mss.max_level);
+        sound.driver.setStreamVolume(sound.stream, @intCast(level));
+    }
+};
+
+/// A codec for the tests: each picture 2 by 2, all four pixels of level `y`, the packet's byte, and
+/// each audio packet's bytes past the size as samples.
+const TestCodec = struct {
+    y: [4]u8 = undefined,
+    grey: [1]u8 = .{128},
+    streams: u8 = 0,
+
+    fn codec(test_codec: *TestCodec) Codec {
+        return .{ .context = test_codec, .vtable = &.{
+            .openVideo = openVideo,
+            .openAudio = openAudio,
+            .picture = pictureOf,
+            .samples = samples,
+            .close = close,
+        } };
+    }
+
+    fn of(context: *anyopaque) *TestCodec {
+        return @ptrCast(@alignCast(context));
+    }
+    fn openVideo(context: *anyopaque, _: Video) Error!Stream {
+        of(context).streams += 1;
+        return context;
+    }
+    fn openAudio(context: *anyopaque, _: Audio) Error!Stream {
+        of(context).streams += 1;
+        return context;
+    }
+    fn pictureOf(context: *anyopaque, _: Stream, packet: []const u8) Error!Picture {
+        const test_codec = of(context);
+        test_codec.y = @splat(packet[0]);
+        return .{ .width = 2, .height = 2, .y = &test_codec.y, .u = &test_codec.grey, .v = &test_codec.grey, .strides = .{ 2, 1, 1, 0 } };
+    }
+    fn samples(_: *anyopaque, _: Stream, packet: []const u8, gpa: Allocator, pcm: *std.ArrayList(i16)) Error!void {
+        for (packet[4..]) |byte| try pcm.append(gpa, byte);
+    }
+    fn close(context: *anyopaque, _: Stream) void {
+        of(context).streams -= 1;
+    }
+};
+
+test Bink {
+    const gpa = std.testing.allocator;
+    var test_codec: TestCodec = .{};
+    var buffer: [256]u8 = undefined;
+    // Three frames, each with a video level of 16 more than the last, from black.
+    const bytes = container.testMovie(&buffer, 3, &.{ 4, 0, 0, 0, 7, 9 });
+    const movie: container.Movie = try .parse(bytes);
+    for (0..3) |number| {
+        const frame = try movie.frame(number);
+        @constCast(frame.video)[0] = @intCast(16 + 16 * number);
+    }
+    var bink: Bink = try .open(gpa, test_codec.codec(), try gpa.dupe(u8, bytes), .{});
+    defer bink.close();
+    try std.testing.expectEqual(3, bink.frames);
+    try std.testing.expectEqual(1, bink.frame_number);
+
+    // The first frame is due at once, the next a fifteenth of a second after.
+    const start = 1_000_000_000;
+    try std.testing.expect(!bink.wait(start));
+    try bink.doFrame(start);
+    var rgba: [4 * 4 * 4]u8 = @splat(0xAA);
+    bink.copyToBuffer(&rgba, 4 * 4, .{ 1, 1 });
+    // Black, at the corner given, with the rest left as it was.
+    try std.testing.expectEqualSlices(u8, &.{ 0, 0, 0, 0xFF }, rgba[(4 + 1) * 4 ..][0..4]);
+    try std.testing.expectEqual(0xAA, rgba[0]);
+    bink.nextFrame();
+    try std.testing.expect(bink.wait(start + std.time.ns_per_s / 15 - 1));
+    try std.testing.expect(!bink.wait(start + std.time.ns_per_s / 15));
+
+    // Paused, nothing is due; resumed, the frame is due as late as the pause was long.
+    bink.pause(true, start + 10);
+    try std.testing.expect(bink.wait(start + std.time.ns_per_s));
+    bink.pause(false, start + 20);
+    try std.testing.expect(bink.wait(start + std.time.ns_per_s / 15 + 9));
+    try std.testing.expect(!bink.wait(start + std.time.ns_per_s / 15 + 10));
+
+    // The last frame stays the last.
+    bink.nextFrame();
+    bink.nextFrame();
+    try std.testing.expectEqual(3, bink.frame_number);
+    try bink.doFrame(start + std.time.ns_per_s);
+    try std.testing.expectEqual(48, bink.picture.?.y[0]);
+}
+
+test "a movie's sound plays as a stream" {
+    const gpa = std.testing.allocator;
+    var test_codec: TestCodec = .{};
+    var mixer: mss.Mixer = .init(22050);
+    const driver = mixer.driver();
+    var buffer: [256]u8 = undefined;
+    const bytes = container.testMovie(&buffer, 2, &.{ 6, 0, 0, 0, 7, 9 });
+    var bink: Bink = try .open(gpa, test_codec.codec(), try gpa.dupe(u8, bytes), .{ .sound = driver });
+    // The two frames' samples, 7 and 9 each, in one WAVE file; the audio decoder is closed.
+    const sound = bink.sound.?;
+    const file = try wave.Wave.parse(sound.file);
+    try std.testing.expectEqual(22050, file.rate);
+    try std.testing.expectEqual(4, file.frameCount());
+    try std.testing.expectEqual(1, test_codec.streams);
+    try std.testing.expectEqual(mss.Status.done, driver.streamStatus(sound.stream));
+    try bink.doFrame(0);
+    try std.testing.expectEqual(mss.Status.playing, driver.streamStatus(sound.stream));
+    bink.pause(true, 5);
+    try std.testing.expectEqual(mss.Status.stopped, driver.streamStatus(sound.stream));
+    bink.close();
+    try std.testing.expectEqual(0, test_codec.streams);
+}

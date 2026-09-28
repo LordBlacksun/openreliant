@@ -59,6 +59,18 @@ pub fn build(b: *std.Build) void {
     openal_c.addIncludePath(openal_library.getEmittedIncludeTree());
     platform.addImport("al", openal_c.createModule());
     platform.linkLibrary(openal_library);
+    // The movies: FFmpeg's Bink decoders in place of RAD's Bink library, which deps/ffmpeg builds
+    // from source for the target. It is built optimized whatever the game's own mode, as OpenAL
+    // Soft is, so that a movie decodes in time in a debug build too.
+    const ffmpeg_library = b.dependency("ffmpeg", .{ .target = target, .optimize = .ReleaseFast }).artifact("avcodec");
+    const ffmpeg_c = b.addTranslateC(.{
+        .root_source_file = b.path("src/platform/ffmpeg.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    ffmpeg_c.addIncludePath(ffmpeg_library.getEmittedIncludeTree());
+    platform.addImport("av", ffmpeg_c.createModule());
+    platform.linkLibrary(ffmpeg_library);
     if (macos_sdk) |sdk| {
         // OpenAL Soft reads its configuration through CoreFoundation on a Mac.
         addMacosSdk(b, openal_library.root_module, sdk);
