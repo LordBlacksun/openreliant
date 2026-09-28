@@ -72,6 +72,13 @@ pub const Window = struct {
         return .{ @intCast(@max(width, 1)), @intCast(@max(height, 1)) };
     }
 
+    /// Gathers the system's events into the window's queue, where they wait for `poll`, so that the
+    /// system sees the window answer while the game loads, as the game's message pump has it.
+    pub fn pump(window: *Window) void {
+        _ = window;
+        c.SDL_PumpEvents();
+    }
+
     /// The next event waiting, or null. Alt and Enter, added for OpenReliant, switch between the
     /// window and the full screen, and do not reach the game.
     pub fn poll(window: *Window) ?Event {

@@ -1538,10 +1538,10 @@ const camera_marker_at: math.Vector = .{ 0, 0, -8000 };
 /// The start clears the keyboard's state (`0x004BD7E0`), which the next read of the keyboard fills
 /// again; OpenReliant's keeps what the device reports.
 ///
-/// Not ported: the renderer's and the textures' setting up and the loading screen, which are the
-/// front end's ([#43](https://github.com/vdmkenny/openreliant/issues/43)); the chat line and a
-/// multiplayer game; and what the start does for the campaign: the pilots it gives the player's
-/// wing, mission 25's first part's cockpit, and the pilot's profile
+/// The caller shows the loading screen that goes before it (`xtrabits.loading.missionFrames`).
+/// Not ported: the renderer's and the textures' setting up, which OpenReliant does once as it
+/// starts; the chat line and a multiplayer game; and what the start does for the campaign: the
+/// pilots it gives the player's wing, mission 25's first part's cockpit, and the pilot's profile
 /// ([#301](https://github.com/vdmkenny/openreliant/issues/301)).
 pub fn startMission(gpa: Allocator, start: Start, image: []u8, number: u16) !*Loaded {
     const types = start.types.types();

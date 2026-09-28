@@ -25,7 +25,7 @@ OpenReliant improves on the original's look and sound. `--original` turns the im
 | `--view <0\|1\|2>` | The view it starts in, as the game's settings keep it: 0 the cockpit; 1 the chase view; 2 no cockpit. The settings' own by default, which the pause menu's video screen changes, or 0 without them |
 | `--difficulty <easy\|medium\|hard>` | The game's difficulty: how hard hits land on your ship, and shots on the enemy; medium by default, as in the game |
 | `--music <file>` | A piece from the game's music folder to play from the start, until the mission's script plays its own; none by default |
-| `--no-pause-menu` | With `--mission`, start flying immediately, and fly the mission again as soon as it ends, where it otherwise starts and ends in the game's pause menu |
+| `--no-pause-menu` | With `--mission`, fly the mission again as soon as it ends, where it otherwise ends in the game's pause menu |
 
 ## Display
 

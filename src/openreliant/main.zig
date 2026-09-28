@@ -110,13 +110,13 @@ const Doc = struct {
 
 /// Every option's help, which the compiler holds to having one for each.
 const docs: std.enums.EnumArray(Arg, Doc) = .init(.{
-    .@"--original" = .{ .section = .original, .text = "the original's look and sound: 16-bit colour, one sample a pixel, bilinear filtering, lighting each vertex, light worked out on encoded colours, no shadows, motion that moves on with the game's ticks, a launching ship a frame behind the retainer that lowers it, lights from the latest shots only, muzzle flashes that light nothing and none from the turrets, a jump's flare that lights nothing, the force feedback's own effects only, a blow shaking the camera only while the controller rumbles, an explosion's debris lit by every light, its fireballs, rings, particles and burning bits as few, plain and brief as the original's, the Uber Explode as coarse, unlit and tied to the frame rate as the original's, a damaged ship's smoke as even as the original's, the shields' bubbles as coarse as the original's, the tractor beams as thin as the original's, the hangar's beacons falling short of the launching ship, a ship landing on the Reliant tilted as it came, its tube's door left open, the planets' atmospheres as coarse and fleeting as the original's and their terminators as hard, the Ice Field's rocks drawn only near the middle of the view, the gates' tunnels as coarse as the original's, the ride through the worm rumbling the more often the higher the frame rate, the sun and its lens flares from their small textures and the sun's glow going out at once behind what hides it, the levels of detail changing as near as the original's, as little drawn a frame as the original allows, the marker for a target out of sight placed as the original misplaces it, a missile's sound left where it was launched, the radio's lines cut flat at their loudest and heard dry, and the sound mixed plainly in stereo" },
+    .@"--original" = .{ .section = .original, .text = "the original's look and sound: 16-bit colour, one sample a pixel, bilinear filtering, lighting each vertex, light worked out on encoded colours, no shadows, motion that moves on with the game's ticks, a launching ship a frame behind the retainer that lowers it, lights from the latest shots only, muzzle flashes that light nothing and none from the turrets, a jump's flare that lights nothing, the force feedback's own effects only, a blow shaking the camera only while the controller rumbles, an explosion's debris lit by every light, its fireballs, rings, particles and burning bits as few, plain and brief as the original's, the Uber Explode as coarse, unlit and tied to the frame rate as the original's, a damaged ship's smoke as even as the original's, the shields' bubbles as coarse as the original's, the tractor beams as thin as the original's, the hangar's beacons falling short of the launching ship, a ship landing on the Reliant tilted as it came, its tube's door left open, the planets' atmospheres as coarse and fleeting as the original's and their terminators as hard, the Ice Field's rocks drawn only near the middle of the view, the loading screen's picture picked by the screen's width, the gates' tunnels as coarse as the original's, the ride through the worm rumbling the more often the higher the frame rate, the sun and its lens flares from their small textures and the sun's glow going out at once behind what hides it, the levels of detail changing as near as the original's, as little drawn a frame as the original allows, the marker for a target out of sight placed as the original misplaces it, a missile's sound left where it was launched, the radio's lines cut flat at their loudest and heard dry, and the sound mixed plainly in stereo" },
     .@"--mission" = .{ .section = .mission, .value = "<number>", .text = "play this mission at once rather than open the main menu: the number the game names its file by, mission<number>.dte, from the game's missions folder or resource.hog; 0 is OpenReliant's sandbox, which openreliant carries where the game has no mission 0" },
     .@"--ship" = .{ .section = .mission, .value = "<type>", .text = "the ship type to fly, by its number in shipstats.bin, in place of the loadout screen's choice, with its default missiles; the mission's own by default" },
     .@"--view" = .{ .section = .mission, .value = "<0|1|2>", .text = "the view it starts in, as the game's settings keep it: 0 the cockpit; 1 the chase view; 2 no cockpit. The settings' own by default, which the pause menu's video screen changes" },
     .@"--difficulty" = .{ .section = .mission, .value = "<easy|medium|hard>", .text = "the game's difficulty: how hard hits land on your ship, and shots on the enemy; medium by default, as in the game" },
     .@"--music" = .{ .section = .mission, .value = "<file>", .text = "a piece from the game's music folder to play from the start, until the mission's script plays its own; none by default" },
-    .@"--no-pause-menu" = .{ .section = .mission, .text = "with --mission, start flying, and fly the mission again as soon as it ends, where it otherwise starts and ends in the game's pause menu" },
+    .@"--no-pause-menu" = .{ .section = .mission, .text = "with --mission, fly the mission again as soon as it ends, where it otherwise ends in the game's pause menu" },
     .@"--fullscreen" = .{ .section = .display, .text = "fill the display; Alt and Enter switch while playing" },
     .@"--size" = .{ .section = .display, .value = "<width>x<height>", .text = "draw frames of this size in pixels whatever the window's, which shows them scaled; for a screenshot larger than the display" },
     .@"--fps" = .{ .section = .display, .value = "<rate>", .text = "frames a second at most; without vsync, the display's rate by default; 0 for no limit" },
@@ -221,7 +221,7 @@ const Options = struct {
     screenshot: ?[]const u8 = null,
     /// The game ticks a screenshot runs before it is taken, one a frame.
     screenshot_ticks: u32 = minimum_screenshot_ticks,
-    /// Whether a mission `--mission` names starts in the pause menu.
+    /// Whether a mission `--mission` names ends in the pause menu (`endsInPauseMenu`).
     pause_menu: bool = true,
     fullscreen: bool = false,
     software: bool = false,
@@ -269,6 +269,8 @@ const Options = struct {
     sun: game.backdrop.Sun = .smooth,
     /// How the planets' atmospheres are drawn.
     atmospheres: game.create.atmosphere.Style = .haze,
+    /// Which of its pictures the loading screen shows before a mission.
+    loading_splash: game.xtrabits.loading.Splash = .largest,
     /// Which of the Ice Field's rocks are drawn.
     ice_field: game.environfx.IceField.Reach = .whole_view,
     /// How finely the gates' tunnels are built, and how often the ride through the worm rumbles.
@@ -347,6 +349,7 @@ const Options = struct {
                 options.jump_light = .none;
                 options.sun = .original;
                 options.atmospheres = .original;
+                options.loading_splash = .by_width;
                 options.ice_field = .original;
                 options.gates = .original;
                 options.detail_reach = .original;
@@ -602,6 +605,23 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
         .finer = options.detail_reach.finer(),
         .budget = options.draw_budget.limit(),
     };
+    // The loading screen the renderer's start shows as the game loads, and each mission's start
+    // after it: the picture alone, then with LOADING before each part of the game it loads.
+    var loading: Loading = .{
+        .resources = try .open(gpa, resources),
+        .archive = &resources,
+        .window = &window,
+        .screen = screen,
+        .driver = &driver,
+        .context = &context,
+        .strings = &strings,
+        .wanted = options.settings.size,
+        .arena = arena,
+        .splash = options.loading_splash,
+    };
+    defer loading.close();
+    try loading.show(game.xtrabits.loading.startup_first);
+    try loading.show(game.xtrabits.loading.startup_step);
     var rand: engine.libcmt.Rand = .{};
     const space = try game.backdrop.Backdrop.create(arena, &textures, try tga.decode(arena, try resources.readFile(arena, game.backdrop.star_map_name)), &rand, context.projection.near, options.sun);
     const sky = try game.nebula.Sky.create(arena, &textures, try tga.decode(arena, try resources.readFile(arena, game.nebula.dome_image_name)));
@@ -610,6 +630,7 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
     // on.
     var environment: game.environfx.Environment = .{ .sky = sky, .textures = &textures, .space = space };
 
+    try loading.show(game.xtrabits.loading.startup_step);
     // The engine glows every ship's thrusters burn, built once and shared by them all.
     const glows: game.environfx.Glows = try .create(arena, &textures);
     // The muzzle flashes' flares, built with the shots' looks (`guns_init`).
@@ -661,6 +682,7 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
     // A screenshot reads no controls, so that it comes out the same whatever is plugged in.
     if (options.screenshot == null) connectController(arena, &devices, &controller, settings_file.profile);
 
+    try loading.show(game.xtrabits.loading.startup_step);
     // Sound: Miles's calls, played by OpenAL Soft or OpenReliant's own mixer through SDL3's audio,
     // with the voices `WinMain` asks `sound_init` for, the volumes of `[Sound]`, and the 3D
     // provider it opens; silent where there is no device, or with `--no-sound`.
@@ -699,6 +721,7 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
     var clock: game.main.Clock = .{};
     clock.start(platform.window.ticks());
     const hearing: game.hog_snd.Hearing = .{ .sound = sound, .camera = &view.place, .clock = &clock };
+    try loading.show(game.xtrabits.loading.startup_step);
     // What the explosions leave for the frames after them, and the particles they send out.
     var explosions: game.explode.Explosions = try .init(gpa, try .load(&textures));
     defer explosions.deinit();
@@ -801,6 +824,7 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
         .cockpit = &cockpit,
         .display = &display.state,
         .view = &view,
+        .loading = &loading,
     };
     defer play.end();
     display.play = &play;
@@ -836,8 +860,7 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
 
     // The window's activation, which a screenshot doesn't wait on.
     var app: game.winmain.App = .{};
-    // What `game_pause` pauses the game with, and resumes it. With no front end yet, the mission
-    // starts in the pause menu; a screenshot never does.
+    // What `game_pause` pauses the game with, and resumes it.
     const pausing: game.main.Pausing = .{
         .gpa = gpa,
         .clock = &clock,
@@ -847,7 +870,6 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
         .camera = &view,
         .player = &objects.player,
     };
-    if (inPauseMenu(options, frames_left)) try game.main.pause(pausing, true);
     // Whether the system's pointer shows over the window, and whether the window holds the mouse.
     var pointer_shown = true;
     var mouse_held = false;
@@ -874,19 +896,7 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
         // the game too.
         try game.winmain.followActivation(&app, pausing);
         if (output) |open| open.update();
-        // The GPU draws at the display's own resolution; the software device at the window's size
-        // in points, made again when it changes.
-        const size = switch (screen.*) {
-            .gpu => |*device| device.frameSize(),
-            .software => |*device| resized: {
-                const size = options.settings.size orelse window.size();
-                if (device.width != size[0] or device.height != size[1]) {
-                    device.deinit(arena);
-                    device.* = try .init(arena, size[0], size[1]);
-                }
-                break :resized size;
-            },
-        };
+        const size = try frameSize(screen, &window, options.settings.size, arena);
 
         world.view = view.view;
         world.cockpit = if (cockpit.shown) |*shown| &shown.model else null;
@@ -955,15 +965,15 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
                 // it ended and goes to its debriefing. Until that is ported, a mission the front end
                 // started goes back to it.
                 // One `--mission` named pauses into the menu over the last frame, where RESTART, and
-                // CONTINUE with nothing left to continue, fly it again; a screenshot, or a game that
-                // starts flying at once, starts it again straight away.
+                // CONTINUE with nothing left to continue, fly it again; a screenshot, or a game told
+                // not to (`--no-pause-menu`), starts it again straight away.
                 if (over) {
                     game.main.missionRunEnd(world.player, objects.mission_number);
                     if (from_front_end) {
                         backToFrontEnd(&play, &front, sound, objects);
                         in_front_end = true;
                         from_front_end = false;
-                    } else if (inPauseMenu(options, frames_left)) {
+                    } else if (endsInPauseMenu(options, frames_left)) {
                         play.over = true;
                         try game.main.pause(pausing, true);
                     } else try play.again(orders);
@@ -1135,19 +1145,19 @@ fn save(io: Io, gpa: Allocator, path: []const u8, rgba: []const u8, size: [2]u32
     try writer.interface.flush();
 }
 
-/// Whether a mission `--mission` names starts and ends in the pause menu, which stands in for the
-/// briefing and the debriefing: unless the game starts flying at once (`--no-pause-menu`), or takes
-/// a screenshot, which reads no controls and counts its frames down (`frames_left`). A mission the
-/// front end starts flies at once, and ends back in the front end.
-fn inPauseMenu(options: Options, frames_left: ?usize) bool {
+/// Whether a mission `--mission` names ends in the pause menu, which stands in for the debriefing:
+/// unless the game flies it again at once (`--no-pause-menu`), or takes a screenshot, which reads
+/// no controls and counts its frames down (`frames_left`). A mission the front end starts ends back
+/// in the front end.
+fn endsInPauseMenu(options: Options, frames_left: ?usize) bool {
     return options.mission != null and options.pause_menu and frames_left == null;
 }
 
-test inPauseMenu {
-    try std.testing.expect(inPauseMenu(try parsed(&.{ "--mission", "1" }), null));
-    try std.testing.expect(!inPauseMenu(try parsed(&.{}), null));
-    try std.testing.expect(!inPauseMenu(try parsed(&.{ "--mission", "1", "--no-pause-menu" }), null));
-    try std.testing.expect(!inPauseMenu(try parsed(&.{ "--mission", "1" }), 2));
+test endsInPauseMenu {
+    try std.testing.expect(endsInPauseMenu(try parsed(&.{ "--mission", "1" }), null));
+    try std.testing.expect(!endsInPauseMenu(try parsed(&.{}), null));
+    try std.testing.expect(!endsInPauseMenu(try parsed(&.{ "--mission", "1", "--no-pause-menu" }), null));
+    try std.testing.expect(!endsInPauseMenu(try parsed(&.{ "--mission", "1" }), 2));
 }
 
 /// Goes back to the front end as a mission it started ends, or is left: the mission let go, out of
@@ -1180,6 +1190,89 @@ const FrontEndDisplay = struct {
     }
 };
 
+/// The loading screens as the driver shows them (`game.xtrabits.loading`): each frame drawn over an
+/// empty scene at once and put on the window, the system's events gathered for the loop meanwhile
+/// (`message_pump`).
+const Loading = struct {
+    resources: game.xtrabits.loading.Resources,
+    archive: *const game.bigfile.Hog,
+    window: *platform.window.Window,
+    screen: *Screen,
+    driver: *srd3d.srd3d.Driver,
+    context: *srapi.Context,
+    strings: *const game.language.Language,
+    /// The size `--size` asks the frames to be drawn at, where it does.
+    wanted: ?[2]u32,
+    /// What the software device is made in.
+    arena: Allocator,
+    splash: game.xtrabits.loading.Splash,
+    /// The scene, empty, and what a frame is drawn in.
+    scene: srcore.Scene = .{},
+    frame_arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator),
+
+    fn close(loading: *Loading) void {
+        loading.scene.deinit(loading.resources.gpa);
+        loading.frame_arena.deinit();
+        loading.resources.close();
+    }
+
+    /// The size the frames are drawn at.
+    fn size(loading: *Loading) ![2]u32 {
+        return frameSize(loading.screen, loading.window, loading.wanted, loading.arena);
+    }
+
+    /// Draws `frame` and puts it on the window.
+    fn show(loading: *Loading, frame: game.xtrabits.loading.Frame) !void {
+        loading.window.pump();
+        loading.resources.show(loading.archive.*, frame);
+        _ = loading.frame_arena.reset(.retain_capacity);
+        const arena = loading.frame_arena.allocator();
+        const pixels = try loading.size();
+        var shown: Shown = .{ .loading = loading, .window = pixels, .line = if (frame.line) |id| loading.strings.string(@intFromEnum(id)) else null };
+        try srcore.render(arena, loading.context, &loading.scene, loading.driver.interface(), shown.overlay());
+        if (loading.screen.* == .software) try loading.window.present(try loading.screen.software.rgba(arena), pixels[0], pixels[1]);
+    }
+
+    /// A frame's overlay: the loading screen, on the front end's screen fitted to the window.
+    const Shown = struct {
+        loading: *Loading,
+        window: [2]u32,
+        line: ?[]const u8,
+
+        fn overlay(shown: *Shown) srcore.Overlay {
+            return .{ .context = shown, .draw = draw };
+        }
+
+        fn draw(context: *anyopaque) Allocator.Error!void {
+            const shown: *Shown = @ptrCast(@alignCast(context));
+            const resources = &shown.loading.resources;
+            try resources.draw(.{
+                .gpa = resources.gpa,
+                .target = shown.loading.screen.interface(),
+                .window = shown.window,
+                .fonts = .{ .large = &resources.font, .small = &resources.font },
+                .strings = shown.loading.strings,
+            }, shown.line);
+        }
+    };
+};
+
+/// The size a frame is drawn at: on the GPU the display's own resolution; for the software device
+/// `wanted`, or else the window's size in points, the device made again when it changes.
+fn frameSize(screen: *Screen, window: *const platform.window.Window, wanted: ?[2]u32, arena: Allocator) ![2]u32 {
+    return switch (screen.*) {
+        .gpu => |*device| device.frameSize(),
+        .software => |*device| resized: {
+            const size = wanted orelse window.size();
+            if (device.width != size[0] or device.height != size[1]) {
+                device.deinit(arena);
+                device.* = try .init(arena, size[0], size[1]);
+            }
+            break :resized size;
+        },
+    };
+}
+
 /// What an overlay's drawing fails with: running out of memory alone. A shape the file does not
 /// hold draws nothing, as it does in the game.
 fn drawn(result: anytype) Allocator.Error!void {
@@ -1207,11 +1300,18 @@ const Play = struct {
     view: *camera.Camera,
     /// Whether the attempt is over, the pause menu standing in the debriefing's place.
     over: bool = false,
+    /// The loading screen each start shows.
+    loading: ?*Loading = null,
 
-    /// Starts the mission, letting go of the one before.
+    /// Starts the mission, letting go of the one before, the loading screen shown first
+    /// (`game.xtrabits.loading.missionFrames`).
     fn start(play: *Play, orders: game.aigeneric.Context) !void {
         play.end();
         play.over = false;
+        if (play.loading) |loading| {
+            const frames = game.xtrabits.loading.missionFrames(loading.splash, (try loading.size())[0], orders.world.objects.simulator.mode);
+            for (frames) |frame| try loading.show(frame);
+        }
         play.loaded = try game.main.startMission(play.gpa, .{
             .orders = orders,
             .clock = play.clock,
@@ -1433,6 +1533,8 @@ test Options {
     try std.testing.expectEqual(.original, retro.shields);
     try std.testing.expectEqual(.haze, plain.atmospheres);
     try std.testing.expectEqual(.original, retro.atmospheres);
+    try std.testing.expectEqual(.largest, plain.loading_splash);
+    try std.testing.expectEqual(.by_width, retro.loading_splash);
     try std.testing.expectEqual(.whole_view, plain.ice_field);
     try std.testing.expectEqual(.original, retro.ice_field);
     try std.testing.expectEqual(game.wgate.Settings{}, plain.gates);
