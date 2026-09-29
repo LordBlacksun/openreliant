@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.0](https://github.com/vdmkenny/openreliant/compare/v0.5.0...v0.6.0) (2026-09-29)
+
+
+### Features
+
+* crisper menu text, drawn from the glyphs' coverage ([#424](https://github.com/vdmkenny/openreliant/issues/424)) ([0e2bc13](https://github.com/vdmkenny/openreliant/commit/0e2bc13db1db638764b29d9aaf6b8729e588f3fd)), closes [#410](https://github.com/vdmkenny/openreliant/issues/410)
+* Instant Action, with the gates, the countdown and its bosses' commands ([#408](https://github.com/vdmkenny/openreliant/issues/408)) ([7f3525a](https://github.com/vdmkenny/openreliant/commit/7f3525a11f969b69bdeb04ea8bdb0bbaff603665)), closes [#399](https://github.com/vdmkenny/openreliant/issues/399) [#382](https://github.com/vdmkenny/openreliant/issues/382)
+* the briefing, from the briefing room's door to Enriquez's last word ([#426](https://github.com/vdmkenny/openreliant/issues/426)) ([bdebf75](https://github.com/vdmkenny/openreliant/commit/bdebf755f1e368ae64ac83e064d0f4e7c1b750e3))
+* the game opens in the front end's main menu ([#405](https://github.com/vdmkenny/openreliant/issues/405)) ([bc2625f](https://github.com/vdmkenny/openreliant/commit/bc2625f8aa62e0a92bd35f9d37b7e49128f7a72c))
+* the hangar, landing and chapter movies, from the discs' archives ([#417](https://github.com/vdmkenny/openreliant/issues/417)) ([414f1c0](https://github.com/vdmkenny/openreliant/commit/414f1c025699aa0631bd05d0aadbf3539f8c1d67))
+* the loading screens as the game starts and before each mission ([#409](https://github.com/vdmkenny/openreliant/issues/409)) ([617a1df](https://github.com/vdmkenny/openreliant/commit/617a1df11755057354e03776e30380184f7d1ef7)), closes [#402](https://github.com/vdmkenny/openreliant/issues/402)
+* the movies, played by FFmpeg's Bink decoders ([#415](https://github.com/vdmkenny/openreliant/issues/415)) ([a0ff175](https://github.com/vdmkenny/openreliant/commit/a0ff175ea7edd648985bca64198db61b01d7fb54))
+* the pilot roster, with its call signs and SET GAME DIFFICULTY ([#413](https://github.com/vdmkenny/openreliant/issues/413)) ([feed66d](https://github.com/vdmkenny/openreliant/commit/feed66d7706bcec2e345aa72e6755d3fb778dc9b)), closes [#397](https://github.com/vdmkenny/openreliant/issues/397)
+* the Reliant's rooms, with a new pilot's induction, the news and the in-game options ([#423](https://github.com/vdmkenny/openreliant/issues/423)) ([c5d958e](https://github.com/vdmkenny/openreliant/commit/c5d958eef6cb6289e25daa5b4b0ff3fbec2c7634)), closes [#398](https://github.com/vdmkenny/openreliant/issues/398)
+
 ## [0.5.0](https://github.com/vdmkenny/openreliant/compare/v0.4.0...v0.5.0) (2026-09-27)
 
 
