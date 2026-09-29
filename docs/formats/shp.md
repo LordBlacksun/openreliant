@@ -89,10 +89,16 @@ written back as the file holds them. So every shipped model, written again, come
 byte: `sltool shp check` checks it model by model, and `make check-models` for the whole
 installation.
 
+`model_load` (`0x004A44D0`) asks for no tag outside the table above, so its search passes over a
+chunk of any other tag wherever it stands. No shipped model has one. The reader keeps such chunks
+whole (`shp.Model.unnamed_chunks`), each with how many chunks of named tags come before it, and the
+writer writes each after as many of its own, or before the terminator where it writes fewer.
+
 The writer fails rather than write a file the loader would misread: records of a tag the model's
 sizes leave out, a chunk of more records than its header counts (65535), or a part whose nodes do
 not each have their face list. It also fails for a part whose attachments have tails, but not one
-each.
+each, and for a chunk kept whole whose tag the table names, or is the terminator's, or whose bytes
+are not its records'.
 
 ## Records
 
