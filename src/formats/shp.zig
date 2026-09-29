@@ -756,7 +756,10 @@ pub const TriggerPolygon = extern struct {
     }
 };
 
-/// The type of `tag`'s records, as the engine keeps them.
+/// The type of `tag`'s records, as `parse` keeps them: the longest record of the tag the shipped
+/// models hold, but for an attachment the 124 bytes the engine keeps, its tail apart
+/// (`attachment_tails`). The engine's own records differ in size from most of these: `model_load`
+/// (`0x004A44D0`) takes a trigger polygon at 84 bytes and a point list at 12.
 pub fn Record(comptime tag: Tag) type {
     return switch (tag) {
         .header => Header,
@@ -782,7 +785,7 @@ pub fn Record(comptime tag: Tag) type {
 /// The size of each tag's records in a model's file, or null for a tag the file holds no chunk
 /// of. Older exporters wrote shorter records, which the loader reads as far as they go
 /// (`records`), and left point lists, trigger polygons and firing arcs out altogether. The
-/// defaults are the whole records the engine keeps.
+/// defaults are the sizes of `Record`'s types.
 pub const RecordSizes = struct {
     header: ?u16 = @sizeOf(Record(.header)),
     part: ?u16 = @sizeOf(Record(.part)),
@@ -1141,7 +1144,7 @@ pub const Model = struct {
     /// records. A model parsed from a file comes back byte for byte, as every shipped model does,
     /// unless the file holds what `parse` does not keep: a chunk of a named tag the loader never
     /// asks for, header records after the first, bytes after the terminator, or bytes of a record
-    /// other than an attachment's past those the engine keeps, where they are not zero.
+    /// past its type's size, other than an attachment's, where they are not zero.
     pub fn write(model: Model, out: *std.Io.Writer) WriteError!void {
         var chunks: ChunkWriter = .{ .out = out, .sizes = model.record_sizes, .unnamed = model.unnamed_chunks };
         try chunks.put(.header, @as(*const [1]Header, &model.header), null);
