@@ -63,9 +63,13 @@ pub const Outcome = union(enum) {
     /// before the mission of its number (`winmain.CampaignStart`). The pilot the roster set flies
     /// its missions (`Interface.pilot`).
     campaign: u16,
-    /// A mission to fly, as the developers' keys and INSTANT ACTION start one: 1, where the
-    /// briefing is skipped, else 2 once the briefing has been.
+    /// A mission to fly without its briefing: the developers' keys' (1, with `skip_briefing` set),
+    /// or INSTANT ACTION's, which the main menu flies itself.
     fly: main_menu.Flight,
+    /// The developers' briefing of the mission of its number, from its loadout on
+    /// (`briefing_from_loadout`): screen 7, whose -1 takes `WinMain` back to the front end's main
+    /// menu.
+    briefing: u16,
 };
 
 /// The mission a new campaign starts with (`campaign_new` sets `mission_number` to 1).
@@ -197,9 +201,9 @@ pub const Interface = struct {
     pilot_roster: pilot_roster.Roster = .{},
     /// The pilot the roster sets, which every mission the front end starts is flown by.
     pilot: pilot_roster.Pilot = .{},
-    /// Whether the press held as the shown screen was entered is still held, which the screen
-    /// does not take.
-    held: bool = false,
+    /// The pointer's button, which the shown screen takes only once the press held as it was
+    /// entered has come up.
+    press: input.FreshPress = .{},
     /// The movie a screen plays as it leads to another (`play_bink_movie_no_clear`), which the
     /// driver plays before the next frame (`game.xtrabits.movie`).
     movie: ?[]const u8 = null,
@@ -219,9 +223,8 @@ pub const Interface = struct {
     pub fn frame(front: *Interface, context: Context) ?Outcome {
         if (front.entered != front.screen) front.enter(context);
         front.pointer.update(context.devices.mouse, context.window, context.elapsed);
-        if (!front.pointer.down) front.held = false;
         var pointer = front.pointer;
-        if (front.held) pointer.down = false;
+        pointer.down = front.press.pressed(front.pointer.down);
         switch (front.screen) {
             .main_menu => {
                 const choice = front.main_menu.frame(.{
@@ -233,6 +236,7 @@ pub const Interface = struct {
                 return switch (choice) {
                     .quit => .quit,
                     .fly => |flight| .{ .fly = flight },
+                    .briefing => |mission| .{ .briefing = mission },
                     .pilot_roster => {
                         front.screen = .pilot_roster;
                         front.movie = movie.main_to_single;
@@ -282,7 +286,7 @@ pub const Interface = struct {
     /// not taken.
     fn enter(front: *Interface, context: Context) void {
         front.leave(context);
-        front.held = true;
+        front.press = .{};
         switch (front.screen) {
             .main_menu => front.main_menu.enter(&front.pointer, context.sound),
             .pilot_roster => front.pilot_roster.enter(context.typed, &front.pilot),
@@ -306,7 +310,7 @@ pub const Interface = struct {
     }
 
     /// Comes back to the front end, as a mission started from it ends: its main menu again, until
-    /// the debriefing is ported (#73).
+    /// the campaign's way on after a mission is ported (#74).
     pub fn back(front: *Interface) void {
         front.screen = .main_menu;
         front.entered = null;

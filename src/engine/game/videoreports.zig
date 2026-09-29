@@ -846,6 +846,22 @@ pub fn lineName(name: []const u8) []const u8 {
     return if (std.ascii.startsWithIgnoreCase(after[dot + 1 ..], "ut")) after[0..dot] else after;
 }
 
+/// The speech file `speech` names, as `archive`, the speech's (`speech_hog`), holds it
+/// (`hog_read_file`, `lineName`), in `gpa`; or null, with a warning, for one the archive lacks or
+/// that cannot be read.
+pub fn readLine(gpa: Allocator, archive: hog.Archive, speech: []const u8) ?[]u8 {
+    const name = lineName(speech);
+    const entry = archive.find(name) orelse {
+        log.warn("the line {s} is not in {s}", .{ name, speech_archive });
+        return null;
+    };
+    const contents = archive.read(gpa, entry) catch |err| {
+        log.warn("the line {s} cannot be read: {s}", .{ name, @errorName(err) });
+        return null;
+    };
+    return contents.bytes;
+}
+
 /// The room the game gives a pilot's film's path (`radio_say_pilot`, `0x00456255`).
 const film_path_size = 128;
 
@@ -1087,7 +1103,7 @@ pub const Radio = struct {
     /// (`0x005883D0`), so a line waiting for the window keeps its own.
     pub fn playSpeech(radio: *Radio, sound: *hog_snd.Sound, speech: []const u8) void {
         radio.player.stop(radio.gpa, sound);
-        const bytes = radio.readLine(speech) orelse return;
+        const bytes = radio.readSpeech(speech) orelse return;
         defer radio.gpa.free(bytes);
         radio.play(sound, bytes);
     }
@@ -1130,7 +1146,7 @@ pub const Radio = struct {
     /// The line said last (`line`) read from the archive, in place of the one before.
     fn load(radio: *Radio, speech: []const u8) void {
         radio.dropLine();
-        radio.line = radio.readLine(speech) orelse &.{};
+        radio.line = radio.readSpeech(speech) orelse &.{};
     }
 
     fn dropLine(radio: *Radio) void {
@@ -1145,20 +1161,10 @@ pub const Radio = struct {
         radio.play(sound, radio.line);
     }
 
-    /// The speech file `speech` names as the archive holds it, in `gpa`; or null, with a warning,
-    /// for one the archive lacks.
-    fn readLine(radio: *Radio, speech: []const u8) ?[]u8 {
+    /// The speech file `speech` names as the archive holds it (`readLine`), in `gpa`.
+    fn readSpeech(radio: *Radio, speech: []const u8) ?[]u8 {
         const archive = radio.archive orelse return null;
-        const name = lineName(speech);
-        const entry = archive.find(name) orelse {
-            log.warn("the radio's line {s} is not in {s}", .{ name, speech_archive });
-            return null;
-        };
-        const contents = archive.read(radio.gpa, entry) catch |err| {
-            log.warn("the radio's line {s} cannot be read: {s}", .{ name, @errorName(err) });
-            return null;
-        };
-        return contents.bytes;
+        return readLine(radio.gpa, archive, speech);
     }
 
     /// `bytes`, a speech file, played (`cbox.Player.start`) at the volume every line the game plays

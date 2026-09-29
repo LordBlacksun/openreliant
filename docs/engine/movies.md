@@ -13,7 +13,7 @@ Four functions play a movie in a loop of their own, in `xtrabits.cpp`:
 | `play_bink_movie` (`0x004AB850`) | The intro | The game's folder | A screen cleared to black once | The movie's rate, at full volume (`BinkSetVolume`, `0x8000`) |
 | `play_bink_movie_no_clear` (`0x004AB6E0`) | The front end's transitions | The game's folder | What the screen last showed | 15 frames a second (`BinkSetFrameRate(15, 1)` and `BINKFRAMERATE`) |
 | `play_bink_movie_resourced` (`0x004ABB80`) | The hangar's, a chapter's zoom, a new pilot's intro | The disc's archive | A screen cleared to black once | The movie's rate, at full volume |
-| `play_bink_movie_no_clear_resourced` (`0x004AB9D0`) | A chapter's movie and news, the ways of a new pilot's induction | The disc's archive | What the screen last showed | The movie's rate: it sets 15 frames a second without `BINKFRAMERATE`, which alone has Bink keep to it |
+| `play_bink_movie_no_clear_resourced` (`0x004AB9D0`) | A chapter's movie and news, the ways of a new pilot's induction, the way into the briefing room | The disc's archive | What the screen last showed | The movie's rate: it sets 15 frames a second without `BINKFRAMERATE`, which alone has Bink keep to it |
 
 The two that read the disc's archive find the movie in it (`hog_locate`, `0x004C83F0`), by its
 whole name whatever its case, and have Bink open it where it lies in the archive's file
@@ -33,7 +33,8 @@ movies over the screen; those on a cleared screen play whatever it says on a har
 
 The Reliant's rooms, the news report and a new pilot's induction play their movies in loops of
 their own, from the disc's archive at 15 frames a second whatever the settings, each frame copied
-to the screen as it is due ([The Reliant's rooms](rooms.md)).
+to the screen as it is due ([The Reliant's rooms](rooms.md)). The briefing plays the mission's
+movie on the briefing room's screen so, at the movie's rate and full volume ([Briefing](briefing.md)).
 
 ## The discs' archives
 
@@ -175,6 +176,9 @@ without a disc's archive or a bank.
   and the bank. OpenReliant lands without them.
 - Past the chapters' table, the game reads a mission's chapter from what follows the table.
   OpenReliant ends no chapter there.
+- The pointer's right button ends a movie only once it has come up since the movie began. The game
+  ends one while the button is down, so that the press that skipped what came before, still held,
+  ends it at once.
 
 **Improvements**, each left out under `--original`:
 
@@ -194,8 +198,8 @@ without a disc's archive or a bank.
   Super Resolution 1.0), which keeps its edges sharp without steps
   ([Renderer](../port/renderer.md#improvements)).
 
-Not ported: the other movies, each with what plays it: the briefings'
-([#73](https://github.com/vdmkenny/openreliant/issues/73)), those of how a mission ended, the medals'
+Not ported: the other movies, each with what plays it: the loadout's
+([#44](https://github.com/vdmkenny/openreliant/issues/44)), those of how a mission ended, the medals'
 and the story's end ([#416](https://github.com/vdmkenny/openreliant/issues/416)), those of the
 rooms' places ([#419](https://github.com/vdmkenny/openreliant/issues/419) to
 [#422](https://github.com/vdmkenny/openreliant/issues/422)), and the transitions of the screens not

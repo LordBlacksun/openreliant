@@ -17,6 +17,7 @@ const Allocator = std.mem.Allocator;
 const Io = std.Io;
 
 const fat = @import("../../formats/fat.zig");
+const bigfile = @import("bigfile.zig");
 const paths = @import("../files.zig");
 const shp = @import("../../formats/shp.zig");
 const wave = @import("../../formats/wave.zig");
@@ -239,6 +240,37 @@ pub const Volumes = struct {
             @field(volumes, name) = @intCast(@min(kept, loudest));
         }
         return volumes;
+    }
+};
+
+/// A bank's file read whole, as `hog_load` and `hog_read_file` read one, whose sounds play from its
+/// bytes, and the bank it holds.
+pub const BankFile = struct {
+    bytes: []u8,
+    bank: fat.Bank,
+
+    /// `bytes`, the file of the bank `name`, which it keeps; null where it is not a bank, which the
+    /// log says, the bytes then freed.
+    pub fn of(gpa: Allocator, bytes: []u8, name: []const u8) ?BankFile {
+        const bank = fat.Bank.parse(bytes) catch |err| {
+            log.warn("the bank {s} is left out: {s}", .{ name, @errorName(err) });
+            gpa.free(bytes);
+            return null;
+        };
+        return .{ .bytes = bytes, .bank = bank };
+    }
+
+    /// The bank `name` of `archive` (`hog_load`); null where it is left out, which the log says.
+    pub fn read(gpa: Allocator, archive: *const bigfile.Hog, name: []const u8) ?BankFile {
+        const bytes = archive.readFile(gpa, name) catch |err| {
+            log.warn("the bank {s} is left out: {s}", .{ name, @errorName(err) });
+            return null;
+        };
+        return of(gpa, bytes, name);
+    }
+
+    pub fn deinit(file: BankFile, gpa: Allocator) void {
+        gpa.free(file.bytes);
     }
 };
 
@@ -978,6 +1010,16 @@ pub const testing = struct {
 
     pub const sound_file = wave.testing.pcm(&std.mem.toBytes([4]i16{ 16384, 16384, 16384, 16384 }));
 };
+
+test BankFile {
+    const gpa = std.testing.allocator;
+    const bytes = comptime testing.bank(2);
+    const file = BankFile.of(gpa, try gpa.dupe(u8, &bytes), "two.fat").?;
+    defer file.deinit(gpa);
+    try std.testing.expectEqual(2, file.bank.entries.len);
+    // Not a bank, it is left out, and its bytes let go.
+    try std.testing.expectEqual(null, BankFile.of(gpa, try gpa.dupe(u8, "x"), "x.fat"));
+}
 
 test "Volumes.read" {
     // The file's volumes, within range, and the defaults for any it lacks.

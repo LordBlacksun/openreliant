@@ -2,11 +2,12 @@
 //! far: loading the input settings and bindings from `starlancer.ini` (`load_key_config`), the main
 //! menu (`main_menu`) with its dialog (`dialog`), and the pilot roster (`pilot_roster`), on the
 //! front end's screen (`canvas`); opening the discs' archives (`disc`); and the Reliant's rooms
-//! (`rooms`), with a new pilot's induction (`induction`) and the in-game options
-//! (`in_game_options`).
+//! (`rooms`), with a new pilot's induction (`induction`), the in-game options
+//! (`in_game_options`) and the briefing (`briefing`).
 
 const std = @import("std");
 
+pub const briefing = @import("interface/briefing.zig");
 pub const canvas = @import("interface/canvas.zig");
 pub const dialog = @import("interface/dialog.zig");
 pub const disc = @import("interface/disc.zig");
@@ -227,6 +228,7 @@ test deadZone {
 }
 
 test {
+    _ = briefing;
     _ = canvas;
     _ = dialog;
     _ = disc;

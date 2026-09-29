@@ -6,7 +6,7 @@ The hub a single-player campaign comes back to between missions: the Reliant's r
 
 [`game/interface/rooms.zig`](../../src/engine/game/interface/rooms.zig) holds the rooms and the news report, and [`rooms/views.zig`](../../src/engine/game/interface/rooms/views.zig) their views, which `tablegen rooms` reads out of the executable (`make room-tables`). [`induction.zig`](../../src/engine/game/interface/induction.zig) holds the induction, [`in_game_options.zig`](../../src/engine/game/interface/in_game_options.zig) the in-game options, and [`game/winmain.zig`](../../src/engine/game/winmain.zig) what `WinMain` does as a campaign starts (`CampaignStart`). The driver runs each in a loop of its own ([`openreliant/rooms.zig`](../../src/openreliant/rooms.zig)), and plays the movies between them as the game plays them ([Movies](movies.md)).
 
-The pilot roster's START GAME leads into the rooms, through the induction for mission 1. The briefing room's door flies the mission, after the hangar's movie, until the briefing is ported ([#73](https://github.com/vdmkenny/openreliant/issues/73)); the in-game options' MAIN MENU leads back to the main menu, and QUIT quits. While the window is away, the rooms' loops pause the music and the voices, as the message pump does; the game's pump also waits for the window to come back, where the rooms go on.
+The pilot roster's START GAME leads into the rooms, through the induction for mission 1. The briefing room's door leads to the briefing ([Briefing](briefing.md)), and then to the mission, after the hangar's movie; the in-game options' MAIN MENU leads back to the main menu, and QUIT quits. While the window is away, the rooms' loops pause the music and the voices, as the message pump does; the game's pump also waits for the window to come back, where the rooms go on.
 
 Not ported:
 
@@ -19,6 +19,7 @@ Not ported:
 
 - The fish's food falls by the ticks since it last moved; the game moves it on by the ticks between the pass's start and the drawing, so that it hardly falls on a fast machine ([The fish tank](#the-fish-tank)).
 - A mission outside the table of news reports has none; the game reads what lies either side of the table for its name.
+- The pointer's right button ends the induction only once it has come up since the place showed. The game ends it while the button is down, so that the press that skipped the way to a place, still held, ends the induction there at once ([The induction](#the-induction)).
 
 **Improvements**, each marked so in the code:
 
@@ -39,7 +40,7 @@ As START GAME starts a campaign (`interface_run` returns 1), `WinMain` (`0x004AA
 | The CD player | | The pod, from the CD player (`0x00506BF0`) |
 | The ITAC | | The pod, from the ITAC |
 
-The movies play over the screen (`play_bink_movie_no_clear_resourced`). Any other mission's rooms start at the carrier's first view. Through the briefing room's door, `vr_rooms` runs the briefing, the front end's screen 7 (`interface_run`), and returns 1 for `WinMain` to fly the mission; where the briefing ends otherwise (`0x0051D4B4`), the rooms go on, or return 0 for the main menu, as the in-game options' MAIN MENU has them do.
+The movies play over the screen (`play_bink_movie_no_clear_resourced`). Any other mission's rooms start at the carrier's first view. Through the briefing room's door, `vr_rooms` lets its movie, sounds and pictures go and runs the briefing, the front end's screen 7 (`interface_run`; [Briefing](briefing.md)), and returns 1 for `WinMain` to fly the mission; where the briefing ends otherwise (`0x0051D4B4`), the rooms go on, or return 0 for the main menu, as the in-game options' MAIN MENU has them do.
 
 ## The views
 

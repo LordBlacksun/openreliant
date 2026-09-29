@@ -10,10 +10,10 @@ The screens the game shows outside a mission: the main menu, the pilots, the set
 
 OpenReliant opens in the front end unless `--mission` names a mission. The pilot roster's START GAME leads into the Reliant's rooms ([The Reliant's rooms](rooms.md)). A mission the front end or the rooms start flies at once, after the music's fade and the hangar's movie but for INSTANT ACTION's, and when it ends, OpenReliant plays the landing or a chapter's end ([Movies](movies.md#around-a-mission)) and goes back to the main menu; LEAVE MISSION goes back without them.
 
-Ported so far: the screen loop, the main menu, QUIT's dialog, INSTANT ACTION, the pilot roster with SET GAME DIFFICULTY, the Reliant's rooms with a new pilot's induction, the news report and the in-game options, the loading screens, the intro and the transitions between the screens ported, and the movies around a mission ([Movies](movies.md)). Not yet:
+Ported so far: the screen loop, the main menu, QUIT's dialog, INSTANT ACTION, the pilot roster with SET GAME DIFFICULTY, the Reliant's rooms with a new pilot's induction, the news report and the in-game options, the briefing ([Briefing](briefing.md)), the loading screens, the intro and the transitions between the screens ported, and the movies around a mission ([Movies](movies.md)). Not yet:
 
-- The other screens ([#43](https://github.com/vdmkenny/openreliant/issues/43) maps them). Until the briefing ([#73](https://github.com/vdmkenny/openreliant/issues/73)) is ported, the door of the rooms' briefing room flies the mission. MULTI PLAYER ([#404](https://github.com/vdmkenny/openreliant/issues/404)) and GAME OPTIONS ([#400](https://github.com/vdmkenny/openreliant/issues/400)) stay on the main menu, and LOAD GAME ([#75](https://github.com/vdmkenny/openreliant/issues/75)) on the pilot roster.
-- The debriefing, which a mission's end goes to ([#73](https://github.com/vdmkenny/openreliant/issues/73)).
+- The other screens ([#43](https://github.com/vdmkenny/openreliant/issues/43) maps them), the loadout among them ([#44](https://github.com/vdmkenny/openreliant/issues/44)). MULTI PLAYER ([#404](https://github.com/vdmkenny/openreliant/issues/404)) and GAME OPTIONS ([#400](https://github.com/vdmkenny/openreliant/issues/400)) stay on the main menu, and LOAD GAME ([#75](https://github.com/vdmkenny/openreliant/issues/75)) on the pilot roster.
+- The debriefing after a mission, the ITAC's ([#419](https://github.com/vdmkenny/openreliant/issues/419)), which the campaign's way on opens ([#74](https://github.com/vdmkenny/openreliant/issues/74)).
 - The movies between the screens not yet ported, which come with their screens ([Movies](movies.md)).
 
 **Fix:** a screen takes no press until the button held as it was entered comes up. The movie between two screens gives the press that chose the second time to end; where the transitions are off, the game lets it go on to what lies under the pointer on the new screen.
@@ -32,7 +32,7 @@ Ported so far: the screen loop, the main menu, QUIT's dialog, INSTANT ACTION, th
 |---|---|---|
 | 0, the main menu | `main_menu` (`0x00428B60`) | [#396](https://github.com/vdmkenny/openreliant/issues/396) |
 | 1, GAME OPTIONS; 3, audio; 15, video; 16, controls | `0x0042A620`, `0x0042DAB0`, `0x0042E9B0`, `0x0042B690` | [#400](https://github.com/vdmkenny/openreliant/issues/400) |
-| 7, the briefing and the debriefing | `0x00437010` | [#73](https://github.com/vdmkenny/openreliant/issues/73) |
+| 7, the briefing ([Briefing](briefing.md)) | `interface_briefing` (`0x00437010`) | |
 | 8, the landing movie: a second's wait, then `play_landing_movie` ([Movies](movies.md#the-landing)), and 3 | `landing_movie_screen` (`0x0043CA30`) | |
 | 10 and 11, the multiplayer sessions | `0x0043CA50`, with `0x0051D54C` set or clear | [#404](https://github.com/vdmkenny/openreliant/issues/404) |
 | 12, the pilot roster | `0x00430490` | [#397](https://github.com/vdmkenny/openreliant/issues/397) |
@@ -118,7 +118,8 @@ the main menu as it ends.
 With `developer_mode` set:
 
 - A number key types a digit of `mission_number`: after one digit it adds a second, after two it starts again.
-- Enter with Shift or Control flies the mission from its briefing, in ship type 0.
+- Enter with Shift flies the mission without its briefing, in ship type 0, as Shift with F1 does (`skip_briefing`).
+- Enter with Control leads to the mission's briefing from the loadout on (`briefing_from_loadout`, [Briefing](briefing.md)), in ship type 0 and the campaign's tier 0, and from there back to the main menu. OpenReliant, without the loadout, shows Enriquez's last word.
 - Shift with F1 to F10, F11 or F12 flies it without its briefing, in ship type 0 to 11.
 
 ### Drawing

@@ -24,7 +24,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
 const engine = @import("../../../engine.zig");
-const fat = @import("../../../formats/fat.zig");
+const hog = @import("../../../formats/hog.zig");
 const bink = @import("../../bink.zig");
 const input = @import("../../input.zig");
 const bigfile = @import("../bigfile.zig");
@@ -391,13 +391,16 @@ pub const Context = struct {
     /// `resource.hog`, which holds the pointer's shapes.
     resources: *const bigfile.Hog,
     sound: *hog_snd.Sound,
-    /// What becomes of the loudest peaks of Enriquez's scenes, which play dry, as a television's
-    /// sound does.
+    /// What becomes of the loudest peaks of Enriquez's scenes and words, which play dry, as a
+    /// television's sound does.
     peaks: cbox.Style.Peaks,
+    /// `speech_hog`, which holds Enriquez's words in the briefing (`videoreports.speech_archive`);
+    /// null where the game's folder has none.
+    lines: ?*const hog.Archive = null,
 
     /// The file `name` of the disc's archive open, expanded; null where it is left out, which the
     /// log says.
-    fn read(context: Context, name: []const u8) ?[]u8 {
+    pub fn read(context: Context, name: []const u8) ?[]u8 {
         return context.disc.readFile(context.gpa, name) catch |err| {
             log.warn("{s} is left out: {s}", .{ name, @errorName(err) });
             return null;
@@ -406,11 +409,18 @@ pub const Context = struct {
             return null;
         };
     }
+
+    /// The bank `name` of the disc's archive open; null where it is left out.
+    pub fn readBank(context: Context, name: []const u8) ?hog_snd.BankFile {
+        const bytes = context.read(name) orelse return null;
+        return .of(context.gpa, bytes, name);
+    }
 };
 
-/// The movie the rooms play in their own loop (`0x0051D7E8`), as the induction and the news report
-/// do: from the disc's archive, at 15 frames a second (`movie.Kind.screen`), each frame copied to
-/// the screen as it is due.
+/// The movie the rooms play in their own loop (`0x0051D7E8`), as the induction, the news report
+/// and the briefing do: from the disc's archive, at 15 frames a second (`movie.Kind.screen`) or,
+/// the briefing's, at its own rate (`movie.Kind.briefing`), each frame copied to the screen as it
+/// is due.
 pub const Film = struct {
     player: ?movie.Player = null,
     /// Whether it loops from its second frame as it ends: the game keeps the pictures of its first
@@ -419,12 +429,12 @@ pub const Film = struct {
     /// Whether its last frame has shown with nothing to follow, which then stays.
     still: bool = false,
 
-    /// The movie `name` from the disc, in place of the one playing; none where it is left out, as
-    /// where `name` is null.
-    pub fn open(film: *Film, context: Context, name: ?[]const u8) void {
+    /// The movie `name` from the disc, played as `kind` has it, its sound through the context's,
+    /// in place of the one playing; none where it is left out, as where `name` is null.
+    pub fn open(film: *Film, context: Context, name: ?[]const u8, kind: movie.Kind) void {
         film.close();
         const wanted = name orelse return;
-        film.player = .load(context.gpa, context.codec, context.disc, wanted, .screen, null, context.look);
+        film.player = .load(context.gpa, context.codec, context.disc, wanted, kind, context.sound.driver, context.look);
     }
 
     pub fn close(film: *Film) void {
@@ -475,25 +485,37 @@ pub const Film = struct {
     pub fn draw(film: *Film, target: canvas.Canvas) void {
         if (film.player) |*player| player.draw(target.target, target.window, .screen);
     }
+
+    /// Its frame, at its size with its top left corner at `at` on the front end's screen.
+    pub fn drawAt(film: *Film, target: canvas.Canvas, at: [2]i32) void {
+        if (film.player) |*player| target.image(&player.picture, at);
+    }
 };
 
 /// One of Enriquez's scenes, `scene.box` from the disc, spoken through `speech`, the scene before
-/// ended: once, dry, at full volume (`speech_play`, `0x00461D80`). A scene left out is not spoken.
+/// ended (`say`). A scene left out is not spoken.
 pub fn speak(context: Context, speech: *cbox.Player, scene: []const u8) void {
     speech.stop(context.gpa, context.sound);
     var name: [16]u8 = undefined;
     const box = std.fmt.bufPrint(&name, "{s}.box", .{scene}) catch unreachable;
     const bytes = context.read(box) orelse return;
     defer context.gpa.free(bytes);
-    const parsed = cbox.Speech.parse(bytes) orelse {
-        log.warn("the scene {s} is left out: it is not speech", .{box});
-        return;
-    };
-    _ = speech.start(context.gpa, context.sound, parsed, scene_volume, .{ .peaks = context.peaks, .room = .dry });
+    say(context, speech, bytes, box);
 }
 
-/// The volume Enriquez's scenes play at.
-const scene_volume = hog_snd.loudest;
+/// `bytes`, the speech file `name`, unscrambled in place and spoken through `speech`: once, dry,
+/// at full volume (`speech_play`, `0x00461D80`). A file that is not speech is not spoken, which
+/// the log says.
+pub fn say(context: Context, speech: *cbox.Player, bytes: []u8, name: []const u8) void {
+    const parsed = cbox.Speech.parse(bytes) orelse {
+        log.warn("{s} is left out: it is not speech", .{name});
+        return;
+    };
+    _ = speech.start(context.gpa, context.sound, parsed, speech_volume, .{ .peaks = context.peaks, .room = .dry });
+}
+
+/// The volume Enriquez's scenes and words play at.
+const speech_volume = hog_snd.loudest;
 
 /// The news report on the television (`news_report`, `0x0043BA40`): the next mission's report,
 /// Enriquez's scene spoken over the television's movie, and mission 1's in three parts. Escape or
@@ -542,9 +564,9 @@ pub const Step = union(enum) {
     /// A place's screen, after which `leave` puts the player back in the rooms. The news report
     /// plays within the rooms, and never comes to the caller.
     place: Place,
-    /// Through the briefing room's door: the briefing, the front end's screen 7, which `vr_rooms`
-    /// runs before it returns for the mission to be flown. Until it is ported
-    /// ([#73](https://github.com/vdmkenny/openreliant/issues/73)), the caller flies the mission.
+    /// Through the briefing room's door: the briefing, the front end's screen 7
+    /// ([`briefing.zig`](briefing.zig)), which `vr_rooms` runs once it has let the rooms go, before
+    /// it returns for the mission to be flown.
     briefing,
 };
 
@@ -585,11 +607,10 @@ pub const Rooms = struct {
     /// (`0x0051D48C`, `0x005D6C3C`).
     opened_at: u64,
     seen: u64 = 0,
-    /// The ship's sounds and the player's (`0x0051D560`, `0x0051D9FC`), the files they are read
-    /// from, and the voice the hum plays on.
-    hum: ?fat.Bank = null,
-    steps: ?fat.Bank = null,
-    bank_bytes: [2][]u8 = .{ &.{}, &.{} },
+    /// The ship's sounds and the player's (`0x0051D560`, `0x0051D9FC`), and the voice the hum
+    /// plays on.
+    hum: ?hog_snd.BankFile = null,
+    steps: ?hog_snd.BankFile = null,
     hum_voice: ?u8 = null,
     /// The pointer's shapes (`0x0051D548`).
     shapes: ?canvas.Shapes = null,
@@ -615,7 +636,8 @@ pub const Rooms = struct {
         rooms.fish.deinit(gpa);
         if (rooms.shapes) |*shapes| shapes.deinit(gpa);
         rooms.context.sound.endAll();
-        for (rooms.bank_bytes) |bytes| gpa.free(bytes);
+        if (rooms.hum) |file| file.deinit(gpa);
+        if (rooms.steps) |file| file.deinit(gpa);
         rooms.* = undefined;
     }
 
@@ -625,32 +647,25 @@ pub const Rooms = struct {
 
     /// `vrsnd.fat` and `wlksmp.fat`, from the disc; a bank left out leaves its sounds out.
     fn readBanks(rooms: *Rooms) void {
-        inline for (.{ hum_bank, steps_bank }, .{ "hum", "steps" }, 0..) |name, field, slot| {
-            if (rooms.context.read(name)) |bytes| {
-                rooms.bank_bytes[slot] = bytes;
-                @field(rooms, field) = fat.Bank.parse(bytes) catch |err| blk: {
-                    log.warn("{s} is left out: {s}", .{ name, @errorName(err) });
-                    break :blk null;
-                };
-            }
-        }
+        rooms.hum = rooms.context.readBank(hum_bank);
+        rooms.steps = rooms.context.readBank(steps_bank);
     }
 
     /// The ship's hum, over and over, the one before ended.
     fn playHum(rooms: *Rooms) void {
-        const bank = rooms.hum orelse return;
+        const hum = rooms.hum orelse return;
         if (rooms.hum_voice) |voice| rooms.context.sound.endVoice(voice);
-        rooms.hum_voice = rooms.context.sound.play(bank, rooms.carrier.hum(), hum_volume, hog_snd.forever, hog_snd.centre, hog_snd.own_pitch);
+        rooms.hum_voice = rooms.context.sound.play(hum.bank, rooms.carrier.hum(), hum_volume, hog_snd.forever, hog_snd.centre, hog_snd.own_pitch);
     }
 
     fn playStep(rooms: *Rooms, which: StepSound) void {
-        const bank = rooms.steps orelse return;
-        _ = rooms.context.sound.play(bank, @intFromEnum(which), hog_snd.loudest, hog_snd.once, hog_snd.centre, hog_snd.own_pitch);
+        const steps = rooms.steps orelse return;
+        _ = rooms.context.sound.play(steps.bank, @intFromEnum(which), hog_snd.loudest, hog_snd.once, hog_snd.centre, hog_snd.own_pitch);
     }
 
     /// Into a view: its movie `name` opened, its first frame shown at `now` where `show` has it.
     fn enter(rooms: *Rooms, name: ?[]const u8, now: u64, show: bool) void {
-        rooms.film.open(rooms.context, name);
+        rooms.film.open(rooms.context, name, .screen);
         if (show) rooms.film.show(now);
     }
 
@@ -751,7 +766,7 @@ pub const Rooms = struct {
     fn take(rooms: *Rooms, exit: u8, in: Input) bool {
         const next = views.views[exit];
         if (next.sound) |sound| if (!in.right or (in.left and !in.transitions)) {
-            if (rooms.hum) |bank| _ = rooms.context.sound.play(bank, sound, hog_snd.loudest, hog_snd.once, hog_snd.centre, hog_snd.own_pitch);
+            if (rooms.hum) |hum| _ = rooms.context.sound.play(hum.bank, sound, hog_snd.loudest, hog_snd.once, hog_snd.centre, hog_snd.own_pitch);
         };
         rooms.view = exit;
         if (next.movie == null) {
@@ -1022,7 +1037,8 @@ test "the rooms' decls" {
 
 pub const testing = struct {
     /// What the rooms play and draw with in the tests: a disc whose archive holds the movies
-    /// `names`, three frames each, and `others`, and a mixer to play their sounds.
+    /// `names`, three frames each, and `others`, `resource.hog` with `resources`, and a mixer to
+    /// play their sounds.
     pub const Tested = struct {
         tmp: std.testing.TmpDir,
         disc: disc_module.Disc,
@@ -1034,7 +1050,7 @@ pub const testing = struct {
         const mss = @import("../../mss.zig");
         const container = @import("../../../formats/bink.zig");
 
-        pub fn init(tested: *Tested, names: []const []const u8, others: []const bigfile.testing.Member) !void {
+        pub fn init(tested: *Tested, names: []const []const u8, others: []const bigfile.testing.Member, resources: []const bigfile.testing.Member) !void {
             const gpa = std.testing.allocator;
             const io = std.testing.io;
             tested.tmp = std.testing.tmpDir(.{ .iterate = true });
@@ -1045,8 +1061,11 @@ pub const testing = struct {
             }
             @memcpy(members[names.len..][0..others.len], others);
             try bigfile.testing.write(gpa, io, tested.tmp.dir, "CD2.HOG", members[0 .. names.len + others.len]);
-            // The pointer's shapes, which don't parse, and so are left out.
-            try bigfile.testing.write(gpa, io, tested.tmp.dir, bigfile.resource_name, &.{.{ .name = "vrgfx.spr", .data = "x" }});
+            // The pointer's shapes, which don't parse, and so are left out, and `resources`.
+            var resource_members: [12]bigfile.testing.Member = undefined;
+            resource_members[0] = .{ .name = "vrgfx.spr", .data = "x" };
+            @memcpy(resource_members[1..][0..resources.len], resources);
+            try bigfile.testing.write(gpa, io, tested.tmp.dir, bigfile.resource_name, resource_members[0 .. resources.len + 1]);
             tested.disc = .{ .gpa = gpa, .io = io, .directory = tested.tmp.dir };
             tested.disc.open(.two);
             tested.resources = try .open(gpa, io, tested.tmp.dir, bigfile.resource_name);
@@ -1078,7 +1097,7 @@ fn passAt(rooms: *Rooms, keyboard: *input.Keyboard, at: [2]i32, left: bool, righ
 
 test Rooms {
     var tested: testing.Tested = undefined;
-    try tested.init(&.{ "rel_ladd_bunk.bik", "rel_doorloop.bik", "rel_t2itac.bik", "rel_itacloop.bik", "rel_bunkroom2briefing_door.bik", "single_rel_bunkroom2briefing_door.bik" }, &.{});
+    try tested.init(&.{ "rel_ladd_bunk.bik", "rel_doorloop.bik", "rel_t2itac.bik", "rel_itacloop.bik", "rel_bunkroom2briefing_door.bik", "single_rel_bunkroom2briefing_door.bik" }, &.{}, &.{});
     defer tested.deinit();
     var rooms: Rooms = .open(tested.context(), 1, Carrier.start(.reliant), 0);
     defer rooms.close();
@@ -1135,7 +1154,7 @@ test Rooms {
 
 test "a skip into a view without a loop or an action settles on its last frame" {
     var tested: testing.Tested = undefined;
-    try tested.init(&.{"lock_i2l.bik"}, &.{});
+    try tested.init(&.{"lock_i2l.bik"}, &.{}, &.{});
     defer tested.deinit();
     var keyboard: input.Keyboard = .{};
     const view = comptime viewAt(0x0050B438);
@@ -1163,7 +1182,7 @@ test "the news report" {
         .{ .name = "0005a.box", .data = scenes[0] },
         .{ .name = "0005b.box", .data = scenes[1] },
         .{ .name = "0005c.box", .data = scenes[2] },
-    });
+    }, &.{});
     defer tested.deinit();
     var keyboard: input.Keyboard = .{};
     var out: [512][2]f32 = undefined;

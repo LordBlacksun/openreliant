@@ -74,6 +74,7 @@ const Arg = enum {
     @"--no-reverb",
     @"--no-compressor",
     @"--no-sound",
+    @"--no-intro",
     @"--screenshot",
     @"--screenshot-ticks",
     @"--version",
@@ -145,6 +146,7 @@ const docs: std.enums.EnumArray(Arg, Doc) = .init(.{
     .@"--no-reverb" = .{ .section = .sound, .text = "play the sounds around you and the cockpit's voice without reverb" },
     .@"--no-compressor" = .{ .section = .sound, .text = "leave the mix's loudness as it is, only keeping its peaks in check" },
     .@"--no-sound" = .{ .section = .sound, .text = "play without sound" },
+    .@"--no-intro" = .{ .section = .other, .text = "start without the three movies the game plays as it starts, as --mission and --screenshot do" },
     .@"--screenshot" = .{ .section = .other, .value = "<file.png>", .text = "draw one frame, with the camera settled, to a PNG, and quit; the controls are not read, so that it comes out the same each time" },
     .@"--screenshot-ticks" = .{ .section = .other, .value = "<ticks>", .text = "with --screenshot, how many game ticks to run first, one a frame, so that the scene plays out; 2 by default" },
     .@"--version" = .{ .section = .other, .text = "show the version" },
@@ -232,6 +234,8 @@ const Options = struct {
     screenshot_ticks: u32 = minimum_screenshot_ticks,
     /// Whether a mission `--mission` names ends in the pause menu (`endsInPauseMenu`).
     pause_menu: bool = true,
+    /// Whether the game plays the movies of its start as it starts (`xtrabits.movie.intro`).
+    intro: bool = true,
     fullscreen: bool = false,
     software: bool = false,
     settings: platform.gpu.Settings = .{},
@@ -387,6 +391,7 @@ const Options = struct {
             .@"--difficulty" => options.difficulty = std.meta.stringToEnum(game.collision.Difficulty, value) orelse return error.BadValue,
             .@"--music" => options.music = if (std.mem.eql(u8, value, "none")) null else value,
             .@"--no-pause-menu" => options.pause_menu = false,
+            .@"--no-intro" => options.intro = false,
             .@"--fullscreen" => options.fullscreen = true,
             .@"--size" => options.settings.size = parseSize(value) orelse return error.BadValue,
             .@"--fps" => {
@@ -652,7 +657,7 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
         .hardware = !options.software,
         .disc = &disc,
     };
-    if (options.mission == null and options.screenshot == null) {
+    if (options.intro and options.mission == null and options.screenshot == null) {
         for (game.xtrabits.movie.intro) |name| _ = try movies.play(name, .cleared) orelse return;
     }
     // The loading screen the renderer's start shows as the game loads, and each mission's start
@@ -969,28 +974,35 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
                 .resources = &front_resources.?,
                 .settings = &settings_file,
             })) |outcome| {
+                // The Reliant's rooms and the briefing, which run in loops of their own.
+                var rooms: Rooms = .{
+                    .movies = &movies,
+                    .sound = sound,
+                    .clock = &clock,
+                    .resources = &resources,
+                    .front = &front_resources.?,
+                    .strings = &strings,
+                    .peaks = options.speech.peaks,
+                    .lines = if (radio.archive) |*archive| archive else null,
+                };
                 const flight: game.interface.main_menu.Flight = switch (outcome) {
                     .quit => return,
                     .fly => |flight| flight,
                     // START GAME: `WinMain` takes the campaign into the Reliant's rooms, whose
-                    // briefing room's door flies the mission until the briefing is ported (#73).
-                    .campaign => |mission| campaign: {
-                        var rooms: Rooms = .{
-                            .movies = &movies,
-                            .sound = sound,
-                            .clock = &clock,
-                            .resources = &resources,
-                            .front = &front_resources.?,
-                            .strings = &strings,
-                            .peaks = options.speech.peaks,
-                        };
-                        switch (try rooms.campaign(mission) orelse return) {
-                            .briefing => break :campaign .{ .mission = mission },
-                            .main_menu => {
-                                front.back();
-                                continue;
-                            },
-                        }
+                    // briefing room's door leads to the briefing, and the mission.
+                    .campaign => |mission| switch (try rooms.campaign(mission) orelse return) {
+                        .fly => .{ .mission = mission },
+                        .main_menu => {
+                            front.back();
+                            continue;
+                        },
+                    },
+                    // The developers' briefing from its loadout on, after which the front end
+                    // starts again at its main menu.
+                    .briefing => |mission| {
+                        if (!try rooms.loadoutBriefing(mission)) return;
+                        front.back();
+                        continue;
                     },
                 };
                 play.number = flight.mission;
@@ -1574,6 +1586,8 @@ test Options {
     try std.testing.expectError(error.Usage, parsed(&.{ "--ship", "0x0E" }));
     try std.testing.expectError(error.Usage, parsed(&.{"--bogus"}));
     try std.testing.expectEqualStrings("shot.png", (try parsed(&.{ "--screenshot", "shot.png" })).screenshot.?);
+    try std.testing.expect((try parsed(&.{})).intro);
+    try std.testing.expect(!(try parsed(&.{"--no-intro"})).intro);
     // As the game has it unless told otherwise.
     try std.testing.expectEqual(null, (try parsed(&.{})).difficulty);
     try std.testing.expectEqual(.hard, (try parsed(&.{ "--difficulty", "hard" })).difficulty.?);
