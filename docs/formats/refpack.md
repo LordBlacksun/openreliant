@@ -78,8 +78,8 @@ game reads only 3-byte sizes.
 
 The encoder keeps `inPlaceExcess` as it writes, from what each command stands for, rather than
 reading its stream back. `refpack.Compressor` compresses one payload after another with the same
-match finder, whose tables take 768 KB, as the `.HOG` writer does for an archive's members;
-`compressAlloc` is one for a single payload.
+match finder, as the `.HOG` writer does for an archive's members; `compressAlloc` is one for a
+single payload.
 
 ### What the game's expansion demands
 
@@ -94,13 +94,13 @@ past it, after which the expansion reads its own output as commands and overwrit
 
 The literals of a payload that does not compress take 1 byte in 112 for their control bytes, so
 `compressAlloc` fails with `error.NotInPlace` for one of 1146212 bytes or more, and for a
-compressible one with a tail of that size. The tightest shipped stream is `smp3d.fat`, at 486,
-and the next is `WLKSMP.FAT`, at 74; every other is at 3 or under.
+compressible one with a tail of that size. Every shipped stream keeps within the bound, the
+tightest, `smp3d.fat`, at 486.
 
 Where there is no stream, or none that loads, the member is stored as it is, which the game reads
 verbatim. A payload that itself begins `10 FB` cannot be stored so: the game would take it for a
-stream. `refpack.loadsInPlace` tells whether a stream keeps within the bound, which the `.HOG`
-writer checks before it keeps a member that begins `10 FB`
+stream. `refpack.loadsInPlace` tells whether a stream expands to its declared size within the
+bound, which the `.HOG` writer checks before it keeps a member that begins `10 FB`
 ([writing an archive](hog.md#writing-an-archive)).
 
 The flags byte of a stream must be exactly `0x10`. `hog_read_file` expands a member only when it

@@ -431,7 +431,7 @@ pub fn compressAlloc(gpa: Allocator, data: []const u8) CompressError![]u8 {
 }
 
 /// Compresses one payload after another, such as the members of an archive, with the same match
-/// finder, whose tables take 768 KB.
+/// finder.
 pub const Compressor = struct {
     finder: Finder,
 
