@@ -1,9 +1,12 @@
-//! `sltool hog ...`: read the game's `.HOG` asset archives.
+//! `sltool hog ...`: read the game's `.HOG` asset archives, and pack new ones.
 
 const std = @import("std");
+const Io = std.Io;
 
 const openreliant = @import("openreliant");
+const files = openreliant.engine.files;
 const hog = openreliant.hog;
+const refpack = openreliant.refpack;
 
 const sltool = @import("main.zig");
 const Context = sltool.Context;
@@ -13,12 +16,17 @@ pub const Command = union(enum) {
     ls: struct { archive: []const u8 },
     /// Extracts every member, decompressing unless `--raw`.
     extract: struct { archive: []const u8, out_dir: []const u8, raw: bool = false },
+    /// Packs every file of a folder into a new archive, compressing unless `--store`.
+    pack: struct { dir: []const u8, archive: []const u8, store: bool = false },
 
     pub const usage =
         \\  hog info <archive>              describe a .HOG archive
         \\  hog ls <archive>                list its members
         \\  hog extract <archive> <out-dir> [--raw]
         \\                                  extract every member, decompressing by default
+        \\  hog pack <dir> <archive> [--store]
+        \\                                  pack every file of a folder into a new archive,
+        \\                                  compressing what the game can expand by default
         \\
     ;
 
@@ -26,32 +34,41 @@ pub const Command = union(enum) {
         const verb, const operands = try sltool.verbOf(Command, args);
         switch (verb) {
             .extract => {
-                if (operands.len != 2 and operands.len != 3) return error.Usage;
-                var command: Command = .{ .extract = .{ .archive = operands[0], .out_dir = operands[1] } };
-                if (operands.len == 3) {
-                    if (!std.mem.eql(u8, operands[2], "--raw")) return error.Usage;
-                    command.extract.raw = true;
-                }
-                return command;
+                const raw = try flagAfterTwo(operands, "--raw");
+                return .{ .extract = .{ .archive = operands[0], .out_dir = operands[1], .raw = raw } };
+            },
+            .pack => {
+                const store = try flagAfterTwo(operands, "--store");
+                return .{ .pack = .{ .dir = operands[0], .archive = operands[1], .store = store } };
             },
             inline else => |tag| return sltool.positional(Command, tag, operands),
         }
     }
 
     pub fn run(command: Command, ctx: Context) !void {
-        const path = switch (command) {
-            inline else => |operands| operands.archive,
-        };
-        var archive = try hog.Archive.open(ctx.arena, ctx.io, .cwd(), path);
-        defer archive.close(ctx.arena);
-
         switch (command) {
-            .info => try info(ctx, archive),
-            .ls => try list(ctx, archive),
-            .extract => |operands| try extract(ctx, archive, operands.out_dir, operands.raw),
+            .pack => |operands| try pack(ctx, operands.dir, operands.archive, operands.store),
+            inline .info, .ls, .extract => |operands, verb| {
+                var archive = try hog.Archive.open(ctx.arena, ctx.io, .cwd(), operands.archive);
+                defer archive.close(ctx.arena);
+                switch (verb) {
+                    .info => try info(ctx, archive),
+                    .ls => try list(ctx, archive),
+                    .extract => try extract(ctx, archive, operands.out_dir, operands.raw),
+                    .pack => comptime unreachable,
+                }
+            },
         }
     }
 };
+
+/// Whether two operands are followed by `flag`, the one more a command takes; a usage error for
+/// anything else.
+fn flagAfterTwo(operands: []const [:0]const u8, flag: []const u8) error{Usage}!bool {
+    if (operands.len == 2) return false;
+    if (operands.len == 3 and std.mem.eql(u8, operands[2], flag)) return true;
+    return error.Usage;
+}
 
 fn info(ctx: Context, archive: hog.Archive) !void {
     var compressed: usize = 0;
@@ -153,6 +170,54 @@ fn extract(ctx: Context, archive: hog.Archive, out_path: []const u8, raw: bool) 
     }
 }
 
+/// Packs every file of the folder `dir_path` into a new archive at `path`, each file a member of
+/// its own name, in name order so that a folder packs the same wherever it is. Each member is
+/// stored as `hog.packMember` finds best, or as it is with `store`. The `~N` suffix `extract` gives
+/// a repeated name stays part of the member's name.
+fn pack(ctx: Context, dir_path: []const u8, path: []const u8, store: bool) !void {
+    const io = ctx.io;
+    var dir = try Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true });
+    defer dir.close(io);
+
+    var names: std.ArrayList([]const u8) = .empty;
+    var entries = dir.iterate();
+    while (try entries.next(io)) |entry| {
+        if (entry.kind != .file) continue;
+        if (!hog.validName(entry.name)) {
+            std.debug.print("{s}: a member's name is printable ASCII\n", .{entry.name});
+            return error.BadName;
+        }
+        try names.append(ctx.arena, try ctx.arena.dupe(u8, entry.name));
+    }
+    std.mem.sort([]const u8, names.items, {}, nameOrder);
+
+    var compressor: refpack.Compressor = try .init(ctx.arena);
+    defer compressor.deinit(ctx.arena);
+    var counts: std.EnumArray(hog.Storage, usize) = .initFill(0);
+    const members = try ctx.arena.alloc(hog.Member, names.items.len);
+    for (names.items, members) |name, *member| {
+        const data = try dir.readFileAlloc(io, name, ctx.arena, .limited(files.max_file_size));
+        const stored = try hog.packMember(ctx.arena, if (store) null else &compressor, name, data);
+        member.* = .{ .name = name, .data = stored.bytes };
+        counts.getPtr(stored.storage).* += 1;
+    }
+
+    const bytes = try hog.build(ctx.arena, members);
+    try Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = bytes });
+    try ctx.stdout.print("packed {d} members ({Bi:.1}) into {s}: {d} compressed, {d} already compressed, {d} stored\n", .{
+        members.len,
+        bytes.len,
+        path,
+        counts.get(.compressed),
+        counts.get(.already_compressed),
+        counts.get(.stored),
+    });
+}
+
+fn nameOrder(_: void, a: []const u8, b: []const u8) bool {
+    return std.mem.lessThan(u8, a, b);
+}
+
 /// `dest.SHP` becomes `dest~2.SHP`, keeping the extension so the file still opens as its type.
 fn disambiguate(gpa: std.mem.Allocator, name: []const u8, index: usize) ![]const u8 {
     const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse name.len;
@@ -169,6 +234,53 @@ test Command {
     try std.testing.expectError(error.Usage, Command.parse(&.{ "extract", "LANCER.HOG", "out", "--fast" }));
     try std.testing.expectError(error.Usage, Command.parse(&.{"ls"}));
     try std.testing.expectError(error.Usage, Command.parse(&.{}));
+
+    const packing = try Command.parse(&.{ "pack", "mod", "MOD.HOG" });
+    try std.testing.expectEqualStrings("mod", packing.pack.dir);
+    try std.testing.expectEqualStrings("MOD.HOG", packing.pack.archive);
+    try std.testing.expect(!packing.pack.store);
+    try std.testing.expect((try Command.parse(&.{ "pack", "mod", "MOD.HOG", "--store" })).pack.store);
+    try std.testing.expectError(error.Usage, Command.parse(&.{ "pack", "mod", "MOD.HOG", "--raw" }));
+    try std.testing.expectError(error.Usage, Command.parse(&.{ "pack", "mod" }));
+}
+
+test pack {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // A folder of a text worth packing, a movie, a member extracted as stored, and a folder
+    // `pack` passes over.
+    const text = "The quick brown fox jumps over the lazy dog. " ** 20;
+    const already = try refpack.compressAlloc(arena, "abcdabcdabcdabcdabcd");
+    var mod = try tmp.dir.createDirPathOpen(io, "mod", .{});
+    defer mod.close(io);
+    try mod.writeFile(io, .{ .sub_path = "readme.txt", .data = text });
+    try mod.writeFile(io, .{ .sub_path = "warty_.bik", .data = text });
+    try mod.writeFile(io, .{ .sub_path = "Ship.SHP", .data = already });
+    try mod.createDirPath(io, "folder");
+
+    var out: Io.Writer.Allocating = .init(arena);
+    const ctx: Context = .{ .io = io, .arena = arena, .stdout = &out.writer };
+    const base = try std.fmt.allocPrint(arena, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    const archive_path = try std.fmt.allocPrint(arena, "{s}/MOD.HOG", .{base});
+    try pack(ctx, try std.fmt.allocPrint(arena, "{s}/mod", .{base}), archive_path, false);
+    try std.testing.expect(std.mem.indexOf(u8, out.written(), "1 compressed, 1 already compressed, 1 stored") != null);
+
+    // The archive reads back as the files it was packed from, in name order.
+    var archive: hog.Archive = try .open(arena, io, tmp.dir, "MOD.HOG");
+    defer archive.close(arena);
+    try std.testing.expect(archive.isContiguous());
+    try std.testing.expectEqual(3, archive.entries.len);
+    try std.testing.expectEqualStrings("Ship.SHP", archive.entries[0].name);
+    const readme = try archive.read(arena, archive.find("README.TXT").?);
+    try std.testing.expect(readme.compressed);
+    try std.testing.expectEqualStrings(text, readme.bytes);
+    try std.testing.expectEqualSlices(u8, already, try archive.readRaw(arena, archive.find("ship.shp").?));
+    try std.testing.expectEqualStrings(text, try archive.readRaw(arena, archive.find("warty_.bik").?));
 }
 
 test disambiguate {

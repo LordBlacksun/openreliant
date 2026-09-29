@@ -76,6 +76,11 @@ Literals are written as runs of 4 to 112 bytes, and the last 0 to 3 before a mat
 command, or in the terminator at the end. A payload of 16777216 bytes or more has no stream: the
 game reads only 3-byte sizes.
 
+The encoder keeps `inPlaceExcess` as it writes, from what each command stands for, rather than
+reading its stream back. `refpack.Compressor` compresses one payload after another with the same
+match finder, whose tables take 768 KB, as the `.HOG` writer does for an archive's members;
+`compressAlloc` is one for a single payload.
+
 ### What the game's expansion demands
 
 `hog_unpack` (`0x004C8480`) allocates the expanded size plus `0x2800` bytes, reads the stream to the
@@ -89,8 +94,8 @@ past it, after which the expansion reads its own output as commands and overwrit
 
 The literals of a payload that does not compress take 1 byte in 112 for their control bytes, so
 `compressAlloc` fails with `error.NotInPlace` for one of 1146212 bytes or more, and for a
-compressible one with a tail of that size. The tightest shipped stream is `smp3d.fat`, at 486, and the next is
-`WLKSMP.FAT`, at 74; every other is at 3 or under.
+compressible one with a tail of that size. The tightest shipped stream is `smp3d.fat`, at 486,
+and the next is `WLKSMP.FAT`, at 74; every other is at 3 or under.
 
 Where there is no stream, or none that loads, the member is stored as it is, which the game reads
 verbatim. A payload that itself begins `10 FB` cannot be stored so: the game would take it for a
@@ -106,5 +111,5 @@ The bound, its two shapes and the shipped streams' values are from a comment on
 [Starlancer-OSS](https://github.com/LordBlacksun/Starlancer-OSS) project (its documentation is
 licensed CC BY 4.0), which ran `refpack_expand` on generated streams under emulation: 1146211 bytes
 of literals load and 1146212 do not, and neither does 2000000 zero bytes followed by a tail of
-literals that takes the input 2 bytes past the slack. **Unverified:** here, where the port cannot
+literals that takes the input 2 bytes past the slack. **Unverified:** here, where OpenReliant cannot
 run `refpack_expand`; the tests check `inPlaceExcess` against the same figures.

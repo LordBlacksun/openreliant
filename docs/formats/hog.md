@@ -10,6 +10,7 @@ Every integer in the container is **big-endian**.
 sltool hog info <archive>              # size, member count, how much is compressed
 sltool hog ls <archive>                # offset, stored size, real size, name
 sltool hog extract <archive> <dir>     # decompressing by default; --raw to keep members as stored
+sltool hog pack <dir> <archive>        # pack a folder's files; --store to leave them unpacked
 make assets                            # extract resource.hog and pilots.hog into game/assets
 ```
 
@@ -71,6 +72,28 @@ stored (`hog_locate`).
 `resource.hog`'s members by extension: `.shp` models, `.spr` sprites, `.tga` images, `.dte`
 missions, `.fat` [sound banks](fat.md), `.fnt` [fonts](fnt.md), `.ccb` colour tables, and five `.bin` files:
 the four stat tables and `profile.bin`.
+
+## Writing an archive
+
+`hog.build` lays an archive out as the shipped ones are: the header, a record and a name for each
+member in the order given, then the members back to back from the header's data offset to the end
+of the file, with no trailing filler. A name is one or more bytes of printable ASCII, as the
+directory's reader takes it (`hog.validName`). Names are not made unique.
+
+`sltool hog pack` makes an archive of every file of a folder, each a member of its own name, in
+name order. It stores each member as `hog.packMember` finds best:
+
+- A RefPack stream ([compressing](refpack.md#compressing)) where one is smaller and the game can
+  expand it in place, and otherwise the file as it is, which the game reads verbatim.
+- A file that already begins `10 FB`, as `sltool hog extract --raw` gives a packed member, as it
+  is: the game expands it.
+- Movies (`.bik`) and face films (`.fm8`) as they are. Bink opens a movie where it lies in the
+  archive (`hog_locate`, `0x004C83F0`), and OpenReliant reads the films as stored for
+  `hudmovie_play` (`0x0048D120`). **Unverified:** whether `hudmovie_play` would expand a packed
+  film; no shipped one is packed.
+
+`--store` keeps every file as it is. The `~N` suffix `extract` gives a repeated name stays in the
+member's name.
 
 ## RefPack compression
 
