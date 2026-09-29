@@ -26,7 +26,9 @@ pub const Command = union(enum) {
         \\                                  extract every member, decompressing by default
         \\  hog pack <dir> <archive> [--store]
         \\                                  pack every file of a folder into a new archive,
-        \\                                  compressing what the game can expand by default
+        \\                                  compressing what the game can expand by default;
+        \\                                  --store keeps files as they are, but for one that
+        \\                                  begins 10 FB and is no stream the game loads
         \\
     ;
 
@@ -172,8 +174,9 @@ fn extract(ctx: Context, archive: hog.Archive, out_path: []const u8, raw: bool) 
 
 /// Packs every file of the folder `dir_path` into a new archive at `path`, each file a member of
 /// its own name, in name order so that a folder packs the same wherever it is. Each member is
-/// stored as `hog.packMember` finds best, or as it is with `store`. The `~N` suffix `extract` gives
-/// a repeated name stays part of the member's name.
+/// stored as `hog.packMember` finds best, or as it is with `store`, except a file that begins
+/// `10 FB`, which the game takes for a stream whichever. The `~N` suffix `extract` gives a repeated
+/// name stays part of the member's name.
 fn pack(ctx: Context, dir_path: []const u8, path: []const u8, store: bool) !void {
     const io = ctx.io;
     var dir = try Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true });
@@ -193,11 +196,18 @@ fn pack(ctx: Context, dir_path: []const u8, path: []const u8, store: bool) !void
 
     var compressor: refpack.Compressor = try .init(ctx.arena);
     defer compressor.deinit(ctx.arena);
+    const packing: hog.Packing = if (store) .store else .compress;
     var counts: std.EnumArray(hog.Storage, usize) = .initFill(0);
     const members = try ctx.arena.alloc(hog.Member, names.items.len);
     for (names.items, members) |name, *member| {
         const data = try dir.readFileAlloc(io, name, ctx.arena, .limited(files.max_file_size));
-        const stored = try hog.packMember(ctx.arena, if (store) null else &compressor, name, data);
+        const stored = hog.packMember(ctx.arena, &compressor, packing, name, data) catch |err| switch (err) {
+            error.Unloadable => {
+                std.debug.print("{s}: begins 10 FB, so the game would expand it, and no stream of it loads\n", .{name});
+                return err;
+            },
+            error.OutOfMemory => |e| return e,
+        };
         member.* = .{ .name = name, .data = stored.bytes };
         counts.getPtr(stored.storage).* += 1;
     }

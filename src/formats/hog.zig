@@ -283,13 +283,23 @@ pub fn opensInPlace(name: []const u8) bool {
     return false;
 }
 
-/// How `packMember` stores a member.
+/// How `packMember` stores what the game could read as it is.
+pub const Packing = enum {
+    /// A RefPack stream where one is smaller and the game can expand it in place.
+    compress,
+    /// As it is (`sltool hog pack --store`).
+    store,
+};
+
+/// How `packMember` stored a member.
 pub const Storage = enum {
-    /// As it came, which the game reads verbatim.
+    /// As it came, or as what a stream the game could not load expands to, which the game reads
+    /// verbatim.
     stored,
     /// As a RefPack stream `packMember` wrote.
     compressed,
-    /// As it came, being a stream the game expands already, as a member extracted as stored is.
+    /// As it came, being a stream the game expands to its declared size in place, as a member
+    /// extracted as stored is.
     already_compressed,
 };
 
@@ -299,21 +309,47 @@ pub const Packed = struct {
     storage: Storage,
 };
 
-/// The bytes to store for the member `name` of `data`. With a `compressor`, a RefPack stream where
-/// one is smaller and the game can expand it in place, and otherwise the data as it is, which the
-/// game reads verbatim. Without one, and for a member the game opens in place (`opensInPlace`),
-/// the data as it is. Data that begins `10 FB` is a stream the game expands, so it is kept as it is
-/// rather than packed twice, and needs no raw form.
-pub fn packMember(gpa: Allocator, compressor: ?*refpack.Compressor, name: []const u8, data: []const u8) Allocator.Error!Packed {
-    if (refpack.gameExpands(data)) return .{ .bytes = try gpa.dupe(u8, data), .storage = .already_compressed };
-    const packing = compressor orelse return .{ .bytes = try gpa.dupe(u8, data), .storage = .stored };
-    if (!opensInPlace(name)) {
-        if (packing.compress(gpa, data)) |stream| {
-            if (stream.len < data.len) return .{ .bytes = stream, .storage = .compressed };
+pub const PackError = error{
+    /// The data begins `10 FB`, so the game takes it for a stream, but it is none the game loads in
+    /// place, and no stream of what it holds loads either (`refpack.CompressError`).
+    Unloadable,
+} || Allocator.Error;
+
+/// The bytes to store for the member `name` of `data`, which the game reads back as `data`. With
+/// `.compress`, a RefPack stream where one is smaller and the game can expand it in place, and
+/// otherwise the data as it is, which the game reads verbatim; with `.store`, the data as it is. A
+/// member the game opens in place (`opensInPlace`) is stored as it is, since the game never expands
+/// it.
+///
+/// Data that begins `10 FB` the game takes for a stream whatever the packing. It is kept as it is
+/// where it is a stream that expands to its declared size in place (`refpack.loadsInPlace`), as a
+/// member extracted as stored is. Otherwise what it expands to goes in instead, and where it
+/// expands to nothing, the data itself is compressed, having no form the game reads as it is.
+pub fn packMember(gpa: Allocator, compressor: *refpack.Compressor, packing: Packing, name: []const u8, data: []const u8) PackError!Packed {
+    if (opensInPlace(name) or !refpack.gameExpands(data)) return packContent(gpa, compressor, packing, name, data);
+    const expanded = refpack.decompressAlloc(gpa, data) catch |err| switch (err) {
+        error.OutOfMemory => |e| return e,
+        error.BadSignature, error.UnexpectedEnd, error.BadReference, error.SizeMismatch => {
+            return packContent(gpa, compressor, packing, name, data);
+        },
+    };
+    defer gpa.free(expanded);
+    if (refpack.loadsInPlace(data)) return .{ .bytes = try gpa.dupe(u8, data), .storage = .already_compressed };
+    return packContent(gpa, compressor, packing, name, expanded);
+}
+
+/// `data` as the game is to read it: as it is, or with `.compress` a RefPack stream where one is
+/// smaller and loads. Data that begins `10 FB` has only the stream, unless the game opens the member
+/// in place.
+fn packContent(gpa: Allocator, compressor: *refpack.Compressor, packing: Packing, name: []const u8, data: []const u8) PackError!Packed {
+    if (opensInPlace(name)) return .{ .bytes = try gpa.dupe(u8, data), .storage = .stored };
+    const needs_stream = refpack.gameExpands(data);
+    if (packing == .compress or needs_stream) {
+        if (compressor.compress(gpa, data)) |stream| {
+            if (needs_stream or stream.len < data.len) return .{ .bytes = stream, .storage = .compressed };
             gpa.free(stream);
         } else |err| switch (err) {
-            // No stream the game loads: stored as it is.
-            error.TooLarge, error.NotInPlace => {},
+            error.TooLarge, error.NotInPlace => if (needs_stream) return error.Unloadable,
             error.OutOfMemory => |e| return e,
         }
     }
@@ -458,7 +494,7 @@ test packMember {
     const text = "The quick brown fox jumps over the lazy dog. " ** 20;
 
     // Worth packing, and read back whole.
-    const packed_text = try packMember(gpa, &compressor, "readme.txt", text);
+    const packed_text = try packMember(gpa, &compressor, .compress, "readme.txt", text);
     defer gpa.free(packed_text.bytes);
     try std.testing.expectEqual(Storage.compressed, packed_text.storage);
     try std.testing.expect(packed_text.bytes.len < text.len);
@@ -467,27 +503,111 @@ test packMember {
     try std.testing.expectEqualStrings(text, expanded);
 
     // A movie is stored as it is, however well it would pack.
-    const movie = try packMember(gpa, &compressor, "warty_.bik", text);
+    const movie = try packMember(gpa, &compressor, .compress, "warty_.bik", text);
     defer gpa.free(movie.bytes);
     try std.testing.expectEqual(Storage.stored, movie.storage);
     try std.testing.expectEqualStrings(text, movie.bytes);
 
     // A member already packed is kept as it is, not packed twice.
-    const again = try packMember(gpa, &compressor, "readme.txt", packed_text.bytes);
+    const again = try packMember(gpa, &compressor, .compress, "readme.txt", packed_text.bytes);
     defer gpa.free(again.bytes);
     try std.testing.expectEqual(Storage.already_compressed, again.storage);
     try std.testing.expectEqualSlices(u8, packed_text.bytes, again.bytes);
 
-    // Noise does not shrink, so it is stored; and nothing is packed without a compressor.
+    // Noise does not shrink, so it is stored; and nothing is packed with `.store`.
     var prng: std.Random.DefaultPrng = .init(1);
     var noise: [500]u8 = undefined;
     prng.random().bytes(&noise);
-    const noisy = try packMember(gpa, &compressor, "noise.bin", &noise);
+    const noisy = try packMember(gpa, &compressor, .compress, "noise.bin", &noise);
     defer gpa.free(noisy.bytes);
     try std.testing.expectEqual(Storage.stored, noisy.storage);
-    const kept = try packMember(gpa, null, "readme.txt", text);
+    const kept = try packMember(gpa, &compressor, .store, "readme.txt", text);
     defer gpa.free(kept.bytes);
     try std.testing.expectEqual(Storage.stored, kept.storage);
+}
+
+/// Checks that the game reads `content` from a member stored as `stored`: it expands one that begins
+/// `10 FB`, which must then load in place, and reads any other verbatim.
+fn expectLoads(stored: []const u8, content: []const u8) !void {
+    const gpa = std.testing.allocator;
+    if (!refpack.gameExpands(stored)) return std.testing.expectEqualSlices(u8, content, stored);
+    try std.testing.expect(try refpack.inPlaceExcess(stored) <= @as(i64, refpack.in_place_slack));
+    const expanded = try refpack.decompressAlloc(gpa, stored);
+    defer gpa.free(expanded);
+    try std.testing.expectEqualSlices(u8, content, expanded);
+}
+
+test "a member that begins 10 FB is kept only where the game loads it" {
+    const gpa = std.testing.allocator;
+    var compressor: refpack.Compressor = try .init(gpa);
+    defer compressor.deinit(gpa);
+
+    // A stream within the bound, as `sltool hog extract --raw` gives one.
+    const within = try compressor.compress(gpa, "The quick brown fox jumps over the lazy dog. " ** 20);
+    defer gpa.free(within);
+    // A stream past it: literals alone, one byte more than the slack allows.
+    const zeros = try gpa.alloc(u8, 1_146_212);
+    defer gpa.free(zeros);
+    @memset(zeros, 0);
+    const past = try refpack.testing.literals(gpa, zeros);
+    defer gpa.free(past);
+    try std.testing.expect(try refpack.inPlaceExcess(past) > @as(i64, refpack.in_place_slack));
+    // Text that only begins as a stream does, and a stream whose commands give a byte fewer than its
+    // header declares.
+    const not_stream = "\x10\xFBnot a stream, only text that begins as one does";
+    const short_by_one = [_]u8{ 0x10, 0xFB, 0x00, 0x00, 0x0D, 0xE0, 'a', 'b', 'c', 'd', 0x14, 0x03, 0xFC };
+
+    // With and without `--store`.
+    for ([_]Packing{ .compress, .store }) |packing| {
+        const kept = try packMember(gpa, &compressor, packing, "mission1.dte", within);
+        defer gpa.free(kept.bytes);
+        try std.testing.expectEqual(Storage.already_compressed, kept.storage);
+        try std.testing.expectEqualSlices(u8, within, kept.bytes);
+
+        // Past the bound, what it expands to goes in instead.
+        const repacked = try packMember(gpa, &compressor, packing, "big.tga", past);
+        defer gpa.free(repacked.bytes);
+        try std.testing.expect(repacked.storage != .already_compressed);
+        try expectLoads(repacked.bytes, zeros);
+
+        // Not a stream the game loads, and not one to expand: the file itself is compressed, since
+        // the game would take it for a stream as it is.
+        for ([_][]const u8{ not_stream, &short_by_one }) |data| {
+            const itself = try packMember(gpa, &compressor, packing, "odd.bin", data);
+            defer gpa.free(itself.bytes);
+            try std.testing.expectEqual(Storage.compressed, itself.storage);
+            try expectLoads(itself.bytes, data);
+        }
+    }
+}
+
+test "a movie that begins 10 FB is stored as it is" {
+    const gpa = std.testing.allocator;
+    var compressor: refpack.Compressor = try .init(gpa);
+    defer compressor.deinit(gpa);
+    // Bink opens a movie where it lies, and never expands it.
+    const movie = "\x10\xFBnot a stream, and never expanded";
+    for ([_]Packing{ .compress, .store }) |packing| {
+        const stored = try packMember(gpa, &compressor, packing, "odd.bik", movie);
+        defer gpa.free(stored.bytes);
+        try std.testing.expectEqual(Storage.stored, stored.storage);
+        try std.testing.expectEqualSlices(u8, movie, stored.bytes);
+    }
+}
+
+test "a member that begins 10 FB and loads no way is refused" {
+    const gpa = std.testing.allocator;
+    var compressor: refpack.Compressor = try .init(gpa);
+    defer compressor.deinit(gpa);
+    // Not a stream, and more than any stream's header holds.
+    const huge = try gpa.alloc(u8, refpack.max_size + 1);
+    defer gpa.free(huge);
+    @memset(huge, 0);
+    huge[0] = 0x10;
+    huge[1] = 0xFB;
+    for ([_]Packing{ .compress, .store }) |packing| {
+        try std.testing.expectError(error.Unloadable, packMember(gpa, &compressor, packing, "huge.bin", huge));
+    }
 }
 
 test "header reads big-endian fields" {

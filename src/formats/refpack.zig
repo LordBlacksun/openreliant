@@ -610,6 +610,26 @@ pub fn inPlaceExcess(stream: []const u8) Error!i64 {
     }
 }
 
+/// Whether the game's in-place expansion of `stream` keeps within its slack (`inPlaceExcess`):
+/// false for one over it, and for bytes that are no stream of the form the game expands.
+pub fn loadsInPlace(stream: []const u8) bool {
+    const excess = inPlaceExcess(stream) catch return false;
+    return excess <= in_place_slack;
+}
+
+/// Streams built by hand, for the tests of code that reads or stores them.
+pub const testing = struct {
+    /// `data` written as literals alone, as the encoder writes what it finds no match in: a stream
+    /// the game expands, past the in-place bound from 1146212 bytes on. The caller owns the bytes.
+    pub fn literals(gpa: Allocator, data: []const u8) Allocator.Error![]u8 {
+        var stream: Stream = .{};
+        errdefer stream.deinit(gpa);
+        try stream.start(gpa, @intCast(data.len));
+        try stream.finish(gpa, data, 0);
+        return stream.bytes.toOwnedSlice(gpa);
+    }
+};
+
 test readHeader {
     const header = try readHeader(&.{ 0x10, 0xFB, 0x08, 0xB5, 0xA8 });
     try std.testing.expectEqual(@as(u32, 0x08B5A8), header.decompressed_size);
@@ -904,9 +924,26 @@ test "the largest literals-only payload the game loads in place" {
         const expected: i64 = @intCast(5 + size / 112 + @intFromBool(size % 112 >= 4) + 1);
         try std.testing.expectEqual(expected, try inPlaceExcess(stream));
         try std.testing.expectEqual(expected, kept);
+        try std.testing.expectEqual(size <= 1_146_211, loadsInPlace(stream));
         if (size == 1_146_211) try std.testing.expectEqual(@as(i64, in_place_slack), expected);
         if (size == 1_146_212) try std.testing.expectEqual(@as(i64, in_place_slack) + 1, expected);
     }
+}
+
+test loadsInPlace {
+    try std.testing.expect(loadsInPlace(&.{ 0x10, 0xFB, 0x00, 0x00, 0x0C, 0xE0, 'a', 'b', 'c', 'd', 0x14, 0x03, 0xFC }));
+    // Another form of stream, which the game does not expand, one cut short, and no stream at all.
+    try std.testing.expect(!loadsInPlace(&.{ 0x11, 0xFB, 0, 0, 0, 0, 0, 0, 0xFC }));
+    try std.testing.expect(!loadsInPlace(&.{ 0x10, 0xFB, 0, 0, 4, 0xE0, 'a' }));
+    try std.testing.expect(!loadsInPlace("RIFF"));
+}
+
+test "testing.literals writes the stream the encoder writes for no matches" {
+    const gpa = std.testing.allocator;
+    const stream = try testing.literals(gpa, "abcdefg");
+    defer gpa.free(stream);
+    // A run of four, then the terminator carrying the last three.
+    try std.testing.expectEqualSlices(u8, &.{ 0x10, 0xFB, 0, 0, 7, 0xE0, 'a', 'b', 'c', 'd', 0xFF, 'e', 'f', 'g' }, stream);
 }
 
 test "a stream the game could not load in place is refused" {

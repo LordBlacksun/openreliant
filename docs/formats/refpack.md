@@ -99,7 +99,9 @@ and the next is `WLKSMP.FAT`, at 74; every other is at 3 or under.
 
 Where there is no stream, or none that loads, the member is stored as it is, which the game reads
 verbatim. A payload that itself begins `10 FB` cannot be stored so: the game would take it for a
-stream.
+stream. `refpack.loadsInPlace` tells whether a stream keeps within the bound, which the `.HOG`
+writer checks before it keeps a member that begins `10 FB`
+([writing an archive](hog.md#writing-an-archive)).
 
 The flags byte of a stream must be exactly `0x10`. `hog_read_file` expands a member only when it
 begins `10 FB`, and `refpack_expand` takes bit 0 as the compressed size's presence, which would

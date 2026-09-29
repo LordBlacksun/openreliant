@@ -85,16 +85,21 @@ name order. It stores each member as `hog.packMember` finds best:
 
 - A RefPack stream ([compressing](refpack.md#compressing)) where one is smaller and the game can
   expand it in place, and otherwise the file as it is, which the game reads verbatim.
-- A file that already begins `10 FB`, as `sltool hog extract --raw` gives a packed member, as it
-  is: the game expands it.
-- Movies (`.bik`) and face films (`.fm8`) as they are: the game reads both where they lie.
-  Bink opens a movie in the archive once `hog_locate` (`0x004C83F0`) has found it, and
-  `hudmovie_play` (`0x0048D120`) finds a film with `hog_seek` (`0x004C8370`) and reads it from
-  the archive's file where the seek leaves it. Neither goes through `hog_read_file`, the one path
-  that expands a packed member.
+- A file that begins `10 FB`, which the game takes for a stream, as it is only where it is one
+  that expands to its declared size in place (`refpack.loadsInPlace`), as `sltool hog extract
+  --raw` gives a packed member. A stream over the bound, from another tool say, would overwrite the
+  heap as the game loads it, so what it expands to is packed in its place. A file that is no such
+  stream but only begins as one is compressed, having no form the game reads as it is. Where no
+  stream of it loads, the pack fails.
+- Movies (`.bik`) and face films (`.fm8`) as they are, whatever they begin with: the game reads
+  both where they lie. Bink opens a movie in the archive once `hog_locate` (`0x004C83F0`) has found
+  it, and `hudmovie_play` (`0x0048D120`) finds a film with `hog_seek` (`0x004C8370`) and reads it
+  from the archive's file where the seek leaves it. Neither goes through `hog_read_file`, the one
+  path that expands a packed member.
 
-`--store` keeps every file as it is. The `~N` suffix `extract` gives a repeated name stays in the
-member's name.
+`--store` keeps every file as it is, but for one that begins `10 FB` and is no stream the game
+loads, which is packed as above whichever. The `~N` suffix `extract` gives a repeated name stays in
+the member's name.
 
 ## RefPack compression
 
