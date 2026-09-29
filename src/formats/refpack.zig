@@ -123,12 +123,19 @@ pub const Form = enum {
     medium,
     long,
 
+    /// The layout of the command's bytes.
+    fn Bits(comptime form: Form) type {
+        return switch (form) {
+            .short => Short,
+            .medium => Medium,
+            .long => Long,
+        };
+    }
+
     /// The bytes the command takes.
     pub fn size(form: Form) usize {
         return switch (form) {
-            .short => 2,
-            .medium => 3,
-            .long => 4,
+            inline else => |known| @bitSizeOf(known.Bits()) / 8,
         };
     }
 
@@ -164,7 +171,136 @@ pub const Form = enum {
     fn holds(form: Form, distance: usize, len: usize) bool {
         return distance <= form.reach() and len >= form.shortest() and len <= form.longest();
     }
+
+    /// Decodes the command of this form at the start of `input`, returning it and its length.
+    fn decode(comptime form: Form, input: []const u8) Error!Command.Decoded {
+        if (input.len < form.size()) return error.UnexpectedEnd;
+        const bits: form.Bits() = @bitCast(std.mem.readInt(form.Word(), input[0..comptime form.size()], .big));
+        return .{ .{
+            .literals = bits.carried,
+            .match_len = bits.matchLen(),
+            .match_distance = bits.matchDistance(),
+            .last = false,
+        }, form.size() };
+    }
+
+    /// The command's bytes for `match`, carrying `carried` literals after it.
+    fn encode(comptime form: Form, match: Match, carried: u2) [form.size()]u8 {
+        const bits: form.Bits() = .init(match.distance, match.len, carried);
+        var bytes: [form.size()]u8 = undefined;
+        std.mem.writeInt(form.Word(), &bytes, @bitCast(bits), .big);
+        return bytes;
+    }
+
+    /// The command's bytes as one integer, which they are read as, big-endian.
+    fn Word(comptime form: Form) type {
+        return std.meta.Int(.unsigned, @bitSizeOf(form.Bits()));
+    }
 };
+
+/// A short match's two bytes, as one big-endian word: the distance less one in 10 bits, split by
+/// the length less `shortest` and the literals it carries.
+const Short = packed struct(u16) {
+    back_low: u8,
+    carried: u2,
+    extra: u3,
+    back_high: u2,
+    code: u1 = 0,
+
+    const form: Form = .short;
+
+    fn init(distance: usize, len: usize, carried: u2) Short {
+        const back = distance - 1;
+        return .{
+            .back_low = @truncate(back),
+            .back_high = @intCast(back >> 8),
+            .extra = @intCast(len - form.shortest()),
+            .carried = carried,
+        };
+    }
+
+    fn matchDistance(bits: Short) usize {
+        return (@as(usize, bits.back_high) << 8 | bits.back_low) + 1;
+    }
+
+    fn matchLen(bits: Short) usize {
+        return @as(usize, bits.extra) + form.shortest();
+    }
+};
+
+/// A medium match's three bytes, as one big-endian word: the distance less one in 14 bits, the
+/// literals it carries, and the length less `shortest`.
+const Medium = packed struct(u24) {
+    back: u14,
+    carried: u2,
+    extra: u6,
+    code: u2 = medium_code >> 6,
+
+    const form: Form = .medium;
+
+    fn init(distance: usize, len: usize, carried: u2) Medium {
+        return .{
+            .back = @intCast(distance - 1),
+            .extra = @intCast(len - form.shortest()),
+            .carried = carried,
+        };
+    }
+
+    fn matchDistance(bits: Medium) usize {
+        return @as(usize, bits.back) + 1;
+    }
+
+    fn matchLen(bits: Medium) usize {
+        return @as(usize, bits.extra) + form.shortest();
+    }
+};
+
+/// A long match's four bytes, as one big-endian word: the length less `shortest` in 10 bits and the
+/// distance less one in 17, each split by the other, and the literals it carries.
+const Long = packed struct(u32) {
+    extra_low: u8,
+    back_low: u16,
+    carried: u2,
+    extra_high: u2,
+    back_high: u1,
+    code: u3 = long_code >> 5,
+
+    const form: Form = .long;
+
+    fn init(distance: usize, len: usize, carried: u2) Long {
+        const back = distance - 1;
+        const extra = len - form.shortest();
+        return .{
+            .extra_low = @truncate(extra),
+            .extra_high = @intCast(extra >> 8),
+            .back_low = @truncate(back),
+            .back_high = @intCast(back >> 16),
+            .carried = carried,
+        };
+    }
+
+    fn matchDistance(bits: Long) usize {
+        return (@as(usize, bits.back_high) << 16 | bits.back_low) + 1;
+    }
+
+    fn matchLen(bits: Long) usize {
+        return (@as(usize, bits.extra_high) << 8 | bits.extra_low) + form.shortest();
+    }
+};
+
+comptime {
+    const assert = std.debug.assert;
+    // Each form's code sets the bits of the first byte that tell it from the others, and its fields
+    // hold its furthest match and its longest.
+    for (std.enums.values(Form)) |form| {
+        assert(@bitSizeOf(form.Bits()) == 8 * form.size());
+        const bits: form.Bits() = .init(form.reach(), form.longest(), max_carried);
+        assert(bits.matchDistance() == form.reach() and bits.matchLen() == form.longest());
+    }
+    assert(@as(u16, @bitCast(Short.init(1, 3, 0))) >> 8 < medium_code);
+    assert(@as(u24, @bitCast(Medium.init(1, 4, 0))) >> 16 == medium_code);
+    assert(@as(u32, @bitCast(Long.init(1, 5, 0))) >> 24 == long_code);
+}
 
 /// One decoded command: copy `literals` bytes straight through, then repeat `match_len` bytes
 /// from `match_distance` back in the output.
@@ -174,49 +310,17 @@ const Command = struct {
     match_distance: usize,
     last: bool,
 
+    /// A command and the bytes it takes.
+    const Decoded = struct { Command, usize };
+
     /// Decodes the command at the start of `input`, returning it and its encoded length.
-    fn decode(input: []const u8) Error!struct { Command, usize } {
+    fn decode(input: []const u8) Error!Decoded {
         if (input.len < 1) return error.UnexpectedEnd;
         const b0 = input[0];
 
-        if (b0 < medium_code) {
-            const form: Form = .short;
-            if (input.len < form.size()) return error.UnexpectedEnd;
-            const b1 = input[1];
-            return .{ .{
-                .literals = b0 & max_carried,
-                .match_len = ((b0 & 0x1C) >> 2) + form.shortest(),
-                .match_distance = (@as(usize, b0 & 0x60) << 3) + b1 + 1,
-                .last = false,
-            }, form.size() };
-        }
-
-        if (b0 < long_code) {
-            const form: Form = .medium;
-            if (input.len < form.size()) return error.UnexpectedEnd;
-            const b1 = input[1];
-            const b2 = input[2];
-            return .{ .{
-                .literals = (b1 >> 6) & max_carried,
-                .match_len = (b0 & 0x3F) + form.shortest(),
-                .match_distance = (@as(usize, b1 & 0x3F) << 8) + b2 + 1,
-                .last = false,
-            }, form.size() };
-        }
-
-        if (b0 < run_code) {
-            const form: Form = .long;
-            if (input.len < form.size()) return error.UnexpectedEnd;
-            const b1 = input[1];
-            const b2 = input[2];
-            const b3 = input[3];
-            return .{ .{
-                .literals = b0 & max_carried,
-                .match_len = (@as(usize, b0 & 0x0C) << 6) + b3 + form.shortest(),
-                .match_distance = (@as(usize, b0 & 0x10) << 12) + (@as(usize, b1) << 8) + b2 + 1,
-                .last = false,
-            }, form.size() };
-        }
+        if (b0 < medium_code) return Form.decode(.short, input);
+        if (b0 < long_code) return Form.decode(.medium, input);
+        if (b0 < run_code) return Form.decode(.long, input);
 
         // A run of literals, which no match follows.
         if (b0 < end_code) {
@@ -281,7 +385,7 @@ pub fn decompressInto(out: []u8, input: []const u8) Error!usize {
 
 /// The most a stream can expand to: the game reads the size as 3 bytes (`hog_unpack`,
 /// `0x004C8480`), and has no path for the wide sizes.
-pub const max_size: usize = 0xFF_FFFF;
+pub const max_size: usize = std.math.maxInt(u24);
 
 /// The room `hog_unpack` (`0x004C8480`) leaves beyond a member's expanded size: it adds `0x2800`
 /// for the block it allocates (`0x004C84E3`) and for where it reads the stream to (`0x004C8508`).
@@ -289,7 +393,10 @@ pub const max_size: usize = 0xFF_FFFF;
 /// the stream keeps within it: see `inPlaceExcess`.
 pub const in_place_slack: usize = 0x2800;
 
-/// How many earlier positions with the same three bytes the encoder tries for a match.
+/// The bytes a position's hash covers, which a match needs at least: the shortest any form holds.
+const hashed_len = Form.short.shortest();
+
+/// How many earlier positions with the same first `hashed_len` bytes the encoder tries for a match.
 const chain_depth: usize = 64;
 
 /// The positions' hash table has `1 << hash_bits` entries, and the chains through them a slot for
@@ -300,7 +407,7 @@ const window_mask: usize = window_size - 1;
 const no_position = std.math.maxInt(u32);
 
 /// Knuth's multiplicative hashing: a prime close to 2^32 over the golden ratio, which spreads the
-/// three bytes' value over the table's bits.
+/// hashed bytes' value over the table's bits.
 const hash_multiplier: u32 = 0x9E3779B1;
 
 comptime {
@@ -354,7 +461,6 @@ pub const Compressor = struct {
 
         var stream: Stream = .{};
         errdefer stream.deinit(gpa);
-        try stream.bytes.ensureTotalCapacity(gpa, min_header_len + data.len / 2 + 16);
         try stream.start(gpa, @intCast(data.len));
 
         const finder = &compressor.finder;
@@ -393,23 +499,25 @@ pub const Compressor = struct {
 const Match = struct {
     distance: usize,
     len: usize,
+    /// The smallest form that holds it, which the game's own compressor never goes above.
+    form: Form,
 
-    /// The smallest form that holds it, which the game's own compressor never goes above; null
+    /// The match of `len` bytes from `distance` back, in the smallest form that holds it; null
     /// where none does.
-    fn form(match: Match) ?Form {
-        for (std.enums.values(Form)) |candidate| {
-            if (candidate.holds(match.distance, match.len)) return candidate;
+    fn of(distance: usize, len: usize) ?Match {
+        for (std.enums.values(Form)) |form| {
+            if (form.holds(distance, len)) return .{ .distance = distance, .len = len, .form = form };
         }
         return null;
     }
 
     /// How many bytes it saves over writing what it covers as literals.
     fn saving(match: Match) isize {
-        return @as(isize, @intCast(match.len)) - @as(isize, @intCast(match.form().?.size()));
+        return @as(isize, @intCast(match.len)) - @as(isize, @intCast(match.form.size()));
     }
 };
 
-/// Finds matches by chaining the earlier positions that begin with the same three bytes.
+/// Finds matches by chaining the earlier positions that begin with the same `hashed_len` bytes.
 const Finder = struct {
     data: []const u8 = &.{},
     /// The newest position of each hash.
@@ -437,14 +545,14 @@ const Finder = struct {
     }
 
     fn hash(finder: Finder, pos: usize) usize {
-        const bytes = finder.data[pos..][0..3];
-        const value = @as(u32, bytes[0]) | @as(u32, bytes[1]) << 8 | @as(u32, bytes[2]) << 16;
+        const Hashed = std.meta.Int(.unsigned, 8 * hashed_len);
+        const value: u32 = std.mem.readInt(Hashed, finder.data[pos..][0..hashed_len], .little);
         return (value *% hash_multiplier) >> (32 - hash_bits);
     }
 
     /// Makes the position available to matches from later ones.
     fn insert(finder: *Finder, pos: usize) void {
-        if (pos + 3 > finder.data.len) return;
+        if (pos + hashed_len > finder.data.len) return;
         const slot = finder.hash(pos);
         finder.prev[pos & window_mask] = finder.head[slot];
         finder.head[slot] = @intCast(pos);
@@ -452,7 +560,7 @@ const Finder = struct {
 
     /// The match at `pos` that saves the most, the newest among equals.
     fn best(finder: Finder, pos: usize) ?Match {
-        if (pos + 3 > finder.data.len) return null;
+        if (pos + hashed_len > finder.data.len) return null;
         const data = finder.data;
         const limit = @min(data.len - pos, Form.long.longest());
 
@@ -465,9 +573,9 @@ const Finder = struct {
 
             var len: usize = 0;
             while (len < limit and data[candidate + len] == data[pos + len]) len += 1;
-            const match: Match = .{ .distance = distance, .len = len };
-            if (match.form() != null and (found == null or match.saving() > found.?.saving()))
-                found = match;
+            if (Match.of(distance, len)) |match| {
+                if (found == null or match.saving() > found.?.saving()) found = match;
+            }
             if (len == limit) break;
 
             // A slot the window has come round to holds a newer position, which ends the chain.
@@ -531,27 +639,9 @@ const Stream = struct {
     /// of the literals carried by its command.
     fn match(stream: *Stream, gpa: Allocator, data: []const u8, from: usize, pos: usize, found: Match) Allocator.Error!void {
         const carried_at = try stream.runs(gpa, data, from, pos);
-        const carried: u8 = @intCast(pos - carried_at);
-        const back: u32 = @intCast(found.distance - 1);
-        const form = found.form().?;
-        const extra: u32 = @intCast(found.len - form.shortest());
-
-        switch (form) {
-            .short => try stream.bytes.appendSlice(gpa, &.{
-                @intCast((back >> 8) << 5 | extra << 2 | carried),
-                @intCast(back & 0xFF),
-            }),
-            .medium => try stream.bytes.appendSlice(gpa, &.{
-                @intCast(medium_code | extra),
-                @intCast(@as(u32, carried) << 6 | back >> 8),
-                @intCast(back & 0xFF),
-            }),
-            .long => try stream.bytes.appendSlice(gpa, &.{
-                @intCast(long_code | (back >> 16) << 4 | (extra >> 8) << 2 | carried),
-                @intCast((back >> 8) & 0xFF),
-                @intCast(back & 0xFF),
-                @intCast(extra & 0xFF),
-            }),
+        const carried: u2 = @intCast(pos - carried_at);
+        switch (found.form) {
+            inline else => |form| try stream.bytes.appendSlice(gpa, &form.encode(found, carried)),
         }
         try stream.bytes.appendSlice(gpa, data[carried_at..pos]);
         stream.written += carried + found.len;
@@ -823,8 +913,8 @@ test "each form holds the match it was written for" {
         for (0..literals.len + 1) |carried| {
             var stream: Stream = .{};
             defer stream.deinit(gpa);
-            const match: Match = .{ .distance = case.distance, .len = case.len };
-            try std.testing.expectEqual(@as(?Form, case.form), match.form());
+            const match = Match.of(case.distance, case.len).?;
+            try std.testing.expectEqual(case.form, match.form);
             try stream.match(gpa, &literals, 0, carried, match);
 
             const command, const encoded_len = try Command.decode(stream.bytes.items);
@@ -841,10 +931,36 @@ test "each form holds the match it was written for" {
 
     // What no form holds: a short match too far, a medium one too far, a match under 3, one over
     // 1028.
-    try std.testing.expectEqual(@as(?Form, null), (Match{ .distance = 1025, .len = 3 }).form());
-    try std.testing.expectEqual(@as(?Form, null), (Match{ .distance = 16385, .len = 4 }).form());
-    try std.testing.expectEqual(@as(?Form, null), (Match{ .distance = 1, .len = 2 }).form());
-    try std.testing.expectEqual(@as(?Form, null), (Match{ .distance = 1, .len = 1029 }).form());
+    try std.testing.expectEqual(null, Match.of(1025, 3));
+    try std.testing.expectEqual(null, Match.of(16385, 4));
+    try std.testing.expectEqual(null, Match.of(1, 2));
+    try std.testing.expectEqual(null, Match.of(1, 1029));
+}
+
+test "each form's bytes at its limits" {
+    // Every field at zero, then every field at its most: the fewest literals, the shortest match
+    // and the nearest, then 3 literals, the longest match and the furthest the field holds.
+    const cases = [_]struct { bytes: []const u8, literals: usize, len: usize, distance: usize }{
+        .{ .bytes = &.{ 0x00, 0x00 }, .literals = 0, .len = 3, .distance = 1 },
+        .{ .bytes = &.{ 0x7F, 0xFF }, .literals = 3, .len = 10, .distance = 1024 },
+        .{ .bytes = &.{ 0x80, 0x00, 0x00 }, .literals = 0, .len = 4, .distance = 1 },
+        .{ .bytes = &.{ 0xBF, 0xFF, 0xFF }, .literals = 3, .len = 67, .distance = 16384 },
+        .{ .bytes = &.{ 0xC0, 0x00, 0x00, 0x00 }, .literals = 0, .len = 5, .distance = 1 },
+        .{ .bytes = &.{ 0xDF, 0xFF, 0xFF, 0xFF }, .literals = 3, .len = 1028, .distance = 131072 },
+        // Each field on its own: a short match's distance above 256, a long one's above 65536, and
+        // a long one's length above 260.
+        .{ .bytes = &.{ 0x60, 0x00 }, .literals = 0, .len = 3, .distance = 769 },
+        .{ .bytes = &.{ 0xD0, 0x00, 0x00, 0x00 }, .literals = 0, .len = 5, .distance = 65537 },
+        .{ .bytes = &.{ 0xCC, 0x00, 0x00, 0x00 }, .literals = 0, .len = 773, .distance = 1 },
+    };
+    for (cases) |case| {
+        const command, const encoded_len = try Command.decode(case.bytes);
+        try std.testing.expectEqual(case.bytes.len, encoded_len);
+        try std.testing.expectEqual(case.literals, command.literals);
+        try std.testing.expectEqual(case.len, command.match_len);
+        try std.testing.expectEqual(case.distance, command.match_distance);
+        try std.testing.expect(!command.last);
+    }
 }
 
 test "literals go in runs of at most 112 and the last few ride the next command" {
