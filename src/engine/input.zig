@@ -634,6 +634,30 @@ pub const gamepad_buttons = [_]struct { controls.Action, GamepadButton }{
     .{ .radar_ranges, .back },
 };
 
+/// A button's press that counts only once the button has come up since what it acts on began, so
+/// that a press held over from before, which ended the screen or the movie before, acts on nothing
+/// new.
+pub const FreshPress = struct {
+    /// Whether the button has stayed down since it began.
+    held: bool = true,
+
+    /// Whether the button, down where `down` has it, counts as pressed: down, and having come up
+    /// since it began.
+    pub fn pressed(press: *FreshPress, down: bool) bool {
+        if (!down) press.held = false;
+        return down and !press.held;
+    }
+};
+
+test FreshPress {
+    var press: FreshPress = .{};
+    // Held over from before, the press counts only once the button has come up.
+    try std.testing.expect(!press.pressed(true));
+    try std.testing.expect(!press.pressed(false));
+    try std.testing.expect(press.pressed(true));
+    try std.testing.expect(press.pressed(true));
+}
+
 /// The mouse, in place of DirectInput's: where the pointer is over the window, as fractions of its
 /// size, and which buttons are down, as the platform last reported them, which the pause menu reads
 /// (`menu_mouse_update`); and what `read_mouse` read at the last simulation step, which steers in

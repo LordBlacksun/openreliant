@@ -8,7 +8,6 @@ const Allocator = std.mem.Allocator;
 
 const openreliant = @import("openreliant");
 const platform = @import("platform");
-const fat = openreliant.fat;
 const engine = openreliant.engine;
 const srcore = engine.surrender.surrenderlib.srcore;
 const game = engine.game;
@@ -164,28 +163,20 @@ pub const Movies = struct {
 
 /// A bank of `resource.hog` whose first sound plays over the landing's movies, or a chapter's.
 const Bank = struct {
-    bytes: []u8,
+    file: hog_snd.BankFile,
     voice: ?u8,
 
     /// The bank `name` names, read from `resources` (`hog_load`), and its first sound played
     /// through `sound` at `volume`, `loops` times, from the middle at its own pitch (`sound_play`);
     /// null where the bank is left out.
     fn start(gpa: Allocator, resources: *const game.bigfile.Hog, sound: *hog_snd.Sound, name: []const u8, volume: i32, loops: u32) ?Bank {
-        const bytes = resources.readFile(gpa, name) catch |err| {
-            std.log.warn("the bank {s} is left out: {s}", .{ name, @errorName(err) });
-            return null;
-        };
-        const bank = fat.Bank.parse(bytes) catch |err| {
-            std.log.warn("the bank {s} is left out: {s}", .{ name, @errorName(err) });
-            gpa.free(bytes);
-            return null;
-        };
-        return .{ .bytes = bytes, .voice = sound.play(bank, 0, volume, loops, hog_snd.centre, hog_snd.own_pitch) };
+        const file = hog_snd.BankFile.read(gpa, resources, name) orelse return null;
+        return .{ .file = file, .voice = sound.play(file.bank, 0, volume, loops, hog_snd.centre, hog_snd.own_pitch) };
     }
 
     /// Its voice ended (`sound_voice_end`), then the bank freed.
     fn stop(bank: Bank, gpa: Allocator, sound: *hog_snd.Sound) void {
         if (bank.voice) |v| sound.endVoice(v);
-        gpa.free(bank.bytes);
+        bank.file.deinit(gpa);
     }
 };

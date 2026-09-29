@@ -67,6 +67,7 @@ OpenReliant improves on the original's look and sound. `--original` turns the im
 
 | Option | Description |
 |---|---|
+| `--no-intro` | Start without the three movies the game plays as it starts, as `--mission` and `--screenshot` do |
 | `--screenshot <file.png>` | Draw one frame, with the camera settled, to a PNG, and quit |
 | `--screenshot-ticks <ticks>` | With `--screenshot`, how many game ticks to run first, one a frame, so that the scene plays out; 2 by default |
 | `--version` | Show the version |

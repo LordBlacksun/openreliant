@@ -91,6 +91,7 @@ zig build -Dtarget=aarch64-macos               # Apple silicon, from any Zig
 
 | Option | Does |
 |---|---|
+| `--no-intro` | Starts without the three movies the game plays as it starts, as `--mission` and `--screenshot` do |
 | `--screenshot <file.png>` | Draws one frame, with the camera settled, to a PNG and quits |
 | `--version` | Shows the version |
 | `-h`, `--help` | Shows the options |

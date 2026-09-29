@@ -98,6 +98,12 @@ pub const Induction = struct {
     place: Place = .intro,
     film: rooms.Film = .{},
     speech: cbox.Player = .{},
+    /// The pointer's right button, which ends the induction only once it has come up since the
+    /// place was shown.
+    ///
+    /// **Fix:** the game ends it while the button is down, so that the press that skipped the way
+    /// to a place, still held, ends the induction there at once.
+    right: input.FreshPress = .{},
 
     /// The induction at its first place, after `opening`, at `now`.
     pub fn open(context: rooms.Context, now: u64) Induction {
@@ -115,17 +121,18 @@ pub const Induction = struct {
     fn show(induction: *Induction, now: u64) void {
         const stop = stops.get(induction.place);
         var name: [24]u8 = undefined;
-        induction.film.open(induction.context, std.fmt.bufPrint(&name, "{s}.bik", .{stop.movie}) catch unreachable);
+        induction.film.open(induction.context, std.fmt.bufPrint(&name, "{s}.bik", .{stop.movie}) catch unreachable, .screen);
         induction.film.show(now);
         induction.film.loops = true;
         rooms.speak(induction.context, &induction.speech, stop.scene);
+        induction.right = .{};
     }
 
     /// A pass of the induction's loop (`0x00438FDA` on), `in` read: Escape or the pointer's right
     /// button ends it; as the scene ends, or on Space, the way on to the next place.
     pub fn pass(induction: *Induction, in: Input) ?Step {
         const keyboard = in.keyboard;
-        if (keyboard.pressed(input.scan.escape, .none, true) or in.right) {
+        if (keyboard.pressed(input.scan.escape, .none, true) or induction.right.pressed(in.right)) {
             induction.close();
             return .{ .over = induction.place };
         }
@@ -171,7 +178,7 @@ test Induction {
     const scene = try cbox.testFile(gpa, 100, 64);
     defer gpa.free(scene);
     var tested: rooms.testing.Tested = undefined;
-    try tested.init(&.{ "rel_tv_enriq.bik", "single_rel_c2lock.bik" }, &.{.{ .name = "enr_intro.box", .data = scene }});
+    try tested.init(&.{ "rel_tv_enriq.bik", "single_rel_c2lock.bik" }, &.{.{ .name = "enr_intro.box", .data = scene }}, &.{});
     defer tested.deinit();
     var keyboard: input.Keyboard = .{};
 
@@ -199,4 +206,19 @@ test Induction {
     // After the last place's way, it is over there.
     induction.place = .outro;
     try std.testing.expectEqual(.outro, induction.arrive(0).?);
+}
+
+test "the right button held as a place shows ends the induction once it has come up" {
+    const gpa = std.testing.allocator;
+    const scene = try cbox.testFile(gpa, 100, 64);
+    defer gpa.free(scene);
+    var tested: rooms.testing.Tested = undefined;
+    try tested.init(&.{"rel_tv_enriq.bik"}, &.{.{ .name = "enr_intro.box", .data = scene }}, &.{});
+    defer tested.deinit();
+    var keyboard: input.Keyboard = .{};
+    var induction: Induction = .open(tested.context(), 0);
+    defer induction.close();
+    try std.testing.expectEqual(null, induction.pass(.{ .keyboard = &keyboard, .right = true, .now = 0 }));
+    try std.testing.expectEqual(null, induction.pass(.{ .keyboard = &keyboard, .right = false, .now = 0 }));
+    try std.testing.expectEqual(Step{ .over = .intro }, induction.pass(.{ .keyboard = &keyboard, .right = true, .now = 0 }).?);
 }

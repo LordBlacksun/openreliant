@@ -2045,7 +2045,7 @@ address	kind	name	type	comment
 0042a520	function	about_box	void (void)	ABOUT STARLANCER: reads interface\frntend2.spr and shows its box over in_game_options (about_open) until Escape or a click on OK, once the button comes up
 00437df0	function	vr_crew_pick	void (void)	Picks the crew the rooms show on the way to the briefing room's door, by the last mission's medal and whether it was won: a sprite set (%s.spr) and a line (%s.mp3) from the disc's archive, at random; on the Yamato a second from a list of three it goes round
 00437dd0	function	vr_timer	void __stdcall (uint id, uint message, uint user, uint unused1, uint unused2)	The rooms' timer, 15 times a second (timer_start): counts vr_timer_ticks up
-00461d80	function	speech_play	int __fastcall (SpeechHeader *file, uint flags, int rate, int volume)	speech_start on the first stream free, or -1 for none: the news report's and the induction's scenes
+00461d80	function	speech_play	int __fastcall (SpeechHeader *file, uint flags, int rate, int volume)	speech_start on the first stream free, or -1 for none: the news report's and the induction's scenes, and the briefing's words
 0043efc0	function	itac	void (void)	The ITAC, which Use ITAC opens in the rooms (itac.cpp): its screens from inter\itac\, its fonts, sounds and movies
 0044f3d0	function	simulator_pod	void (void)	The simulator pod, which Enter Simulator Pod opens in the rooms: the simulator's missions 29 to 32, with inter\simpod\simgfx.spr and its movies
 004362f0	function	medal_display	void (void)	The locker, which Open Locker opens in the rooms: the pilot's medals and ribbons, with the lid's movies
@@ -2096,3 +2096,30 @@ address	kind	name	type	comment
 00506cb0	data	vr_reliant_pod_from_itac	VrView	The simulator pod, turned to from the ITAC, which WinMain opens the rooms in after most of a new pilot's inductions
 00506bf0	data	vr_reliant_pod_from_cd_player	VrView	The simulator pod, turned to from the CD player, which WinMain opens the rooms in after an induction that ended at the CD player
 0050967c	data	new_intro_name	char[14]	new_intro.bik, the new pilot's intro WinMain plays before mission 1's induction
+00437010	function	interface_briefing	int (void)	Screen 7, the briefing (InterfaceBriefing, its asserts' name), which vr_rooms runs through the briefing room's door, and WinMain after mission 28 for mission 29, the campaign's end: the door (inter\rbriefdor.tga, inter\briefdoor.tga on the Yamato) with AWAITING CLEARANCE as it loads, the way in (rel_c2bre.bik; amonoff_.bik and briefing room 350.bik) with vrsfx.fat's door and the room's chatter, Enriquez at the room's screen, which plays the mission's movie (new_m01.bik to new_m28.bik) until Escape, the right button or its end, the loadout between the hologram's movies, and his last word (ms_speech\enrbr_tag%02d.ut); for mission 29 enddebriefing.ut in place of the movie, until it ends, and no loadout or last word. Returns -1, or 1 where the loadout's in-game options lead to the main menu or back to the rooms (briefing_outcome)
+00437d30	function	briefing_door_draw	void (void)	interface_briefing's render hook as it loads: AWAITING CLEARANCE (strings 0x292 and 0x293, %s %s) centred at (320, 440) in white in hud_font_large, over the door, the background
+0043e730	function	briefing_draw	void (void)	The front end's render hook, which interface_run sets before each screen: while briefing_state is 1 or 2, the briefing room (briefing_room), Enriquez's frame, shape briefing_frame + 2 + briefing_segment_start, and his next frame once game_ticks passes briefing_next_frame, 6.666 ticks on, round the segments of the carrier's tables in the briefing and up to 60 in the last word; in the briefing, the mission's movie's frame due on the room's screen and the screen's frame over it, the movie over at its last (briefing_movie_playing)
+0043eaf0	function	background_set_tga	void __fastcall (char *name)	Calls sr + 0x78, as the front end's loops do after sr_render, then shows %s.tga of name behind the frames (background_set)
+0043eab0	function	interface_background_set	void __fastcall (char *name)	Calls sr + 0x78, as the front end's loops do after sr_render, then shows interface\%s.tga of name behind the frames (background_set)
+004ab290	function	fpu_precision_restore	void (void)	Sets the x87 control word to 53-bit precision, rounding to the nearest and affine infinity (_control87(0x50000, 0x70300)), which Direct3D leaves at 24 bits
+004adc20	function	screenshot_save	void (void)	Saves the screen (sr + 0x7C) as screenshot%04d.tga, numbered by screenshot_count: the O key's in the briefing and the loadout, the 0 key's in flight and in the locker
+005d6ca8	data	screenshot_count	int	The number of the next screenshot screenshot_save saves
+00520280	data	briefing_state	int	What briefing_draw draws: 0 nothing, 1 the briefing, 2 Enriquez's last word
+0051da94	data	briefing_frame	int	Enriquez's frame in the segment of his animation the briefing plays, or in his last word
+0051d488	data	briefing_segment	int	The segment of Enriquez's animation the briefing plays, 0 to 11
+0051d4d4	data	briefing_segment_start	int	The first shape of briefing_segment past Enriquez's first, shape 2
+0051d4d8	data	briefing_next_frame	int	The game_ticks past which Enriquez's next frame is due
+0052027c	data	briefing_movie_playing	int	Set while the mission's movie plays on the briefing room's screen
+0051d4b4	data	briefing_outcome	int	How interface_briefing ends, which vr_rooms and WinMain read: 0 the mission flown, 1 back to the rooms where the loadout's in-game options loaded a saved game, 2 the main menu
+0051db48	data	briefing_from_loadout	byte	Set by the developers' Enter with Control in the main menu, which leads to interface_briefing: the way in and the briefing left out, from the loadout on
+00520254	data	briefing_shapes	void *	rbrief.spr or brief.spr, then rbrief2.spr or brief2.spr for the last word, from resource.hog: the briefing room, shape 0, the palette, block 1, Enriquez's frames from shape 2, and the screen's frame
+0052024c	data	briefing_room	void *	The pane briefing_draw copies the briefing room from, shape 0 of briefing_shapes (VFX pane)
+005202b4	data	briefing_room_window	int *	briefing_room's window, the screen's size (VFX window)
+0051d608	data	briefing_movie_window	int *	The window the mission's movie is copied into, the movie's size at 16 bits (VFX window)
+0051d450	data	briefing_movie_pane	void *	The pane of briefing_movie_window, which briefing_draw copies onto the room's screen (VFX pane)
+0051da14	data	briefing_tag_said	int	Set once Enriquez's last word has been said
+0051d9f0	data	briefing_speech	SpeechHeader *	Enriquez's words in interface_briefing, from speech_hog: his last word, or enddebriefing.ut at the campaign's end
+004e5c58	data	briefing_reliant_segment_lasts	short[12]	The last frame of each segment of Enriquez's animation in the Reliant's briefing room
+004e5c40	data	briefing_reliant_segment_starts	short[12]	The first shape past shape 2 of each segment of Enriquez's animation in the Reliant's briefing room
+004e5c28	data	briefing_yamato_segment_lasts	short[12]	The last frame of each segment of Enriquez's animation in the Yamato's briefing room
+004e5c10	data	briefing_yamato_segment_starts	short[12]	The first shape past shape 2 of each segment of Enriquez's animation in the Yamato's briefing room

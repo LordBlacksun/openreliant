@@ -193,9 +193,18 @@ pub const Sprite = struct {
         var i = index + 1;
         while (i > 0) {
             i -= 1;
-            if (sprite.block(i) == .palette) return sprite.block(i).palette;
+            if (sprite.paletteAt(i)) |found| return found;
         }
         return null;
+    }
+
+    /// Block `index`'s palette, where the block is one.
+    pub fn paletteAt(sprite: Sprite, index: usize) ?*const [palette_size]u8 {
+        if (index >= sprite.count()) return null;
+        return switch (sprite.block(index)) {
+            .palette => |found| found,
+            else => null,
+        };
     }
 };
 
@@ -350,6 +359,10 @@ test "parses a sprite with a palette and a shape" {
     try std.testing.expect(sprite.block(0) == .palette);
     try std.testing.expect(sprite.block(1) == .shape);
     try std.testing.expect(sprite.paletteFor(1) != null);
+    // The palette is block 0's alone: the shape's block, and one past the set, hold none.
+    try std.testing.expect(sprite.paletteAt(0) != null);
+    try std.testing.expectEqual(null, sprite.paletteAt(1));
+    try std.testing.expectEqual(null, sprite.paletteAt(2));
 
     const shape = sprite.block(1).shape;
     try std.testing.expectEqual(@as(u32, 3), shape.width());

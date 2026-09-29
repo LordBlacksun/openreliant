@@ -115,18 +115,18 @@ pub const Choice = union(enum) {
     instant_action,
     /// QUIT, answered YES.
     quit,
-    /// A mission the developers' keys start.
+    /// A mission the developers' keys start, without its briefing (`skip_briefing`).
     fly: Flight,
+    /// The developers' Enter with Control: the briefing of the mission their keys name, from its
+    /// loadout on (`briefing_from_loadout`, `0x0051DB48`), the front end's screen 7 next.
+    briefing: u16,
 };
 
 /// A mission to fly: its number, the ship type the loadout gives the player, or null for the ship
-/// the mission gives, whether its briefing and loadout come first, as `skip_briefing` clear has
-/// them, and the simulator it runs in. The developers' Enter asks for the briefing, and their ship
-/// keys skip it.
+/// the mission gives, and the simulator it runs in.
 pub const Flight = struct {
     mission: u16,
     ship: ?u8 = null,
-    briefing: bool = false,
     simulator: create.Simulator = .{},
 
     /// Whether `WinMain` flies it, with the hangar's movie before it and the landing after
@@ -199,7 +199,7 @@ pub const MainMenu = struct {
             menu.typed += 1;
             if (menu.typed == code.len) menu.developer = true;
         }
-        if (menu.developer) if (menu.developerKeys(keyboard)) |flight| return .{ .fly = flight };
+        if (menu.developer) if (menu.developerKeys(keyboard)) |choice| return choice;
 
         menu.under = for (std.enums.values(Item)) |item| {
             if (hotspots.get(item).rect.holds(context.pointer.at)) break item;
@@ -222,17 +222,17 @@ pub const MainMenu = struct {
         };
     }
 
-    /// The developers' keys: Enter, with Shift or Control, starts the mission from its briefing in
-    /// the first ship type; Shift and F1 to F12 start it without, in the key's ship type. A number
-    /// key types a digit of the mission's number: after a single digit it adds one, after two it
-    /// starts again.
-    fn developerKeys(menu: *MainMenu, keyboard: *input.Keyboard) ?Flight {
+    /// The developers' keys (`0x00428C9B` on): Enter with Shift starts the mission without its
+    /// briefing in the first ship type, as Shift with F1 does, and with Control leads to its
+    /// briefing from the loadout on; Shift and F1 to F12 start it without its briefing, in the
+    /// key's ship type. A number key types a digit of the mission's number: after a single digit it
+    /// adds one, after two it starts again.
+    fn developerKeys(menu: *MainMenu, keyboard: *input.Keyboard) ?Choice {
         const enter_key = @intFromEnum(input.Key.enter);
-        if (keyboard.pressed(enter_key, .shift, true) or keyboard.pressed(enter_key, .control, true)) {
-            return .{ .mission = menu.mission, .ship = 0, .briefing = true };
-        }
+        if (keyboard.pressed(enter_key, .shift, true)) return .{ .fly = .{ .mission = menu.mission, .ship = 0 } };
+        if (keyboard.pressed(enter_key, .control, true)) return .{ .briefing = menu.mission };
         for (ship_keys, 0..) |key, ship| {
-            if (keyboard.pressed(@intFromEnum(key), .shift, true)) return .{ .mission = menu.mission, .ship = @intCast(ship) };
+            if (keyboard.pressed(@intFromEnum(key), .shift, true)) return .{ .fly = .{ .mission = menu.mission, .ship = @intCast(ship) } };
         }
         for (digit_keys, 1..) |key, value| {
             if (!keyboard.pressed(@intFromEnum(key), .none, true)) continue;
@@ -345,4 +345,16 @@ test "the developers' code and keys" {
     try std.testing.expectEqual(Flight{ .mission = 15, .ship = 2 }, flight);
     try std.testing.expect(flight.byWinMain());
     try std.testing.expect(!instant_action.byWinMain());
+    keyboard.down[@intFromEnum(input.Key.f3)] = false;
+    // Shift and Enter start it without its briefing in ship type 0; Control and Enter lead to its
+    // briefing from the loadout on.
+    const enter = @intFromEnum(input.Key.enter);
+    keyboard.down[enter] = true;
+    try std.testing.expectEqual(Flight{ .mission = 15, .ship = 0 }, menu.frame(.{ .pointer = .{}, .keyboard = &keyboard }).?.fly);
+    keyboard.down[enter] = false;
+    keyboard.latched[enter] = false;
+    keyboard.down[@intFromEnum(input.Key.left_shift)] = false;
+    keyboard.down[@intFromEnum(input.Key.left_control)] = true;
+    keyboard.down[enter] = true;
+    try std.testing.expectEqual(15, menu.frame(.{ .pointer = .{}, .keyboard = &keyboard }).?.briefing);
 }

@@ -223,6 +223,13 @@ pub const Shapes = struct {
         return of(gpa, bytes, name);
     }
 
+    /// Drawn with block `palette`'s palette as VFX's global one, as `palette_to_vfx`
+    /// (`0x00428410`) makes it of a set's block; each shape with its own where the block is not a
+    /// palette.
+    pub fn usePalette(shapes: *Shapes, palette: usize) void {
+        shapes.art.global = shapes.art.set.paletteAt(palette);
+    }
+
     pub fn deinit(shapes: *Shapes, gpa: Allocator) void {
         shapes.art.deinit(gpa);
         gpa.free(shapes.bytes);
@@ -351,6 +358,11 @@ test Shapes {
     var shapes = Shapes.of(gpa, try gpa.dupe(u8, &set), "palette.spr").?;
     defer shapes.deinit(gpa);
     try std.testing.expectEqual(1, shapes.art.set.count());
+    // Its palette made the one every shape is drawn with; a block that is none leaves each its own.
+    shapes.usePalette(0);
+    try std.testing.expect(shapes.art.global != null);
+    shapes.usePalette(1);
+    try std.testing.expectEqual(null, shapes.art.global);
     // Not a sprite set, it is left out, and its bytes let go.
     try std.testing.expectEqual(null, Shapes.of(gpa, try gpa.dupe(u8, "x"), "x.spr"));
 }

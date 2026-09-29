@@ -2,9 +2,11 @@
 
 The radio's lines, one file each in `ms_speech\msspeech.hog` ([`.HOG`](hog.md)), kept without the
 `.ut` extension the missions' scripts name them by: `ms1_ban_001.ut` is the member `MS1_BAN_001`;
-and the scenes, the `.box` files of the discs' archives, Enriquez's in the Reliant's rooms and the
-news reports ([The Reliant's rooms](../engine/rooms.md)). Each is a stream of the game's own speech
-codec, scrambled.
+Enriquez's words in the briefing, from the same archive: his last word before each mission,
+`enrbr_tag01` to `enrbr_tag28`, all but 12, and his speech at the campaign's end, `enddebriefing`
+([Briefing](../engine/briefing.md)); and the scenes, the `.box` files of the discs' archives,
+Enriquez's in the Reliant's rooms and the news reports ([The Reliant's rooms](../engine/rooms.md)).
+Each is a stream of the game's own speech codec, scrambled.
 [`engine/game/cbox.zig`](../../src/engine/game/cbox.zig) reads a file and
 [`engine/game/voice.zig`](../../src/engine/game/voice.zig) decodes its stream.
 

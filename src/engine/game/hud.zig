@@ -373,11 +373,7 @@ pub const global_palette_block = 0x77;
 /// VFX's global palette as `hud_draw` sets it from the display's set, or null for a set whose
 /// block there is no palette.
 pub fn globalPalette(set: spr.Sprite) ?*const [spr.palette_size]u8 {
-    if (global_palette_block >= set.count()) return null;
-    return switch (set.block(global_palette_block)) {
-        .palette => |found| found,
-        else => null,
-    };
+    return set.paletteAt(global_palette_block);
 }
 
 test globalPalette {

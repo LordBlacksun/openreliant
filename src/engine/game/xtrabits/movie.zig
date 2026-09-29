@@ -78,12 +78,16 @@ pub const Kind = enum {
     /// and the news report's (`news_report`). From the disc's archive, at 15 frames a second,
     /// whatever the settings.
     screen,
+    /// The mission's movie, which the briefing plays on the briefing room's screen in its own loop
+    /// (`interface_briefing`): from the disc's archive, at the movie's rate and full volume
+    /// (`BinkSetVolume`, `0x00437527`), whatever the settings.
+    briefing,
 
     /// Where it is read from.
     pub fn source(kind: Kind) Source {
         return switch (kind) {
             .cleared, .over_screen, .thread => .folder,
-            .cleared_from_disc, .over_screen_from_disc, .landing, .screen => .disc,
+            .cleared_from_disc, .over_screen_from_disc, .landing, .screen, .briefing => .disc,
         };
     }
 
@@ -91,7 +95,7 @@ pub const Kind = enum {
     pub fn rate(kind: Kind) ?bink.Rate {
         return switch (kind) {
             .over_screen, .landing, .screen => transition_rate,
-            .cleared, .cleared_from_disc, .over_screen_from_disc, .thread => null,
+            .cleared, .cleared_from_disc, .over_screen_from_disc, .thread, .briefing => null,
         };
     }
 
@@ -102,7 +106,7 @@ pub const Kind = enum {
         return switch (kind) {
             .cleared, .cleared_from_disc => transitions or hardware,
             .over_screen, .over_screen_from_disc => transitions,
-            .landing, .thread, .screen => true,
+            .landing, .thread, .screen, .briefing => true,
         };
     }
 
@@ -110,7 +114,7 @@ pub const Kind = enum {
     pub fn rightButtonEnds(kind: Kind) bool {
         return switch (kind) {
             .cleared, .over_screen, .cleared_from_disc, .over_screen_from_disc => true,
-            .landing, .thread, .screen => false,
+            .landing, .thread, .screen, .briefing => false,
         };
     }
 };
@@ -192,6 +196,9 @@ pub const Player = struct {
     pixels: []u8,
     /// Whether its last frame has shown (`0x005D6C90`).
     ended: bool = false,
+    /// The pointer's right button, which ends the movie only once it has come up since the movie
+    /// began (`pass`).
+    right: input.FreshPress = .{},
 
     /// Opens the movie of `file`, which it takes, to play as `kind` has it, its sound through
     /// `sound` where there is one, and its pictures with OpenReliant's `look`.
@@ -240,10 +247,14 @@ pub const Player = struct {
 
     /// A pass of the loop at `now`, the keyboard read and whether the pointer's right button is
     /// down: how the movie ends, or null while it plays on.
+    ///
+    /// **Fix:** the right button ends a movie only once it has come up since the movie began. The
+    /// game ends it while the button is down, so that a press that skipped what came before, still
+    /// held, ends it at once.
     pub fn pass(player: *Player, keyboard: *input.Keyboard, right_down: bool, now: u64) bink.Error!?End {
         if (keyboard.pressed(input.scan.escape, .none, true)) return .skipped;
         if (player.ended) return .finished;
-        if (right_down and player.kind.rightButtonEnds()) return .skipped;
+        if (player.right.pressed(right_down) and player.kind.rightButtonEnds()) return .skipped;
         if (player.bink.wait(now)) return null;
         try player.play(now);
         return null;
@@ -307,10 +318,13 @@ test "Escape and the right button end a movie" {
     var player: Player = try .open(gpa, codec.codec(), try gpa.dupe(u8, bytes), .cleared, null, .original);
     defer player.close();
     var keyboard: input.Keyboard = .{};
+    // The right button held as it begins plays on; pressed once it has come up, it ends it.
+    try std.testing.expectEqual(null, try player.pass(&keyboard, true, 0));
+    try std.testing.expectEqual(null, try player.pass(&keyboard, false, 0));
     try std.testing.expectEqual(End.skipped, try player.pass(&keyboard, true, 0));
+    try std.testing.expectEqual(1, codec.pictures);
     keyboard.down[input.scan.escape] = true;
     try std.testing.expectEqual(End.skipped, try player.pass(&keyboard, false, 0));
-    try std.testing.expectEqual(0, codec.pictures);
 }
 
 test "the landing plays on with the right button down" {
@@ -344,6 +358,10 @@ test Kind {
     // Only `play_bink_movie_no_clear` and the landing force the rate.
     try std.testing.expectEqual(null, Kind.over_screen_from_disc.rate());
     try std.testing.expectEqual(transition_rate, Kind.over_screen.rate().?);
+    // The briefing's movie plays from the disc at its own rate, whatever the settings.
+    try std.testing.expectEqual(Source.disc, Kind.briefing.source());
+    try std.testing.expectEqual(null, Kind.briefing.rate());
+    try std.testing.expect(Kind.briefing.plays(false, false));
 }
 
 test Hangar {

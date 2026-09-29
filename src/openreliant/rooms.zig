@@ -1,9 +1,10 @@
 //! The Reliant's rooms as `openreliant` runs them (`game.interface.rooms`), with a new pilot's
-//! induction before them (`game.interface.induction`) and the in-game options over them
-//! (`game.interface.in_game_options`): each in a loop of its own, as the game runs them, each
-//! frame drawn over an empty scene and put on the window, with the window's messages read as the
-//! message pump reads them, and the movies between them played by `Movies`. `campaign` is what
-//! `WinMain` does as START GAME starts a campaign.
+//! induction before them (`game.interface.induction`), the in-game options over them
+//! (`game.interface.in_game_options`) and the briefing after them (`game.interface.briefing`):
+//! each in a loop of its own, as the game runs them, each frame drawn over an empty scene and put
+//! on the window, with the window's messages read as the message pump reads them, and the movies
+//! between them played by `Movies`. `campaign` is what `WinMain` does as START GAME starts a
+//! campaign.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -14,6 +15,7 @@ const engine = openreliant.engine;
 const srcore = engine.surrender.surrenderlib.srcore;
 const game = engine.game;
 const interface = game.interface;
+const briefing = interface.briefing;
 const canvas = interface.canvas;
 const induction = interface.induction;
 const in_game_options = interface.in_game_options;
@@ -24,9 +26,9 @@ const version = @import("version.zig");
 
 const log = std.log.scoped(.rooms);
 
-/// How the rooms end, where the game goes on: through the briefing room's door, or to the main
-/// menu.
-pub const End = enum { briefing, main_menu };
+/// How the rooms end, where the game goes on: through the briefing room's door and the briefing,
+/// the mission flown, or to the main menu.
+pub const End = enum { fly, main_menu };
 
 /// What the rooms run with.
 pub const Driver = struct {
@@ -39,6 +41,9 @@ pub const Driver = struct {
     strings: *const game.language.Language,
     /// What becomes of the loudest peaks of Enriquez's scenes.
     peaks: game.cbox.Style.Peaks,
+    /// `speech_hog`, which holds Enriquez's words in the briefing; null where the game's folder
+    /// has none.
+    lines: ?*const openreliant.hog.Archive,
     /// The front end's pointer, which the rooms' follows, and the timer's count it last moved on
     /// at.
     pointer: canvas.Pointer = .{},
@@ -50,8 +55,7 @@ pub const Driver = struct {
     /// (`winmain.CampaignStart`), then the rooms. Null where the game quits meanwhile.
     pub fn campaign(driver: *Driver, mission: u16) !?End {
         const start: game.winmain.CampaignStart = .of(mission);
-        driver.clock.start(platform.window.ticks());
-        driver.ticks = platform.window.ticks();
+        driver.startTimer();
         driver.sound.fadeMusic(game.winmain.music_fade_step, driver.clock.game_ticks);
         driver.movies.disc.open(start.disc);
         var view = rooms.Carrier.of(mission).start();
@@ -65,6 +69,20 @@ pub const Driver = struct {
         return driver.visit(mission, view);
     }
 
+    /// The developers' briefing of mission `mission`, from its loadout on
+    /// (`briefing_from_loadout`), after which the front end starts again. False where the game
+    /// quits meanwhile.
+    pub fn loadoutBriefing(driver: *Driver, mission: u16) !bool {
+        driver.startTimer();
+        return driver.brief(mission, true);
+    }
+
+    /// The timer counted from now, as the loops step by it.
+    fn startTimer(driver: *Driver) void {
+        driver.clock.start(platform.window.ticks());
+        driver.ticks = platform.window.ticks();
+    }
+
     fn context(driver: *Driver) rooms.Context {
         const movies = driver.movies;
         return .{
@@ -75,6 +93,7 @@ pub const Driver = struct {
             .resources = driver.resources,
             .sound = driver.sound,
             .peaks = driver.peaks,
+            .lines = driver.lines,
         };
     }
 
@@ -99,39 +118,70 @@ pub const Driver = struct {
         }
     }
 
-    /// The rooms (`vr_rooms`) before mission `mission`, from `view`, in their loop: how they end,
-    /// or null where the game quits meanwhile.
+    /// The rooms (`vr_rooms`) before mission `mission`, from `view`, in their loop, and through
+    /// the briefing room's door, the briefing, which `vr_rooms` runs once it has let the rooms go:
+    /// how they end, or null where the game quits meanwhile.
     fn visit(driver: *Driver, mission: u16, view: u8) !?End {
-        var inside: rooms.Rooms = .open(driver.context(), mission, view, platform.window.nanoseconds());
-        defer inside.close();
+        {
+            var inside: rooms.Rooms = .open(driver.context(), mission, view, platform.window.nanoseconds());
+            defer inside.close();
+            while (true) {
+                if (!try driver.pump()) return null;
+                const now = platform.window.nanoseconds();
+                const pointer = driver.pointer;
+                if (inside.pass(.{
+                    .keyboard = &driver.movies.devices.keyboard,
+                    .at = pointer.at,
+                    .left = pointer.down,
+                    .right = pointer.right_down,
+                    .transitions = driver.movies.transitions,
+                    .now = now,
+                    .ticks = driver.clock.game_ticks,
+                })) |step| switch (step) {
+                    .options => switch (try driver.options() orelse return null) {
+                        .back => {},
+                        .main_menu => return .main_menu,
+                        .quit => return null,
+                    },
+                    // The places' screens are not ported yet (`rooms.Place`): the rooms go on as
+                    // though each had closed at once.
+                    .place => |place| {
+                        log.info("the rooms' {s} is not ported yet", .{@tagName(place)});
+                        inside.leave(place, platform.window.nanoseconds());
+                    },
+                    .briefing => break,
+                };
+                inside.advance(now);
+                try driver.present(.{ .rooms = &inside });
+            }
+        }
+        return if (try driver.brief(mission, false)) .fly else null;
+    }
+
+    /// The briefing (`interface_briefing`) before mission `mission`, in its loop, from the
+    /// loadout where `from_loadout` has it: its door drawn for the frame it loads after, and the
+    /// movies of its way in played as it comes to them. False where the game quits meanwhile.
+    fn brief(driver: *Driver, mission: u16, from_loadout: bool) !bool {
+        var meeting: briefing.Briefing = .open(driver.context(), mission, from_loadout);
+        defer meeting.close();
+        try driver.present(.{ .briefing = &meeting });
         while (true) {
-            if (!try driver.pump()) return null;
-            const now = platform.window.nanoseconds();
-            const pointer = driver.pointer;
-            if (inside.pass(.{
+            const active = driver.active;
+            if (!try driver.pump()) return false;
+            if (driver.active != active) meeting.pause(!driver.active, platform.window.nanoseconds());
+            if (meeting.pass(.{
                 .keyboard = &driver.movies.devices.keyboard,
-                .at = pointer.at,
-                .left = pointer.down,
-                .right = pointer.right_down,
-                .transitions = driver.movies.transitions,
-                .now = now,
+                .right = driver.pointer.right_down,
                 .ticks = driver.clock.game_ticks,
             })) |step| switch (step) {
-                .options => switch (try driver.options() orelse return null) {
-                    .back => {},
-                    .main_menu => return .main_menu,
-                    .quit => return null,
+                .movie => |name| {
+                    _ = try driver.movies.play(name, .over_screen_from_disc) orelse return false;
+                    continue;
                 },
-                // The places' screens are not ported yet (`rooms.Place`): the rooms go on as
-                // though each had closed at once.
-                .place => |place| {
-                    log.info("the rooms' {s} is not ported yet", .{@tagName(place)});
-                    inside.leave(place, platform.window.nanoseconds());
-                },
-                .briefing => return .briefing,
+                .over => return true,
             };
-            inside.advance(now);
-            try driver.present(.{ .rooms = &inside });
+            meeting.advance(platform.window.nanoseconds(), driver.clock.game_ticks);
+            try driver.present(.{ .briefing = &meeting });
         }
     }
 
@@ -236,6 +286,7 @@ const Shown = struct {
         induction: *induction.Induction,
         rooms: *rooms.Rooms,
         options: *Menu,
+        briefing: *briefing.Briefing,
     };
 
     fn overlay(shown: *Shown) srcore.Overlay {
@@ -250,6 +301,7 @@ const Shown = struct {
             .induction => |tour| tour.draw(target),
             .rooms => |inside| try drawn(inside.draw(target, driver.clock.game_ticks)),
             .options => |menu| try drawn(menu.draw(target, &driver.front.dialog, driver.pointer)),
+            .briefing => |meeting| try drawn(meeting.draw(target)),
         }
     }
 };
