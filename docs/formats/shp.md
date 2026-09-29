@@ -81,14 +81,18 @@ point lists, trigger polygons or firing arcs at all. `Model.parse` keeps each ta
 the file has none of it (`shp.RecordSizes`), and the writer cuts each record short to that size or
 fills it out with zeros. A model built from scratch gets the whole records the engine keeps.
 
-The attachment records of 136 and 168 bytes hold zeros past the 124 bytes the engine keeps, in every
-shipped model, and the writer writes zeros there. Trigger polygons are written back as the file
-holds them. So every shipped model, written again, comes back byte for byte: `sltool shp check`
-checks it model by model, and `make check-models` for the whole installation.
+The attachment records of 136 and 168 bytes hold 12 and 44 bytes past the 124 the engine keeps,
+which the loader never copies (`model_take_chunk`, `0x004A2EB0`). **Unknown:** what they are; they
+are zero in every shipped model. The reader keeps them with each attachment
+(`shp.PartData.attachment_tails`), and the writer writes them back after it. Trigger polygons are
+written back as the file holds them. So every shipped model, written again, comes back byte for
+byte: `sltool shp check` checks it model by model, and `make check-models` for the whole
+installation.
 
 The writer fails rather than write a file the loader would misread: records of a tag the model's
 sizes leave out, a chunk of more records than its header counts (65535), or a part whose nodes do
-not each have their face list.
+not each have their face list. It also fails for a part whose attachments have tails, but not one
+each.
 
 ## Records
 
@@ -148,7 +152,8 @@ Part flags at `0xF0`:
 ### Attachment point (tag `0x09`)
 
 A point on a part where the engine mounts something. Exporters wrote records of 100 to 168 bytes;
-the engine keeps 124 bytes of each.
+the engine keeps 124 bytes of each. **Unknown:** what longer records hold past them, which are zero
+in every shipped model and which the reader keeps ([Writing](#writing)).
 
 | Off | Type | Field |
 |---|---|---|

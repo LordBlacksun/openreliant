@@ -429,8 +429,8 @@ pub fn PlayMode(comptime Int: type) type {
 }
 
 /// Tag `0x09`. A point on a part where the engine mounts something: a gun or turret, a missile
-/// pod, a light, a cargo pod. The engine keeps 124 bytes of each record, and exporters that write
-/// longer ones add nothing it reads.
+/// pod, a light, a cargo pod. The engine keeps 124 bytes of each record (`model_take_chunk`,
+/// `0x004A2EB0`); what longer records hold past them, the part keeps as its `attachment_tails`.
 pub const Attachment = extern struct {
     kind: Kind,
     /// Relative to the part.
@@ -883,6 +883,12 @@ pub const Reader = struct {
         const chunk = try reader.take(tag) orelse return gpa.alloc(Record(tag), 0);
         return records(Record(tag), gpa, chunk);
     }
+
+    /// `takeRecords`, with what each record holds past those bytes (`tails`).
+    pub fn takeRecordsAndTails(reader: *Reader, gpa: Allocator, comptime tag: Tag) !struct { []Record(tag), []const []const u8 } {
+        const chunk = try reader.take(tag) orelse return .{ try gpa.alloc(Record(tag), 0), &.{} };
+        return .{ try records(Record(tag), gpa, chunk), try tails(gpa, chunk, @sizeOf(Record(tag))) };
+    }
 };
 
 /// Copies a chunk's records into `T`, exactly as the loader does: `min(record_size, @sizeOf(T))`
@@ -894,6 +900,21 @@ pub fn records(comptime T: type, gpa: Allocator, chunk: Chunk) Allocator.Error![
     const copy = @min(@as(usize, chunk.record_size), @sizeOf(T));
     for (out, 0..) |*record, i| {
         @memcpy(std.mem.asBytes(record)[0..copy], chunk.data[i * chunk.record_size ..][0..copy]);
+    }
+    return out;
+}
+
+/// What each of a chunk's records holds past its first `kept` bytes, which `records` leaves out:
+/// one for each record, or none where the records hold no more.
+fn tails(gpa: Allocator, chunk: Chunk, kept: usize) Allocator.Error![]const []const u8 {
+    if (chunk.record_size <= kept) return &.{};
+    const size = chunk.record_size - kept;
+    const bytes = try gpa.alloc(u8, @as(usize, chunk.count) * size);
+    const out = try gpa.alloc([]const u8, chunk.count);
+    for (out, 0..) |*tail, i| {
+        const into = bytes[i * size ..][0..size];
+        @memcpy(into, chunk.data[i * chunk.record_size + kept ..][0..size]);
+        tail.* = into;
     }
     return out;
 }
@@ -934,6 +955,11 @@ pub const PartData = struct {
     part: Part,
     meshes: []Mesh,
     attachments: []Attachment,
+    /// What each attachment's record holds in the file past the 124 bytes the engine keeps, as the
+    /// records of 136 and 168 bytes do: one for each attachment, or none where the records hold no
+    /// more. **Unknown:** what the bytes are. The loader never copies them, and they are zero in
+    /// every shipped model; they are kept so that a model comes back as its file holds it.
+    attachment_tails: []const []const u8 = &.{},
     /// Its animation tracks, in the order the file lists them.
     tracks: []Track,
     /// Its collision tree, the root first; empty for a part that has none.
@@ -984,7 +1010,7 @@ pub const Model = struct {
         for (parts, out) |part, *entry| {
             const lods = try reader.takeRecords(gpa, .lod);
             const nodes = try reader.takeRecords(gpa, .tree_node);
-            const attachments = try reader.takeRecords(gpa, .attachment);
+            const attachments, const attachment_tails = try reader.takeRecordsAndTails(gpa, .attachment);
             const clips = try reader.takeRecords(gpa, .animation_clip);
             const kinds = try reader.takeRecords(gpa, .point_list);
             const triggers = try reader.takeRecords(gpa, .trigger_polygon);
@@ -1021,6 +1047,7 @@ pub const Model = struct {
                 .nodes = nodes,
                 .node_faces = node_faces,
                 .attachments = attachments,
+                .attachment_tails = attachment_tails,
                 .tracks = tracks,
                 .point_lists = point_lists,
                 .triggers = triggers,
@@ -1076,11 +1103,12 @@ pub const Model = struct {
 
     /// Writes the model as the loader reads it (`parse`): its chunks in the order the loader asks
     /// for them, each record cut short or filled out with zeros to the size `record_sizes` gives
-    /// its tag, and the terminator. A tag the sizes leave out gets no chunk, and must have no
-    /// records. A model parsed from a file comes back byte for byte, as every shipped model does,
-    /// unless the file holds what `parse` does not keep: a chunk the loader never asks for, header
-    /// records after the first, bytes after the terminator, or bytes of a record past those the
-    /// engine keeps, where they are not zero.
+    /// its tag, an attachment's with its tail after it, and the terminator. A tag the sizes leave
+    /// out gets no chunk, and must have no records. A model parsed from a file comes back byte for
+    /// byte, as every shipped model does, unless the file holds what `parse` does not keep: a chunk
+    /// the loader never asks for, header records after the first, bytes after the terminator, or
+    /// bytes of a record other than an attachment's past those the engine keeps, where they are
+    /// not zero.
     pub fn write(model: Model, out: *std.Io.Writer) WriteError!void {
         const chunks: ChunkWriter = .{ .out = out, .sizes = model.record_sizes };
         try chunks.put(.header, @as(*const [1]Header, &model.header), null);
@@ -1089,7 +1117,7 @@ pub const Model = struct {
             if (entry.node_faces.len != entry.nodes.len) return error.UnevenNodeFaces;
             try chunks.put(.lod, entry.meshes, "lod");
             try chunks.put(.tree_node, entry.nodes, null);
-            try chunks.put(.attachment, entry.attachments, null);
+            try chunks.putWithTails(.attachment, entry.attachments, null, entry.attachment_tails);
             try chunks.put(.animation_clip, entry.tracks, "clip");
             try chunks.put(.point_list, entry.point_lists, "kind");
             try chunks.put(.trigger_polygon, entry.triggers, null);
@@ -1119,6 +1147,8 @@ pub const WriteError = std.Io.Writer.Error || error{
     LeftOut,
     /// A part's node face lists are not one for each of its nodes.
     UnevenNodeFaces,
+    /// A part's attachment tails are neither none nor one for each of its attachments.
+    UnevenTails,
 };
 
 /// Writes a model's chunks at its record sizes.
@@ -1129,18 +1159,34 @@ const ChunkWriter = struct {
     /// A chunk of `tag` holding `items`, or the `field` of each where an item holds its record
     /// among other things; nothing for a tag the sizes leave out, which then must have none.
     fn put(chunks: ChunkWriter, comptime tag: Tag, items: anytype, comptime field: ?[]const u8) WriteError!void {
+        return chunks.putWithTails(tag, items, field, &.{});
+    }
+
+    /// `put`, each record followed by its tail in `item_tails` (one for each item, or none), the
+    /// two cut short or filled out with zeros to the record's size.
+    fn putWithTails(
+        chunks: ChunkWriter,
+        comptime tag: Tag,
+        items: anytype,
+        comptime field: ?[]const u8,
+        item_tails: []const []const u8,
+    ) WriteError!void {
+        if (item_tails.len != 0 and item_tails.len != items.len) return error.UnevenTails;
         const size = chunks.sizes.of(tag) orelse {
             if (items.len > 0) return error.LeftOut;
             return;
         };
         const count = std.math.cast(u16, items.len) orelse return error.TooManyRecords;
         try chunks.out.writeAll(std.mem.asBytes(&ChunkHeader{ .tag = tag, .record_size = size, .count = count }));
-        for (items) |*item| {
+        for (items, 0..) |*item, i| {
             const record: *const Record(tag) = if (field) |name| &@field(item, name) else item;
             const bytes = std.mem.asBytes(record);
             const kept = @min(bytes.len, size);
             try chunks.out.writeAll(bytes[0..kept]);
-            try chunks.out.splatByteAll(0, size - kept);
+            const tail: []const u8 = if (item_tails.len == 0) &.{} else item_tails[i];
+            const past = @min(tail.len, size - kept);
+            try chunks.out.writeAll(tail[0..past]);
+            try chunks.out.splatByteAll(0, size - kept - past);
         }
     }
 };
@@ -1358,6 +1404,53 @@ test "a model built by hand reads back as it was written" {
     try std.testing.expectEqualDeep(model, try Model.parse(arena, written.written()));
 }
 
+test "the bytes of an attachment's record past those the engine keeps come back as they were" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    // A muzzle whose record runs to 168 bytes, as most shipped ones do, holding something past the
+    // 124 the engine keeps.
+    var attachments = [_]Attachment{testAttachment(.gun_muzzle, 0)};
+    var parts = [_]PartData{testPart("Hull", false, &attachments)};
+    var model = testModel(&parts, true);
+    model.record_sizes.attachment = 168;
+    var file: std.Io.Writer.Allocating = .init(arena);
+    try model.write(&file.writer);
+    const data = file.written();
+    var reader: Reader = .init(data);
+    const chunk = (try reader.take(.attachment)).?;
+    const record = @intFromPtr(chunk.data.ptr) - @intFromPtr(data.ptr);
+    for (data[record + @sizeOf(Attachment) ..][0 .. 168 - @sizeOf(Attachment)], 0..) |*byte, i| byte.* = @intCast(i + 1);
+
+    var written: std.Io.Writer.Allocating = .init(arena);
+    try (try Model.parse(arena, data)).write(&written.writer);
+    try std.testing.expectEqualSlices(u8, data, written.written());
+}
+
+test "an attachment's tail is cut short or filled out to its record's size" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    // Records of 136 bytes leave room for 12 past the engine's 124: a longer tail loses its end,
+    // and a shorter one is filled out with zeros.
+    var attachments = [_]Attachment{ testAttachment(.light, 0), testAttachment(.light, 1) };
+    const long: [20]u8 = @splat(0xAB);
+    const short = [_]u8{ 1, 2, 3, 4 };
+    const given = [_][]const u8{ &long, &short };
+    var parts = [_]PartData{testPart("Hull", false, &attachments)};
+    parts[0].attachment_tails = &given;
+    var model = testModel(&parts, true);
+    model.record_sizes.attachment = 136;
+
+    var written: std.Io.Writer.Allocating = .init(arena);
+    try model.write(&written.writer);
+    const read = (try Model.parse(arena, written.written())).parts[0].attachment_tails;
+    try std.testing.expectEqualSlices(u8, long[0..12], read[0]);
+    try std.testing.expectEqualSlices(u8, &.{ 1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0 }, read[1]);
+}
+
 test "a tag the record sizes leave out holds no records" {
     var parts = [_]PartData{testPart("Hull", false, &.{})};
     var arcs: [1]FiringArc = @splat(std.mem.zeroes(FiringArc));
@@ -1397,6 +1490,18 @@ test "each node of a part has its face list" {
     var written: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer written.deinit();
     try std.testing.expectError(error.UnevenNodeFaces, testModel(&parts, true).write(&written.writer));
+}
+
+test "a part's attachments have a tail each, or none" {
+    var attachments = [_]Attachment{ testAttachment(.light, 0), testAttachment(.light, 1) };
+    const tail = [_]u8{0};
+    const one = [_][]const u8{&tail};
+    var parts = [_]PartData{testPart("Hull", false, &attachments)};
+    parts[0].attachment_tails = &one;
+
+    var written: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer written.deinit();
+    try std.testing.expectError(error.UnevenTails, testModel(&parts, true).write(&written.writer));
 }
 
 test "a missing chunk does not move the cursor" {
