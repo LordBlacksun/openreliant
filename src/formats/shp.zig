@@ -1082,6 +1082,7 @@ pub const Model = struct {
         try chunks.put(.header, @as(*const [1]Header, &model.header), null);
         try chunks.put(.part, model.parts, "part");
         for (model.parts) |entry| {
+            if (entry.node_faces.len != entry.nodes.len) return error.UnevenNodeFaces;
             try chunks.put(.lod, entry.meshes, "lod");
             try chunks.put(.tree_node, entry.nodes, null);
             try chunks.put(.attachment, entry.attachments, null);
@@ -1112,6 +1113,8 @@ pub const WriteError = std.Io.Writer.Error || error{
     TooManyRecords,
     /// The model holds records of a tag its record sizes leave out.
     LeftOut,
+    /// A part's node face lists are not one for each of its nodes.
+    UnevenNodeFaces,
 };
 
 /// Writes a model's chunks at its record sizes.
@@ -1349,6 +1352,47 @@ test "a model built by hand reads back as it was written" {
     defer written.deinit();
     try model.write(&written.writer);
     try std.testing.expectEqualDeep(model, try Model.parse(arena, written.written()));
+}
+
+test "a tag the record sizes leave out holds no records" {
+    var parts = [_]PartData{testPart("Hull", false, &.{})};
+    var arcs: [1]FiringArc = @splat(std.mem.zeroes(FiringArc));
+    var model = testModel(&parts, true);
+    model.firing_arcs = &arcs;
+    model.record_sizes.firing_arc = null;
+
+    var written: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer written.deinit();
+    try std.testing.expectError(error.LeftOut, model.write(&written.writer));
+}
+
+test "a chunk holds no more records than its header counts" {
+    const gpa = std.testing.allocator;
+    const faces = try gpa.alloc(u32, std.math.maxInt(u16) + 1);
+    defer gpa.free(faces);
+    @memset(faces, 0);
+    var nodes: [1]TreeNode = @splat(std.mem.zeroes(TreeNode));
+    var node_faces = [_][]u32{faces};
+    var parts = [_]PartData{testPart("Hull", false, &.{})};
+    parts[0].nodes = &nodes;
+    parts[0].node_faces = &node_faces;
+
+    var written: std.Io.Writer.Allocating = .init(gpa);
+    defer written.deinit();
+    try std.testing.expectError(error.TooManyRecords, testModel(&parts, true).write(&written.writer));
+}
+
+test "each node of a part has its face list" {
+    var nodes: [2]TreeNode = @splat(std.mem.zeroes(TreeNode));
+    var leaf = [_]u32{0};
+    var node_faces = [_][]u32{&leaf};
+    var parts = [_]PartData{testPart("Hull", false, &.{})};
+    parts[0].nodes = &nodes;
+    parts[0].node_faces = &node_faces;
+
+    var written: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer written.deinit();
+    try std.testing.expectError(error.UnevenNodeFaces, testModel(&parts, true).write(&written.writer));
 }
 
 test "a missing chunk does not move the cursor" {
