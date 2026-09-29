@@ -12,8 +12,8 @@ Four functions play a movie in a loop of their own, in `xtrabits.cpp`:
 |---|---|---|---|---|
 | `play_bink_movie` (`0x004AB850`) | The intro | The game's folder | A screen cleared to black once | The movie's rate, at full volume (`BinkSetVolume`, `0x8000`) |
 | `play_bink_movie_no_clear` (`0x004AB6E0`) | The front end's transitions | The game's folder | What the screen last showed | 15 frames a second (`BinkSetFrameRate(15, 1)` and `BINKFRAMERATE`) |
-| `play_bink_movie_resourced` (`0x004ABB80`) | The hangar's, a chapter's zoom | The disc's archive | A screen cleared to black once | The movie's rate, at full volume |
-| `play_bink_movie_no_clear_resourced` (`0x004AB9D0`) | A chapter's movie and news | The disc's archive | What the screen last showed | The movie's rate: it sets 15 frames a second without `BINKFRAMERATE`, which alone has Bink keep to it |
+| `play_bink_movie_resourced` (`0x004ABB80`) | The hangar's, a chapter's zoom, a new pilot's intro | The disc's archive | A screen cleared to black once | The movie's rate, at full volume |
+| `play_bink_movie_no_clear_resourced` (`0x004AB9D0`) | A chapter's movie and news, the ways of a new pilot's induction | The disc's archive | What the screen last showed | The movie's rate: it sets 15 frames a second without `BINKFRAMERATE`, which alone has Bink keep to it |
 
 The two that read the disc's archive find the movie in it (`hog_locate`, `0x004C83F0`), by its
 whole name whatever its case, and have Bink open it where it lies in the archive's file
@@ -30,6 +30,10 @@ be opened stops the game with a message (`play_bink_movie: error loading %s.`).
 The video settings' `Transitions` (`[Device]`, 1 unless set, read at `0x004A9081`) turns off the
 movies over the screen; those on a cleared screen play whatever it says on a hardware renderer
 (`sr + 0x1AC`). With it off, a chapter's end plays its zoom alone.
+
+The Reliant's rooms, the news report and a new pilot's induction play their movies in loops of
+their own, from the disc's archive at 15 frames a second whatever the settings, each frame copied
+to the screen as it is due ([The Reliant's rooms](rooms.md)).
 
 ## The discs' archives
 
@@ -132,6 +136,9 @@ which are never reached, as mission 16 ends no chapter.
   one to another: SINGLE PLAYER `main2sin.bik`, MULTI PLAYER `main2mul.bik` and GAME OPTIONS
   `main2opt.bik` from the main menu; the pilot roster's MAIN MENU and Escape `sin2main.bik`, and
   LOAD GAME `sinfade.bik`.
+- As START GAME starts a campaign, `WinMain` plays a new pilot's intro, `new_intro.bik`, before
+  mission 1's induction, and the ways from where the induction ended; the in-game options' MAIN
+  MENU plays `interface\igo2mm.bik` before the main menu ([The Reliant's rooms](rooms.md)).
 - Around each mission `WinMain` flies, the hangar's movie and the landing or a chapter's end
   ([Around a mission](#around-a-mission)).
 
@@ -187,8 +194,10 @@ without a disc's archive or a bank.
   Super Resolution 1.0), which keeps its edges sharp without steps
   ([Renderer](../port/renderer.md#improvements)).
 
-Not ported: the other movies, each with what plays it: the Reliant's rooms'
-([#398](https://github.com/vdmkenny/openreliant/issues/398)), the briefings'
+Not ported: the other movies, each with what plays it: the briefings'
 ([#73](https://github.com/vdmkenny/openreliant/issues/73)), those of how a mission ended, the medals'
-and the story's end ([#416](https://github.com/vdmkenny/openreliant/issues/416)), and the
-transitions of the screens not yet ported ([#43](https://github.com/vdmkenny/openreliant/issues/43)).
+and the story's end ([#416](https://github.com/vdmkenny/openreliant/issues/416)), those of the
+rooms' places ([#419](https://github.com/vdmkenny/openreliant/issues/419) to
+[#422](https://github.com/vdmkenny/openreliant/issues/422)), and the transitions of the screens not
+yet ported, the in-game options' `igofade.bik` among them
+([#43](https://github.com/vdmkenny/openreliant/issues/43)).

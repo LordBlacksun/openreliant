@@ -5,11 +5,14 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const spr = @import("../../../formats/spr.zig");
+const bigfile = @import("../bigfile.zig");
 const device = @import("../../surrender/srd3d/device.zig");
 const srtexture = @import("../../surrender/surrenderlib/srtexture.zig");
 const input = @import("../../input.zig");
 const hud = @import("../hud.zig");
 const language = @import("../language.zig");
+
+const log = std.log.scoped(.interface);
 
 /// The front end's screen in pixels, the mode returning from a mission sets the display to
 /// (`0x004AD2E0`).
@@ -19,10 +22,15 @@ pub const Error = spr.Error || Allocator.Error;
 
 /// The colours the front end ramps its text through (`interface_palette_ramp`, `0x004287C0`),
 /// from a `0xRRGGBB` value: the main menu's labels and the dialogs, a panel's labels under the
-/// pointer, and the developers' text.
+/// pointer, the developers' text, and a button's label under the pointer, the pilot roster's
+/// call signs among them.
 pub const blue = hud.rgb(0x40BCFF);
 pub const gold = hud.rgb(0xFDB951);
 pub const red = hud.rgb(0xFF0000);
+pub const white = hud.rgb(0xFFFFFF);
+
+/// The black the pilot roster's list rows are wiped to, and the middle of ABOUT OPENRELIANT's box.
+pub const black = hud.rgb(0x000000);
 
 /// The front end's fonts, which its start-up opens (`interface_init`, `0x004288E0`):
 /// `hud.large_menu_font` and `hud.small_menu_font`, the pause menu's too.
@@ -43,6 +51,9 @@ pub const Canvas = struct {
     window: [2]u32,
     fonts: Fonts,
     strings: *const language.Language,
+    /// OpenReliant's version, which a screen writes in the window's corner (`drawVersion`); null
+    /// for none.
+    version: ?[]const u8 = null,
 
     /// How many of the window's pixels one of the front end's spans.
     pub fn scale(canvas: Canvas) f32 {
@@ -137,7 +148,27 @@ pub const Canvas = struct {
     }
 
     /// How `wrapped` lays its lines out.
-    pub const Lines = struct { width: i32, height: i32, most: usize };
+    pub const Lines = struct {
+        width: i32,
+        height: i32,
+        most: usize,
+
+        /// How many lines `words` break into in `font`, at most `most`.
+        pub fn count(lines: Lines, font: *hud.Opened, words: []const u8) usize {
+            var wrapping: hud.WrappedText = .init(&font.widths, words, lines.width, lines.most);
+            var n: usize = 0;
+            while (wrapping.next()) |_| n += 1;
+            return n;
+        }
+    };
+
+    /// **Improvement:** OpenReliant's version, where the canvas has one, in the window's bottom
+    /// right corner as the pause menu writes it (`hud.drawVersion`). A screen writes it before its
+    /// pointer.
+    pub fn drawVersion(canvas: Canvas) Allocator.Error!void {
+        const shown = canvas.version orelse return;
+        try hud.drawVersion(canvas.fonts.small, canvas.gpa, canvas.target, canvas.window, shown);
+    }
 
     /// Writes the string of `id` (`language_string`); one the game doesn't have writes nothing.
     pub fn string(canvas: Canvas, font: *hud.Opened, at: [2]i32, id: u32, colour: [3]f32, alignment: hud.Align) Allocator.Error!void {
@@ -162,6 +193,41 @@ pub fn scaleFor(window: [2]u32) f32 {
 pub fn cornerFor(window: [2]u32) [2]f32 {
     return hud.centred(window, size, scaleFor(window));
 }
+
+/// A sprite set read whole, as `hog_load` reads one, and the shapes made of it.
+pub const Shapes = struct {
+    art: hud.Art,
+    bytes: []u8,
+
+    /// The shapes of `bytes`, the sprite set `name`, which they keep; null where it is not one,
+    /// the bytes then freed.
+    pub fn of(gpa: Allocator, bytes: []u8, name: []const u8) ?Shapes {
+        const set = spr.Sprite.parse(bytes) catch |err| {
+            log.warn("{s} is left out: {s}", .{ name, @errorName(err) });
+            gpa.free(bytes);
+            return null;
+        };
+        const art = hud.Art.init(gpa, set, null) catch {
+            gpa.free(bytes);
+            return null;
+        };
+        return .{ .art = art, .bytes = bytes };
+    }
+
+    /// The sprite set `name` of `archive`; null where it is left out.
+    pub fn read(gpa: Allocator, archive: *const bigfile.Hog, name: []const u8) ?Shapes {
+        const bytes = archive.readFile(gpa, name) catch |err| {
+            log.warn("{s} is left out: {s}", .{ name, @errorName(err) });
+            return null;
+        };
+        return of(gpa, bytes, name);
+    }
+
+    pub fn deinit(shapes: *Shapes, gpa: Allocator) void {
+        shapes.art.deinit(gpa);
+        gpa.free(shapes.bytes);
+    }
+};
 
 /// A rectangle of the front end's screen, as its tables keep one: its corner and its size.
 pub const Rect = extern struct {
@@ -273,6 +339,20 @@ test "Canvas.fill" {
     try std.testing.expectEqual(0, corners[0].y);
     try std.testing.expectEqual(1120, corners[2].x);
     try std.testing.expectEqual(720, corners[2].y);
+}
+
+test Shapes {
+    const gpa = std.testing.allocator;
+    // A set of one palette, the least a set holds.
+    const at = @sizeOf(spr.Header) + @sizeOf(spr.DirectoryEntry);
+    var set: [at + spr.palette_size]u8 = @splat(0);
+    set[0..@sizeOf(spr.Header)].* = @bitCast(spr.Header{ .version = spr.magic.*, .shape_count = 1 });
+    set[@sizeOf(spr.Header)..at].* = @bitCast(spr.DirectoryEntry{ .offset = at, .reserved = 0 });
+    var shapes = Shapes.of(gpa, try gpa.dupe(u8, &set), "palette.spr").?;
+    defer shapes.deinit(gpa);
+    try std.testing.expectEqual(1, shapes.art.set.count());
+    // Not a sprite set, it is left out, and its bytes let go.
+    try std.testing.expectEqual(null, Shapes.of(gpa, try gpa.dupe(u8, "x"), "x.spr"));
 }
 
 test hit {

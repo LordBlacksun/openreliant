@@ -1399,7 +1399,7 @@ address	kind	name	type	comment
 0057db14	data	controls_old_key_name	char[30]	The key name of the binding being redefined, as it was
 0057dba0	data	controls_old_modifier	int	The modifier of the binding being redefined, as it was
 0051d5f8	data	dialog_open	int	Set while a YES or NO dialog is up: the front end's (interface_confirm) and pause screen 2's
-0051d900	data	dialog_text	char[212]	The dialog's text where it has no string id, as interface_confirm asks with -1: pause screen 2's conflict
+0051d900	data	dialog_text	char[204]	The dialog's text where it has no string id, as interface_confirm asks with -1: pause screen 2's conflict
 0057da70	data	controls_conflict_action	int	The action already holding the key or button
 0057da5c	data	controls_conflict_button	int	The joystick button in dispute, or -1 for a key
 0057daa0	data	controls_conflict_key	int	The key in dispute
@@ -2035,3 +2035,64 @@ address	kind	name	type	comment
 00509be8	data	chapter_movies	char *[6]	Each chapter's movie for play_landing_movie: dummy.bik, then new_chapter1.bik to new_chapter5.bik
 005009bb	data	medal_of_mission	char[28]	The medal each mission awards, by mission number, 0 for none (mission_end_record): missions 6, 11, 16, 21, 23 and 27 award medals 1 to 6 where the mission is rated a success with its bonus
 00500a08	data	medal_movies	char *[6]	Each medal's ceremony, medals 1 to 6 (mission_end_record indexes it from 0x00500A04): new_silver.bik, new_black eagle.bik, new_valour.bik, new_legion.bik, new_navy_cross.bik and new_medal_of_honour.bik
+00439fb0	function	vr_rooms	char __fastcall (VrView *view)	The Reliant's rooms, the Yamato's after mission 18, from view: each view's way in and loop from the disc's archive (vr_movie), the hotspots that lead on and each view's action; Escape opens in_game_options. Through the briefing room's door it runs the briefing (interface_run 7) and returns 1 to fly the mission; 0 for the main menu
+0043c1c0	function	vr_draw	void (void)	The rooms' render hook: the movie's frame due, looping or arriving at its last; the crew; the label of the exit under the pointer, the news report's or the fish food's; the food falling; the pointer
+0043ba40	function	news_report	void (void)	The news report on the rooms' television: the scene of the next mission's number (%s.box, from a table on the stack) spoken over rel_tv_in_loop.bik, or b_tv_news_.bik on the Yamato, mission 1's in three parts; ends on Escape, either button or the speech's end
+00438d50	function	reliant_induction	int (void)	A new pilot's induction before mission 1's rooms: Enriquez's scenes (enr_intro.box to enr_outro.box) at the television, the locker, the simulator pod, the CD player, the ITAC and the television again, each over its movie, the ways between them played over the screen; Space or the speech's end moves on, Escape or the right button ends it. Returns the count of ways taken
+00439330	function	induction_draw	void (void)	reliant_induction's render hook: its movie's frame due, back to the second at its last
+004394d0	function	in_game_options	int (void)	The in-game options over the rooms, interface\ingameop.tga with interface\frntend7.spr: SAVE, LOAD, AUDIO, CONTROL DEVICES, VIDEO, BACK, MAIN MENU, QUIT and ABOUT STARLANCER. Returns 0 for BACK or Escape, 1 once a game is loaded, -1 for the main menu
+004398b0	function	in_game_options_draw	void (void)	in_game_options' render hook: the buttons and their labels, the item under the pointer lit, the panels' labels, ABOUT STARLANCER's box, the dialogs and the pointer
+0042a520	function	about_box	void (void)	ABOUT STARLANCER: reads interface\frntend2.spr and shows its box over in_game_options (about_open) until Escape or a click on OK, once the button comes up
+00437df0	function	vr_crew_pick	void (void)	Picks the crew the rooms show on the way to the briefing room's door, by the last mission's medal and whether it was won: a sprite set (%s.spr) and a line (%s.mp3) from the disc's archive, at random; on the Yamato a second from a list of three it goes round
+00437dd0	function	vr_timer	void __stdcall (uint id, uint message, uint user, uint unused1, uint unused2)	The rooms' timer, 15 times a second (timer_start): counts vr_timer_ticks up
+00461d80	function	speech_play	int __fastcall (SpeechHeader *file, uint flags, int rate, int volume)	speech_start on the first stream free, or -1 for none: the news report's and the induction's scenes
+0043efc0	function	itac	void (void)	The ITAC, which Use ITAC opens in the rooms (itac.cpp): its screens from inter\itac\, its fonts, sounds and movies
+0044f3d0	function	simulator_pod	void (void)	The simulator pod, which Enter Simulator Pod opens in the rooms: the simulator's missions 29 to 32, with inter\simpod\simgfx.spr and its movies
+004362f0	function	medal_display	void (void)	The locker, which Open Locker opens in the rooms: the pilot's medals and ribbons, with the lid's movies
+00437fc0	function	cd_player	void (void)	The CD player, which Use CD player opens in the rooms: a choice of the game's music (music\%s.wav), with cdplay.spr
+0042dab0	function	audio_screen	int (void)	Screen 3, the audio settings, which GAME OPTIONS and the in-game options' AUDIO open
+0042b690	function	controls_screen	int (void)	Screen 16, the control devices, which GAME OPTIONS and the in-game options' CONTROL DEVICES open
+0042e9b0	function	video_screen	int (void)	Screen 15, the video settings, which GAME OPTIONS and the in-game options' VIDEO open
+00431730	function	saved_games	int (void)	Screen 13, the saved games, which LOAD GAME and the in-game options' SAVE and LOAD open: to save to while 0x0051D5F4 is set, else to load from
+0051d478	data	vr_view	VrView *	The view the player is in, or on the way into
+0051d9e4	data	vr_phase	int	Where the view's movies stand: 1 settled, its loop or the way in's last frame, with the hotspots live; 2 on the way in
+00520298	data	vr_arrived	int	Set as the way in ends: the view's action or its loop next
+0051d7e8	data	vr_movie	void *	The movie the rooms, the news report and the induction play (HBINK)
+0051d9d8	data	vr_first_frame	void *	The pictures of the movie's first frame, put back as a loop goes round to its second
+0051d7c4	data	vr_screen	void *	The rooms' frame, 640 by 480 at 16 bits, which the movie is copied to (BinkCopyToBuffer)
+0051dab4	data	vr_copy_flags	int	The surface type the rooms' movie is copied in: 3 for a screen whose green is 0x3E0, 4 otherwise
+0051db34	data	vr_pointer_x	int	The rooms' pointer across, 320 as they open
+0051dacc	data	vr_pointer_y	int	The rooms' pointer down, 200 as they open
+0051d618	data	vr_pointer_shape	int	The rooms' pointer's shape: 0 the left arrow, 11 the pointer, 21 the right arrow, those between as it turns
+0051d7e4	data	vr_pointer_toward	int	The shape the rooms' pointer's place calls for, which vr_pointer_shape turns two toward on each tick
+00520244	data	vr_pointer_frame	int	The rooms' pointer's animation, 0 to 8
+00520184	data	vr_exit_under	int	The exit under the rooms' pointer, by its place in the view's exits, or -1
+00520264	data	vr_skipping	int	Set for the frame the pointer shows the skip's shape, before the way in jumps to its last frame
+0051d48c	data	vr_timer_ticks	int	vr_timer's count, 15 a second
+005d6c3c	data	vr_timer_seen	int	vr_timer_ticks as the rooms' loop last took it up
+0051d560	data	vr_hum_bank	void *	vrsnd.fat from the disc: the ship's hum, 4 on the Reliant and 5 on the Yamato, and the views' sounds
+0051d9fc	data	vr_steps_bank	void *	wlksmp.fat from the disc: the steps and doors around the rooms' places
+0051d548	data	vr_pointer_shapes	void *	interface\vrgfx.spr: the rooms' pointer
+0051d4e0	data	vr_frontend_shapes	void *	interface\frontend.spr, whose palette the rooms set
+0051dac0	data	fish_movie	int	Which of the fish tank's fourteen movies plays
+0051d4bc	data	fish_over_food	int	Set while the pointer rests on the fish tank's food
+0051d600	data	fish_food_ticks	int	The ticks the fish's food has fallen for, -1 while none falls
+0051d9cc	data	fish_shapes	void *	fish.spr from the disc: the fish's food falling and the tank's front
+004e8138	data	fish_movies	char *[14]	The fish tank's movies, in the order they play: move_a_ and the rest, each %s.bik
+0051d454	data	news_playing	short	Set while the news report plays in the rooms
+005202a4	data	in_game_options_open	int	Set while in_game_options is up
+0051d4e4	data	in_game_options_item	int	in_game_options' item under the pointer, or -1
+00520278	data	in_game_options_shapes	void *	interface\frntend7.spr while in_game_options is up
+0051db4c	data	about_open	int	Set while ABOUT STARLANCER's box is up
+0051d540	data	about_shapes	void *	interface\frntend2.spr while ABOUT STARLANCER's box is up
+0051da98	data	crew_shapes	void *	The sprite set of the crew member the rooms show on the way to the briefing room's door (vr_crew_pick)
+0051daa8	data	crew_line	void *	The crew member's line of speech, an MP3 file from the disc
+0051daa4	data	crew_showing	short	Set while the crew member shows over the way in
+0051d498	data	yamato_crew_shapes	void *	The Yamato's second crew member's sprite set
+0051d4a4	data	yamato_crew_showing	short	Set while the Yamato's second crew member shows
+005202f4	data	yamato_crew_next	int	The Yamato's second crew member next, 0 to 2, which vr_crew_pick goes round
+00506ad0	data	vr_reliant_start	VrView	The view the Reliant's rooms start in, the first of the Reliant's views
+0050b2b8	data	vr_yamato_start	VrView	The view the Yamato's rooms start in
+00506cb0	data	vr_reliant_pod_from_itac	VrView	The simulator pod, turned to from the ITAC, which WinMain opens the rooms in after most of a new pilot's inductions
+00506bf0	data	vr_reliant_pod_from_cd_player	VrView	The simulator pod, turned to from the CD player, which WinMain opens the rooms in after an induction that ended at the CD player
+0050967c	data	new_intro_name	char[14]	new_intro.bik, the new pilot's intro WinMain plays before mission 1's induction

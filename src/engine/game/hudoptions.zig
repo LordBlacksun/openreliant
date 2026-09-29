@@ -206,17 +206,8 @@ pub const PauseMenu = struct {
             }
             pause_menu.at = going;
         };
-        if (frame.version) |version| try writeVersion(ui, version);
+        if (frame.version) |version| try hud.drawVersion(ui.fonts.small, ui.gpa, ui.target, ui.screen, version);
         try ui.drawPointer(pause_menu.pointer);
-    }
-
-    /// OpenReliant's name and version, dimmed, right-aligned in the bottom right corner.
-    fn writeVersion(ui: menu.Ui, version: []const u8) Allocator.Error!void {
-        var buffer: [64]u8 = undefined;
-        const text = std.fmt.bufPrint(&buffer, "OpenReliant {s}", .{version}) catch version;
-        const height: i32 = @intCast(ui.fonts.small.font.header.height);
-        const at: [2]i32 = .{ ui.across(1) - ui.scaled(8), ui.down(1) - ui.scaled(8 + height) };
-        try ui.writeText(.small, at, text, menu.lit(menu.orange, 0.5), .right);
     }
 };
 

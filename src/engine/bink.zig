@@ -247,6 +247,25 @@ pub const Bink = struct {
         bink.frame_number = @min(bink.frame_number + 1, bink.frames);
     }
 
+    /// `BinkGoto`, at `now`: frame `number` next, due a frame from now, decoded from the frames
+    /// before it, which are decoded again unseen from the last key frame before it. The game goes
+    /// back so to a looping movie's second frame (`BINKGOTOQUICK`), first putting back the
+    /// pictures it kept of the first, and on to the last frame of a way in the player skips.
+    pub fn goto(bink: *Bink, number: u32, now: u64) Error!void {
+        const next = std.math.clamp(number, 1, bink.frames);
+        if (next > 1) {
+            const before = next - 2;
+            var from = before;
+            while (from > 0 and !(try bink.movie.frame(from)).keyframe) from -= 1;
+            for (from..before + 1) |index| {
+                const frame = try bink.movie.frame(index);
+                bink.picture = try bink.codec.picture(bink.video, frame.video);
+            }
+        }
+        bink.frame_number = next;
+        bink.start = (now + bink.rate.due(1)) -| bink.rate.due(next - 1);
+    }
+
     /// `BinkWait`: whether the frame `frame_number` names is not yet due at `now`, which it never
     /// is while paused. The first frame is due at once.
     pub fn wait(bink: Bink, now: u64) bool {
@@ -366,6 +385,16 @@ test Bink {
     try std.testing.expectEqual(3, bink.frame_number);
     try bink.doFrame(start + std.time.ns_per_s);
     try std.testing.expectEqual(48, bink.picture.?.y[0]);
+
+    // Back to the second frame: the first decoded again, unseen, and the second due a frame on.
+    const pictures = decoders.pictures;
+    const later = start + 2 * std.time.ns_per_s;
+    try bink.goto(2, later);
+    try std.testing.expectEqual(pictures + 1, decoders.pictures);
+    try std.testing.expectEqual(16, bink.picture.?.y[0]);
+    try std.testing.expectEqual(2, bink.frame_number);
+    try std.testing.expect(bink.wait(later + std.time.ns_per_s / 15 - 1));
+    try std.testing.expect(!bink.wait(later + std.time.ns_per_s / 15));
 }
 
 test "a movie's sound plays as a stream" {

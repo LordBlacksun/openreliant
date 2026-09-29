@@ -269,6 +269,7 @@ pub const MainMenu = struct {
             }
         }
         if (menu.confirm) |confirm| try confirm.draw(canvas, dialog_art);
+        try canvas.drawVersion();
         try canvas.shape(art, pointer.shape(), pointer.at);
         if (menu.developer) if (developer_font) |font| {
             var buffer: [16]u8 = undefined;

@@ -8,11 +8,11 @@ The screens the game shows outside a mission: the main menu, the pilots, the set
 
 [`genilib/interf.zig`](../../src/engine/genilib/interf.zig) runs the screens (`interface_run`) and opens what they draw with. [`game/interface/`](../../src/engine/game/interface) holds the screens: the front end's screen and pointer in [`canvas.zig`](../../src/engine/game/interface/canvas.zig), the main menu in [`main_menu.zig`](../../src/engine/game/interface/main_menu.zig), the pilot roster in [`pilot_roster.zig`](../../src/engine/game/interface/pilot_roster.zig), and the YES or NO dialog in [`dialog.zig`](../../src/engine/game/interface/dialog.zig). The picture behind the screens is `matmanager.Background` ([`game/matmanager.zig`](../../src/engine/game/matmanager.zig)). The loading screens are in [`game/xtrabits/loading.zig`](../../src/engine/game/xtrabits/loading.zig).
 
-OpenReliant opens in the front end unless `--mission` names a mission. A mission the front end starts flies at once, after the music's fade and the hangar's movie but for INSTANT ACTION's, and when it ends, OpenReliant plays the landing or a chapter's end ([Movies](movies.md#around-a-mission)) and goes back to the main menu; LEAVE MISSION goes back without them.
+OpenReliant opens in the front end unless `--mission` names a mission. The pilot roster's START GAME leads into the Reliant's rooms ([The Reliant's rooms](rooms.md)). A mission the front end or the rooms start flies at once, after the music's fade and the hangar's movie but for INSTANT ACTION's, and when it ends, OpenReliant plays the landing or a chapter's end ([Movies](movies.md#around-a-mission)) and goes back to the main menu; LEAVE MISSION goes back without them.
 
-Ported so far: the screen loop, the main menu, QUIT's dialog, INSTANT ACTION, the pilot roster with SET GAME DIFFICULTY, the loading screens, the intro and the transitions between the screens ported, and the movies around a mission ([Movies](movies.md)). Not yet:
+Ported so far: the screen loop, the main menu, QUIT's dialog, INSTANT ACTION, the pilot roster with SET GAME DIFFICULTY, the Reliant's rooms with a new pilot's induction, the news report and the in-game options, the loading screens, the intro and the transitions between the screens ported, and the movies around a mission ([Movies](movies.md)). Not yet:
 
-- The other screens ([#43](https://github.com/vdmkenny/openreliant/issues/43) maps them). Until the Reliant's rooms ([#398](https://github.com/vdmkenny/openreliant/issues/398)) and the briefing ([#73](https://github.com/vdmkenny/openreliant/issues/73)) are ported, the pilot roster's START GAME flies the campaign's first mission. MULTI PLAYER ([#404](https://github.com/vdmkenny/openreliant/issues/404)) and GAME OPTIONS ([#400](https://github.com/vdmkenny/openreliant/issues/400)) stay on the main menu, and LOAD GAME ([#75](https://github.com/vdmkenny/openreliant/issues/75)) on the pilot roster.
+- The other screens ([#43](https://github.com/vdmkenny/openreliant/issues/43) maps them). Until the briefing ([#73](https://github.com/vdmkenny/openreliant/issues/73)) is ported, the door of the rooms' briefing room flies the mission. MULTI PLAYER ([#404](https://github.com/vdmkenny/openreliant/issues/404)) and GAME OPTIONS ([#400](https://github.com/vdmkenny/openreliant/issues/400)) stay on the main menu, and LOAD GAME ([#75](https://github.com/vdmkenny/openreliant/issues/75)) on the pilot roster.
 - The debriefing, which a mission's end goes to ([#73](https://github.com/vdmkenny/openreliant/issues/73)).
 - The movies between the screens not yet ported, which come with their screens ([Movies](movies.md)).
 
@@ -22,6 +22,7 @@ Ported so far: the screen loop, the main menu, QUIT's dialog, INSTANT ACTION, th
 
 - The game switches the display to 640 by 480 for the front end. OpenReliant keeps the window as it is, and draws the front end as large as fits in it, centred, so that it keeps its shape.
 - The pointer is where the system's is over the window, rather than DirectInput's movements added up.
+- OpenReliant's version is written, dimmed, in the window's bottom right corner, as the pause menu writes it ([Pause menu](pause-menu.md)): on the front end's screens, the loading screens and the Reliant's rooms ([The Reliant's rooms](rooms.md)).
 
 ## The screens
 
@@ -43,7 +44,7 @@ Any other number returns 3. **Unknown:** what selects screen 8: `WinMain` plays 
 
 | Returned | Meaning |
 |---|---|
-| 1 | Fly the mission without its briefing |
+| 1 | The single-player campaign: the Reliant's rooms before the mission ([The Reliant's rooms](rooms.md)), or, where `skip_briefing` is set, the mission without its briefing |
 | 2 | Fly the mission |
 | 3 | Quit |
 | 4, 5 | Set the display up again, then the front end again |
@@ -60,7 +61,7 @@ The front end writes with `hud_text` and `hud_text_wrapped` through `interface_t
 |---|---|
 | `0x40BCFF` | The main menu's labels, the pilot roster's, and the dialogs |
 | `0xFDB951` | A panel's labels under the pointer |
-| `0xFFFFFF` | On the pilot roster, the call sign while it is typed, the list's call signs, and a button's label under the pointer |
+| `0xFFFFFF` | On the pilot roster, the call sign while it is typed, the list's call signs, and a button's label under the pointer; in the in-game options, a button's label under the pointer |
 | `0xFF0000` | The developers' text |
 
 ## The pointer
@@ -247,5 +248,8 @@ frames follow each other at once. Meanwhile the system's events wait for the loo
 Not ported: the players' names in a network session
 ([#404](https://github.com/vdmkenny/openreliant/issues/404)).
 
-**Improvement:** before a mission OpenReliant shows the largest picture, `sl_splash1024.tga`,
-whatever the window's width. `--original` picks it by the width, as the game does.
+**Improvements:**
+
+- Before a mission OpenReliant shows the largest picture, `sl_splash1024.tga`, whatever the
+  window's width. `--original` picks it by the width, as the game does.
+- OpenReliant's version is written in the window's corner, as on the front end's screens.

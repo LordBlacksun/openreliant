@@ -6,7 +6,7 @@
 //! `renderer_load` plays the intro (`intro`); `WinMain` plays the splash's way into the main menu
 //! (`splash_to_menu`) before it opens the front end, and the hangar's movie before each mission it
 //! flies (`Hangar`); and the front end's screens play their transitions as they lead from one to
-//! another.
+//! another. The Reliant's rooms play theirs in loops of their own (`Kind.screen`).
 //!
 //! A pass of the loop (`0x004AB7B2`) runs the message pump and reads the keyboard and the pointer;
 //! Escape, the pointer's right button, the movie's end or the game quitting ends it. Otherwise the
@@ -21,6 +21,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const bink = @import("../../bink.zig");
+const files = @import("../../files.zig");
 const input = @import("../../input.zig");
 const mss = @import("../../mss.zig");
 const hud = @import("../hud.zig");
@@ -29,6 +30,8 @@ const disc = @import("../interface/disc.zig");
 const srtexture = @import("../../surrender/surrenderlib/srtexture.zig");
 const device = @import("../../surrender/srd3d/device.zig");
 const container = @import("../../../formats/bink.zig");
+
+const log = std.log.scoped(.movies);
 
 /// The movies `renderer_load` plays as the renderer first starts (`0x004AB4D5` on), before its
 /// loading screens.
@@ -70,19 +73,24 @@ pub const Kind = enum {
     /// (`hog_file_read`) and opened in memory (`BINKFROMMEMORY`), at the movie's rate, over the
     /// landing's last frame. It plays and ends as the landing does.
     thread,
+    /// The movies of a screen that plays them in its own loop, which decides what ends them and
+    /// what loops them: the rooms' (`vr_rooms`), a new pilot's induction's (`reliant_induction`)
+    /// and the news report's (`news_report`). From the disc's archive, at 15 frames a second,
+    /// whatever the settings.
+    screen,
 
     /// Where it is read from.
     pub fn source(kind: Kind) Source {
         return switch (kind) {
             .cleared, .over_screen, .thread => .folder,
-            .cleared_from_disc, .over_screen_from_disc, .landing => .disc,
+            .cleared_from_disc, .over_screen_from_disc, .landing, .screen => .disc,
         };
     }
 
     /// The rate it plays at in place of its own (`BinkSetFrameRate` with `BINKFRAMERATE`).
     pub fn rate(kind: Kind) ?bink.Rate {
         return switch (kind) {
-            .over_screen, .landing => transition_rate,
+            .over_screen, .landing, .screen => transition_rate,
             .cleared, .cleared_from_disc, .over_screen_from_disc, .thread => null,
         };
     }
@@ -94,7 +102,7 @@ pub const Kind = enum {
         return switch (kind) {
             .cleared, .cleared_from_disc => transitions or hardware,
             .over_screen, .over_screen_from_disc => transitions,
-            .landing, .thread => true,
+            .landing, .thread, .screen => true,
         };
     }
 
@@ -102,7 +110,7 @@ pub const Kind = enum {
     pub fn rightButtonEnds(kind: Kind) bool {
         return switch (kind) {
             .cleared, .over_screen, .cleared_from_disc, .over_screen_from_disc => true,
-            .landing, .thread => false,
+            .landing, .thread, .screen => false,
         };
     }
 };
@@ -200,6 +208,31 @@ pub const Player = struct {
         return .{ .gpa = gpa, .kind = kind, .bink = movie, .picture = picture, .pixels = rgba };
     }
 
+    /// The movie `name`, read from where `kind` reads it, the game's folder or the disc's archive
+    /// open (`archive`, whose folder is the game's), and opened to play as `open` has it; null
+    /// where it is left out, which the log says.
+    pub fn load(gpa: Allocator, codec: bink.Codec, archive: *const disc.Disc, name: []const u8, kind: Kind, sound: ?mss.Driver, look: bink.Look) ?Player {
+        const source = kind.source();
+        const found = switch (source) {
+            .folder => files.readFile(archive.io, gpa, archive.directory, name, .limited(files.max_file_size)),
+            .disc => archive.readStored(gpa, name),
+        } catch |err| {
+            log.warn("the movie {s} is left out: {s}", .{ name, @errorName(err) });
+            return null;
+        };
+        const file = found orelse {
+            log.warn("the movie {s} is left out: {s}", .{ name, switch (source) {
+                .folder => "the game's folder has none",
+                .disc => "no disc's archive open holds it",
+            } });
+            return null;
+        };
+        return open(gpa, codec, file, kind, sound, look) catch |err| {
+            log.warn("the movie {s} is left out: {s}", .{ name, @errorName(err) });
+            return null;
+        };
+    }
+
     pub fn close(player: *Player) void {
         player.picture.deinit(player.gpa);
         player.bink.close();
@@ -216,13 +249,23 @@ pub const Player = struct {
         return null;
     }
 
-    /// `bink_frame` (`0x004AC510`): the frame due decoded and copied into the screen, then the next
-    /// one next, or the movie ended at its last.
+    /// `bink_frame` (`0x004AC510`): the frame due shown, then the next one next, or the movie
+    /// ended at its last.
     fn play(player: *Player, now: u64) bink.Error!void {
+        try player.show(now);
+        if (player.atEnd()) player.ended = true else player.bink.nextFrame();
+    }
+
+    /// The frame due decoded and copied into the picture (`BinkDoFrame`, `BinkCopyToBuffer`).
+    pub fn show(player: *Player, now: u64) bink.Error!void {
         try player.bink.doFrame(now);
         player.bink.copyToBuffer(player.pixels, player.bink.width * 4, .{ 0, 0 });
         player.picture.changed = true;
-        if (player.bink.frame_number == player.bink.frames) player.ended = true else player.bink.nextFrame();
+    }
+
+    /// Whether the frame shown last is the movie's last.
+    pub fn atEnd(player: Player) bool {
+        return player.bink.frame_number == player.bink.frames;
     }
 
     /// Draws the frame showing on `target`, a window `window` pixels across and down, as large as
