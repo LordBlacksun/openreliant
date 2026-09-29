@@ -81,7 +81,7 @@ pub const PlayTime = struct {
 /// mission while it is `playing`. An ejection is `ejecting` until the pilot's pod has drifted its
 /// time (`order_eject`, `0x00415C50`), when the mission's odds (`SetRescueProbabilities`; by
 /// default always picked up) settle it: the pilot killed, which counts as `destroyed`, picked up by
-/// a nanny ship, or picked up by the enemy. The other endings are not known yet.
+/// a nanny ship, or picked up by the enemy. The others are not known yet.
 pub const Ending = enum(u8) {
     playing = 0,
     /// The player's ship destroyed, or the ejected pilot killed.
@@ -90,6 +90,12 @@ pub const Ending = enum(u8) {
     rescued = 2,
     /// The ejected pilot picked up by the enemy (type `0x46`).
     captured = 3,
+    /// The mission left from the pause menu (LEAVE MISSION, `mission_paused_frame`, `0x00492149`).
+    left = 4,
+    /// The script rated the mission a total failure, which `mission_end_record` settles as the
+    /// mission ends (`0x00475CE5`). **Not ported:** the mission's end
+    /// ([#74](https://github.com/vdmkenny/openreliant/issues/74)).
+    total_failure = 5,
     /// The player's ship sent home for destroying a friend (`0x00474B40`), which gives it Friendly
     /// Fire, order 117; its landing begins at once (`ailand`).
     friendly_fire = 6,
@@ -163,7 +169,8 @@ pub const ticks_per_second = 100;
 pub const Clock = struct {
     /// `timer_ticks` (`0x005DB8E8`): every tick of the timer, the paused ones included.
     timer_ticks: u32 = 0,
-    /// `game_ticks` (`0x00565064`): ticks since the mission started, the paused ones aside.
+    /// `game_ticks` (`0x00565064`): the timer's ticks, the paused ones aside, since the sound's
+    /// start in the game (`sound_init`), and since the clock's in OpenReliant (`start`).
     game_ticks: u32 = 0,
     /// `mission_ticks` (`0x00587CC4`): ticks `game_tick` has run, the paused ones aside.
     mission_ticks: i32 = 0,
@@ -195,8 +202,10 @@ pub const Clock = struct {
         return @intCast(@max(clock.mission_ticks, 0));
     }
 
-    /// Zeroes the clocks and takes the platform's count of hundredths of a second as their start,
-    /// as `mission_run` zeroes them before it loops.
+    /// Zeroes the clocks and takes the platform's count of hundredths of a second as their start.
+    /// `mission_run` zeroes the mission's before it loops, `mission_ticks`, `frame_start`,
+    /// `frame_duration` and the play time; the timer's, `timer_ticks` and `game_ticks`, run on in
+    /// the game from the sound's start (`sound_init`).
     pub fn start(clock: *Clock, now: u64) void {
         clock.* = .{ .timer_at = now };
     }
@@ -1506,7 +1515,7 @@ pub const Start = struct {
 /// OpenReliant's camera keeps its own place for those views, and nothing reads the marker.
 const camera_marker_at: math.Vector = .{ 0, 0, -8000 };
 
-/// A mission's start: the loading before `mission_start` (`0x004AD0A0`) and `mission_start`
+/// A mission's start: the loading before it (`mission_load`, `0x004AD0A0`) and `mission_start`
 /// (`0x004934F0`), for the mission `image`, made in `gpa`, which the mission then owns, played as
 /// mission `number`. Returns the mission loaded for play, which the caller destroys once it ends.
 ///

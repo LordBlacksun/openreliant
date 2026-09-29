@@ -8,9 +8,9 @@ The screens the game shows outside a mission: the main menu, the pilots, the set
 
 [`genilib/interf.zig`](../../src/engine/genilib/interf.zig) runs the screens (`interface_run`) and opens what they draw with. [`game/interface/`](../../src/engine/game/interface) holds the screens: the front end's screen and pointer in [`canvas.zig`](../../src/engine/game/interface/canvas.zig), the main menu in [`main_menu.zig`](../../src/engine/game/interface/main_menu.zig), the pilot roster in [`pilot_roster.zig`](../../src/engine/game/interface/pilot_roster.zig), and the YES or NO dialog in [`dialog.zig`](../../src/engine/game/interface/dialog.zig). The picture behind the screens is `matmanager.Background` ([`game/matmanager.zig`](../../src/engine/game/matmanager.zig)). The loading screens are in [`game/xtrabits/loading.zig`](../../src/engine/game/xtrabits/loading.zig).
 
-OpenReliant opens in the front end unless `--mission` names a mission. A mission the front end starts flies at once, and when it ends, or LEAVE MISSION leaves it, OpenReliant goes back to the main menu.
+OpenReliant opens in the front end unless `--mission` names a mission. A mission the front end starts flies at once, after the music's fade and the hangar's movie but for INSTANT ACTION's, and when it ends, OpenReliant plays the landing or a chapter's end ([Movies](movies.md#around-a-mission)) and goes back to the main menu; LEAVE MISSION goes back without them.
 
-Ported so far: the screen loop, the main menu, QUIT's dialog, INSTANT ACTION, the pilot roster with SET GAME DIFFICULTY, the loading screens, and the intro and the transitions between the screens ported ([Movies](movies.md)). Not yet:
+Ported so far: the screen loop, the main menu, QUIT's dialog, INSTANT ACTION, the pilot roster with SET GAME DIFFICULTY, the loading screens, the intro and the transitions between the screens ported, and the movies around a mission ([Movies](movies.md)). Not yet:
 
 - The other screens ([#43](https://github.com/vdmkenny/openreliant/issues/43) maps them). Until the Reliant's rooms ([#398](https://github.com/vdmkenny/openreliant/issues/398)) and the briefing ([#73](https://github.com/vdmkenny/openreliant/issues/73)) are ported, the pilot roster's START GAME flies the campaign's first mission. MULTI PLAYER ([#404](https://github.com/vdmkenny/openreliant/issues/404)) and GAME OPTIONS ([#400](https://github.com/vdmkenny/openreliant/issues/400)) stay on the main menu, and LOAD GAME ([#75](https://github.com/vdmkenny/openreliant/issues/75)) on the pilot roster.
 - The debriefing, which a mission's end goes to ([#73](https://github.com/vdmkenny/openreliant/issues/73)).
@@ -32,14 +32,14 @@ Ported so far: the screen loop, the main menu, QUIT's dialog, INSTANT ACTION, th
 | 0, the main menu | `main_menu` (`0x00428B60`) | [#396](https://github.com/vdmkenny/openreliant/issues/396) |
 | 1, GAME OPTIONS; 3, audio; 15, video; 16, controls | `0x0042A620`, `0x0042DAB0`, `0x0042E9B0`, `0x0042B690` | [#400](https://github.com/vdmkenny/openreliant/issues/400) |
 | 7, the briefing and the debriefing | `0x00437010` | [#73](https://github.com/vdmkenny/openreliant/issues/73) |
-| 8, the landing movie | `0x0043CA30` | [#403](https://github.com/vdmkenny/openreliant/issues/403) |
+| 8, the landing movie: a second's wait, then `play_landing_movie` ([Movies](movies.md#the-landing)), and 3 | `landing_movie_screen` (`0x0043CA30`) | |
 | 10 and 11, the multiplayer sessions | `0x0043CA50`, with `0x0051D54C` set or clear | [#404](https://github.com/vdmkenny/openreliant/issues/404) |
 | 12, the pilot roster | `0x00430490` | [#397](https://github.com/vdmkenny/openreliant/issues/397) |
 | 13, the saved games | `0x00431730` | [#75](https://github.com/vdmkenny/openreliant/issues/75) |
 | 14, the multiplayer connection | `0x00432FC0` | [#404](https://github.com/vdmkenny/openreliant/issues/404) |
 | 17 and 18, a session's loadout | `0x0044B950`, with `0x0051D54C` set or clear | [#404](https://github.com/vdmkenny/openreliant/issues/404) |
 
-Any other number returns 3. What `interface_run` returns tells WinMain what to do:
+Any other number returns 3. **Unknown:** what selects screen 8: `WinMain` plays the landing itself. What `interface_run` returns tells WinMain what to do:
 
 | Returned | Meaning |
 |---|---|

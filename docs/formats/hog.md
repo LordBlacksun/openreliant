@@ -61,8 +61,12 @@ record, rather than trusting the count.
 | `resource.hog` | Almost every member | Models, sprites, images, missions, stat tables, sound banks, fonts |
 | `pilots.hog` | No | `.fm8` face films ([face films](fm8.md)) |
 | `msspeech.hog` | No | Speech, one member per line, no extensions ([speech files](speech.md)) |
-| `CD1.HOG` | A few members | Bink video, MP3 music, sprites |
-| `CD2.HOG` | No | Bink video, MP3 music, sprites |
+| `CD1.HOG` | A few sprites | Bink video, briefings (`.box`), the debriefings' MP3 lines, sprites, sound banks |
+| `CD2.HOG` | No | Bink video, briefings (`.box`), the debriefings' MP3 lines, sprites, sound banks |
+
+The game opens the discs' archives one at a time, as it needs them (`cd_hog_open`,
+[Movies](../engine/movies.md#the-discs-archives)), and Bink reads a movie from one as it is
+stored (`hog_locate`).
 
 `resource.hog`'s members by extension: `.shp` models, `.spr` sprites, `.tga` images, `.dte`
 missions, `.fat` [sound banks](fat.md), `.fnt` [fonts](fnt.md), `.ccb` colour tables, and five `.bin` files:

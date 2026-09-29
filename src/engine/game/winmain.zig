@@ -21,6 +21,7 @@ const CallSigns = pilot_roster.CallSigns;
 const profile = @import("../profile.zig");
 const Profile = profile.Profile;
 const Sound = hog_snd.Sound;
+const Ending = main.Ending;
 
 /// The window's activation, as the pump follows it.
 pub const App = struct {
@@ -164,10 +165,12 @@ pub fn missionPath(buffer: *[mission_path_size]u8, number: u16, second_part: boo
 const file_start = "mission";
 const file_end = ".dte";
 const path_start = ".\\missions\\" ++ file_start;
-/// Mission 25, whose second part is a file of its own (`0x00509728`), and mission 3, whose
+/// Mission 25, whose second part is a file of its own (`0x00509728`), and the number `WinMain` takes
+/// for that part, which it makes mission 25's second part (`0x004AA43E`); and mission 3, whose
 /// multiplayer game is (`0x0050970C`).
-const second_part_mission = 25;
-const second_part_path = path_start ++ "251" ++ file_end;
+pub const second_part_mission = 25;
+pub const second_part_number = 251;
+const second_part_path = path_start ++ std.fmt.comptimePrint("{d}", .{second_part_number}) ++ file_end;
 const multiplayer_mission = 3;
 const multiplayer_path = path_start ++ "311" ++ file_end;
 
@@ -189,6 +192,57 @@ test missionNumber {
     // Every name `missionPath` makes reads back.
     var buffer: [mission_path_size]u8 = undefined;
     try std.testing.expectEqual(25, missionNumber(std.fs.path.basenameWindows(missionPath(&buffer, 25, false, false))));
+}
+
+/// What `WinMain` does before the hangar's movie of a mission it flies (`0x004AA3B2` on, and
+/// `0x004A9BE2` on after a briefing): the music starts fading out by `launch_fade_step` from the
+/// timer's count `game_ticks` (`music_fade_out`), and the voices stop (`sound_pause_all`). It then
+/// waits `launch_wait`, in which the timer fades the music out. **Unverified:** that the call it
+/// waits with, a second's worth of milliseconds its one argument, is `Sleep`, whose import the
+/// executable's protection hides.
+pub fn launchFade(sound: *Sound, game_ticks: u32) void {
+    sound.fadeMusic(launch_fade_step, game_ticks);
+    sound.pauseAll();
+}
+
+pub const launch_fade_step = 15;
+pub const launch_wait = std.time.ns_per_s;
+
+test launchFade {
+    const mss = @import("../mss.zig");
+    const fat = @import("../../formats/fat.zig");
+    var mixer: mss.Mixer = .init(22050);
+    const driver = mixer.driver();
+    var sound: Sound = undefined;
+    sound.init(driver, 2, null);
+    const bytes = comptime hog_snd.testing.bank(2);
+    const v = sound.play(try fat.Bank.parse(&bytes), 1, hog_snd.loudest, hog_snd.forever, hog_snd.centre, hog_snd.own_pitch).?;
+    // Without music, only the voices stop, where they are.
+    launchFade(&sound, 300);
+    try std.testing.expect(!sound.music.fading);
+    try std.testing.expect(sound.paused[v]);
+    try std.testing.expectEqual(mss.Status.stopped, driver.sampleStatus(sound.voices[v].sample));
+}
+
+/// Whether `WinMain` plays the landing (`play_landing_movie`, `xtrabits.landing`) after a mission
+/// it flew, number `mission`, ended as `ending` (`0x004AA4B2` on): not after the player's ship was
+/// destroyed, its pilot captured or the mission left, nor after mission 25's first part, which leads
+/// into its second (`second_part`); and not where a lobby launched the game (`lobby_launch`,
+/// `0x00595C64`), as OpenReliant never is.
+pub fn landsAfter(ending: Ending, mission: u16, second_part: bool) bool {
+    return switch (ending) {
+        .destroyed, .captured, .left => false,
+        else => mission != second_part_mission or second_part,
+    };
+}
+
+test landsAfter {
+    try std.testing.expect(landsAfter(.playing, 1, false));
+    try std.testing.expect(landsAfter(.rescued, 1, false));
+    try std.testing.expect(!landsAfter(.destroyed, 1, false));
+    try std.testing.expect(!landsAfter(.left, 1, false));
+    try std.testing.expect(!landsAfter(.playing, 25, false));
+    try std.testing.expect(landsAfter(.playing, 25, true));
 }
 
 /// What `WinMain` does before each single-player mission (`0x004A99CC`): puts back the pilot's

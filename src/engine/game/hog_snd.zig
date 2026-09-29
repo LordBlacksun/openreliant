@@ -59,6 +59,10 @@ pub const buffered_sounds = 18;
 /// The ticks between the fades' steps (`tick_timer`).
 const fade_ticks = 5;
 
+/// The step `music_play` fades the music playing out by, before the piece it queues
+/// (`0x00482C00`).
+const queued_fade_step = 5;
+
 /// The priority `sound_play` starts its search for the lowest from, above any a bank gives (an
 /// immediate in `sound_play`).
 const priority_ceiling = 9999;
@@ -804,19 +808,30 @@ pub const Sound = struct {
 
     // --- Music -----------------------------------------------------------------------------------
 
+    /// When a piece `playMusic` plays starts.
+    pub const When = union(enum) {
+        /// At once, closing what was playing.
+        now,
+        /// Once the music playing has faded out, which starts to fade at the timer's count given
+        /// (`fadeMusic`).
+        after_fade: u32,
+    };
+
     /// `music_play` (`0x00482A80`): plays the file at `path`, `loops` times (0 for ever) at
-    /// `level`, now, closing what was playing; or, with `now` false, once the music playing has
-    /// faded out. A piece the loop table names loops back to its own point rather than to the
-    /// start.
-    pub fn playMusic(sound: *Sound, path: []const u8, loops: u32, level: i32, now: bool) void {
+    /// `level`, when `when` has it. A piece the loop table names loops back to its own point
+    /// rather than to the start.
+    pub fn playMusic(sound: *Sound, path: []const u8, loops: u32, level: i32, when: When) void {
         const driver = sound.driver orelse return;
-        if (!now) {
-            var queued: Music.Queued = .{ .loops = loops, .level = level };
-            queued.path_len = @min(path.len, queued.path.len);
-            @memcpy(queued.path[0..queued.path_len], path[0..queued.path_len]);
-            sound.music.queued = queued;
-            sound.fadeMusic(fade_ticks);
-            return;
+        switch (when) {
+            .now => {},
+            .after_fade => |game_ticks| {
+                var queued: Music.Queued = .{ .loops = loops, .level = level };
+                queued.path_len = @min(path.len, queued.path.len);
+                @memcpy(queued.path[0..queued.path_len], path[0..queued.path_len]);
+                sound.music.queued = queued;
+                sound.fadeMusic(queued_fade_step, game_ticks);
+                return;
+            },
         }
         sound.closeMusic();
         sound.music.fading = false;
@@ -859,14 +874,16 @@ pub const Sound = struct {
         const queued = sound.music.queued orelse return;
         if (sound.musicPlaying()) return;
         sound.music.queued = null;
-        sound.playMusic(queued.path[0..queued.path_len], queued.loops, queued.level, true);
+        sound.playMusic(queued.path[0..queued.path_len], queued.loops, queued.level, .now);
     }
 
-    /// `music_fade_out` (`0x00482960`): the music fades by `step` every five ticks until it stops.
-    pub fn fadeMusic(sound: *Sound, step: i32) void {
+    /// `music_fade_out` (`0x00482960`): the music fades by `step` every five ticks from
+    /// `game_ticks`, the timer's count now, until it stops.
+    pub fn fadeMusic(sound: *Sound, step: i32, game_ticks: u32) void {
         if (sound.music.stream == null) return;
         sound.music.fading = true;
         sound.music.fade_step = step;
+        sound.faded_at = game_ticks;
     }
 
     /// `music_playing` (`0x00482940`).
@@ -1149,11 +1166,12 @@ test "Sound.playMusic queues a piece until the music has stopped" {
     sound.init(mixer.driver(), 2, .{ .gpa = gpa, .io = io, .dir = tmp.dir });
     defer sound.closeMusic();
 
-    sound.playMusic("music\\one.wav", forever, loudest, true);
+    sound.playMusic("music\\one.wav", forever, loudest, .now);
     try std.testing.expect(sound.musicPlaying());
     // Queued, the next piece waits while the music playing fades out.
-    sound.playMusic("music\\two.wav", once, 100, false);
+    sound.playMusic("music\\two.wav", once, 100, .{ .after_fade = 40 });
     try std.testing.expect(sound.music.fading);
+    try std.testing.expectEqual(40, sound.faded_at);
     const queued = sound.music.queued.?;
     try std.testing.expectEqualStrings("music\\two.wav", queued.path[0..queued.path_len]);
     sound.updateMusic();
@@ -1164,6 +1182,33 @@ test "Sound.playMusic queues a piece until the music has stopped" {
     try std.testing.expectEqual(null, sound.music.queued);
     try std.testing.expect(sound.musicPlaying() and !sound.music.fading);
     try std.testing.expectEqual(100, sound.music.level);
+}
+
+test "Sound.fadeMusic fades the music out from where it starts" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{ .iterate = true });
+    defer tmp.cleanup();
+    try tmp.dir.createDirPath(io, "music");
+    try tmp.dir.writeFile(io, .{ .sub_path = "music/one.wav", .data = testing.sound_file });
+    var mixer: mss.Mixer = .init(22050);
+    var sound: Sound = undefined;
+    sound.init(mixer.driver(), 2, .{ .gpa = gpa, .io = io, .dir = tmp.dir });
+    defer sound.closeMusic();
+
+    sound.playMusic("music\\one.wav", forever, loudest, .now);
+    // The fade counts from its own start, whatever the last fade left.
+    sound.faded_at = 50_000;
+    sound.fadeMusic(15, 100);
+    sound.timerTick(105);
+    try std.testing.expectEqual(loudest, sound.music.level);
+    sound.timerTick(106);
+    try std.testing.expectEqual(loudest - 15, sound.music.level);
+    // Past nothing, the stream closes.
+    var ticks: u32 = 106;
+    while (sound.music.stream != null and ticks < 200) : (ticks += 6) sound.timerTick(ticks);
+    try std.testing.expectEqual(null, sound.music.stream);
+    try std.testing.expect(!sound.music.fading);
 }
 
 test tickTimer {

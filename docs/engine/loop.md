@@ -4,15 +4,15 @@ How the payload paces a mission: a timer ticks 100 times a second, the loop runs
 
 ## Ticks
 
-`tick_timer` (`0x004827C0`) runs 100 times a second on a periodic multimedia timer created by `timer_start` (`0x004A70F0`).
+`tick_timer` (`0x004827C0`) runs 100 times a second on a periodic multimedia timer created by `timer_start` (`0x004A70F0`), which `sound_init` sets up as the game starts, so that it runs in the front end as well as in a mission.
 
-- Unless the game is paused (indicated by `paused`, `0x57E04C`), it advances `game_ticks` (`0x565064`) and the play time counters: ticks, seconds, minutes and hours at `0x565070` to `0x565076`. The play time rolls a second over after 101 ticks.
+- Unless the game is paused (indicated by `paused`, `0x57E04C`), it advances `game_ticks` (`0x565064`), which counts from `sound_init` on, and the play time counters: ticks, seconds, minutes and hours at `0x565070` to `0x565076`. The play time rolls a second over after 101 ticks.
 - `game_tick` also counts active ticks in `mission_ticks` (`0x587CC4`), which stops while the game is paused.
 - The [script clock](script-vm.md#the-clock-and-timers) runs on its own timer once a second and also stops while paused.
 
 ## The loop
 
-`mission_run` (`0x00494040`) resets the clocks to zero, then loops:
+`mission_run` (`0x00494040`) sets the mission's clocks to zero, `mission_ticks`, `frame_start`, `frame_duration` and the play time counters, then loops:
 
 - Each pass runs `game_tick` (`0x00477850`) once for each tick of `game_ticks` accumulated since the previous pass.
 - Unless the game is paused, it then executes the frame work, `mission_frame` (`0x004924B0`). The simulation advances at a fixed rate regardless of display frame rate.
@@ -30,7 +30,7 @@ The rates and speeds of the [flight model](objects.md#motion) are therefore meas
 
 ## Porting
 
-[`game/main.zig`](../../src/engine/game/main.zig) holds the clocks as `Clock`, with `frameBegin`, `frameReset`, `nextTick`, and `runTicks` for `mission_run` pacing (one game tick per timer tick). The ticking functions live in their respective files: `hog_snd.tickTimer` for `tick_timer` logic, and `gameobj.gameTick` and `gameobj.simulationStep`.
+[`game/main.zig`](../../src/engine/game/main.zig) holds the clocks as `Clock`, with `frameBegin`, `frameReset`, `nextTick`, and `runTicks` for `mission_run` pacing (one game tick per timer tick). The ticking functions live in their respective files: `hog_snd.tickTimer` for `tick_timer` logic, and `gameobj.gameTick` and `gameobj.simulationStep`. OpenReliant runs the timer in a mission, and through the second before the hangar's movie ([Movies](movies.md#the-hangar)), and `Clock.start` sets `timer_ticks` and `game_ticks` to zero as well for each; the game's run on from `sound_init`.
 
 **Improvement:** OpenReliant has no periodic timer. `advanceTo` takes the platform's monotonic count of hundredths of a second, and ticks come from the difference between counts rather than frame durations, so clocks keep to that count and nothing accumulates. The frame rate is decoupled from the tick rate in both directions: a frame shorter than 1/100 second runs no tick, a frame spanning several runs all of them in catchup, and a second of play is always 100 ticks and 25 simulation steps regardless of display refresh rate.
 

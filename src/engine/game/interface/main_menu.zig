@@ -128,6 +128,13 @@ pub const Flight = struct {
     ship: ?u8 = null,
     briefing: bool = false,
     simulator: create.Simulator = .{},
+
+    /// Whether `WinMain` flies it, with the hangar's movie before it and the landing after
+    /// (`xtrabits.movie.Hangar`, `xtrabits.landing`): every flight but INSTANT ACTION's, which the
+    /// main menu flies itself.
+    pub fn byWinMain(flight: Flight) bool {
+        return !flight.simulator.main_menu;
+    }
 };
 
 /// INSTANT ACTION (`0x0042905B` to `0x004290E4`): mission 29 in a Grendel, ship type 2, in the
@@ -169,7 +176,7 @@ pub const MainMenu = struct {
         menu.under = null;
         menu.confirm = null;
         pointer.at = .{ 320, 200 };
-        if (sound) |playing| if (!playing.musicPlaying()) playing.playMusic(music_name, 0, music_level, true);
+        if (sound) |playing| if (!playing.musicPlaying()) playing.playMusic(music_name, 0, music_level, .now);
     }
 
     /// A pass of `main_menu`'s loop: Escape, or QUIT, asks whether to quit, and while the
@@ -335,4 +342,6 @@ test "the developers' code and keys" {
     keyboard.down[@intFromEnum(input.Key.f3)] = true;
     const flight = menu.frame(.{ .pointer = .{}, .keyboard = &keyboard }).?.fly;
     try std.testing.expectEqual(Flight{ .mission = 15, .ship = 2 }, flight);
+    try std.testing.expect(flight.byWinMain());
+    try std.testing.expect(!instant_action.byWinMain());
 }

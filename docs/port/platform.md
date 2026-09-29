@@ -107,7 +107,7 @@ A Zig built for Intel Macs runs under Rosetta on Apple silicon and builds for In
 2. It copies disc 1's archive, `GAME/CD1.HOG`, next to them as `CD1.HOG`.
 3. It copies disc 2's archive, `GAME/CD2.HOG`, as `CD2.HOG`.
 
-The result is the directory `openreliant` runs from, and it is the same on every system. The discs' archives hold the videos, the music and the later missions. `make game` uses the installer to create `game/install`. For user walkthroughs, see [User guide: Installation](../guide/installation.md).
+The result is the directory `openreliant` runs from, and it is the same on every system. The discs' archives hold the movies, the briefings (`.box`) and the debriefings' lines (`.mp3`), with the sprites and the sound banks of the screens that show them. `make game` uses the installer to create `game/install`. For user walkthroughs, see [User guide: Installation](../guide/installation.md).
 
 A disc can be a disc image, raw (`.bin`) or cooked (`.iso`), which is read with the project's own readers ([Disc images](../formats/disc-images.md)), or a folder with the disc's files, which is how a mounted disc appears. `--from` names one, and is given once for each disc, in either order. File names on a disc are matched case-insensitively, as on Windows, because Linux shows discs without Joliet names, like StarLancer's, in lower case. The files copied from the discs get upper-case names, as on the discs, so the engine finds `LANGUAGE.DLL` on every system.
 
@@ -135,7 +135,7 @@ With disc 1 in more than one drive, a known release is selected over an unknown 
 
 The install halts if a filename in the cabinet would extract outside the target directory. Once disc 1 is installed, the installer verifies that startup files needed by the engine are present, and reports the first missing file.
 
-The original game reads its paths from the registry key `HKLM\Software\Microsoft\Microsoft Games\Starlancer\1.0` (`install_paths_read`). For a full install (`InstallType` 3) or when the key is absent, it opens `cd1.hog` and `cd2.hog` from the installation directory (`cd_hog_open`) rather than from the CD in the drive.
+The original game reads its paths from the registry key `HKLM\Software\Microsoft\Microsoft Games\Starlancer\1.0` (`install_paths_read`). For a full install (`InstallType` 3) or when the key is absent, it opens `cd1.hog` and `cd2.hog` from the installation directory (`cd_hog_open`) rather than from the CD in the drive. OpenReliant reads them as a full install does, from the game's folder ([Movies](../engine/movies.md#the-discs-archives)).
 
 The cabinet is unpacked with [libarchive](https://libarchive.org), which [`deps/libarchive`](../../deps/libarchive) builds from source for the target, using the build script of the [allyourcodebase/libarchive](https://github.com/allyourcodebase/libarchive) package with libarchive pinned to the 3.7.9 release. The LZX decoder in libarchive 3.8.9 fails on `LANCER.CAB` ([libarchive#3542](https://github.com/libarchive/libarchive/issues/3542)).
 

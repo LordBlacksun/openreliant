@@ -1,5 +1,6 @@
 //! `C:\lancer\game\bigfile.cpp`: the `.HOG` archives the game reads its files from.
-//! `WinMain` opens `resource.hog` at start-up, and `msspeech.hog` for the HUD's speech.
+//! `WinMain` opens `resource.hog` at start-up, and `msspeech.hog` for the HUD's speech; the discs'
+//! archives open as the game comes to what they hold ([`interface/disc.zig`](interface/disc.zig)).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -54,6 +55,14 @@ pub const Hog = struct {
         defer gpa.free(raw);
         return refpack.decompressAlloc(gpa, raw);
     }
+
+    /// The member `name` names as it is stored, which Bink opens where it lies (`BINKFILEHANDLE`)
+    /// once `hog_locate` (`0x004C83F0`) has found it: by its whole name, ignoring case. Null where
+    /// the archive has none.
+    pub fn readStored(archive: Hog, gpa: Allocator, name: []const u8) ReadError!?[]u8 {
+        const entry = archive.archive.find(name) orelse return null;
+        return try archive.archive.readRaw(gpa, entry);
+    }
 };
 
 /// The name `hog_read_file` looks a file up by: `name` less an extension beginning `ut`, from its
@@ -82,14 +91,23 @@ test Hog {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    // One member, `Ship.SHP`, holding `hello`.
-    try testing.write(gpa, io, tmp.dir, resource_name, &.{.{ .name = "Ship.SHP", .data = "hello" }});
+    // Two members, `Ship.SHP`, holding `hello`, and a movie.
+    try testing.write(gpa, io, tmp.dir, resource_name, &.{
+        .{ .name = "Ship.SHP", .data = "hello" },
+        .{ .name = "R_H_TA.BIK", .data = "BIKf" },
+    });
 
     var archive: Hog = try .open(gpa, io, tmp.dir, resource_name);
     defer archive.close(gpa);
     const contents = try archive.readFile(gpa, "models\\ship.shp");
     defer gpa.free(contents);
     try std.testing.expectEqualStrings("hello", contents);
+
+    // `hog_locate` takes the name whole, whatever its case.
+    const movie = (try archive.readStored(gpa, "r_h_ta.bik")).?;
+    defer gpa.free(movie);
+    try std.testing.expectEqualStrings("BIKf", movie);
+    try std.testing.expectEqual(null, try archive.readStored(gpa, "movies\\r_h_ta.bik"));
 }
 
 pub const testing = hog.testing;
