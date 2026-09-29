@@ -93,6 +93,9 @@ pub const ChunkHeader = extern struct {
     record_size: u16,
     count: u16,
 
+    /// The chunk that ends the stream, with no records, as every shipped model ends.
+    pub const terminator: ChunkHeader = .{ .tag = .end, .record_size = 0, .count = 0 };
+
     comptime {
         assert(@sizeOf(ChunkHeader) == 6);
     }
@@ -729,7 +732,7 @@ pub const Material = extern struct {
 /// Tag `0x0F`. A trigger polygon, kept as the file holds it: its fields are not decoded yet
 /// ([#11](https://github.com/vdmkenny/openreliant/issues/11)).
 pub const TriggerPolygon = extern struct {
-    _undecoded: [16]u8,
+    _unknown_00: [16]u8,
 
     comptime {
         assert(@sizeOf(TriggerPolygon) == 16);
@@ -1074,9 +1077,10 @@ pub const Model = struct {
     /// Writes the model as the loader reads it (`parse`): its chunks in the order the loader asks
     /// for them, each record cut short or filled out with zeros to the size `record_sizes` gives
     /// its tag, and the terminator. A tag the sizes leave out gets no chunk, and must have no
-    /// records. A model parsed from a file comes back byte for byte, unless the file holds what
-    /// the loader passes over: a chunk of a tag it never asks for, bytes after the terminator, or
-    /// bytes past what the engine keeps of a record that are not zero.
+    /// records. A model parsed from a file comes back byte for byte, as every shipped model does,
+    /// unless the file holds what `parse` does not keep: a chunk the loader never asks for, header
+    /// records after the first, bytes after the terminator, or bytes of a record past those the
+    /// engine keeps, where they are not zero.
     pub fn write(model: Model, out: *std.Io.Writer) WriteError!void {
         const chunks: ChunkWriter = .{ .out = out, .sizes = model.record_sizes };
         try chunks.put(.header, @as(*const [1]Header, &model.header), null);
@@ -1102,7 +1106,7 @@ pub const Model = struct {
             for (entry.point_lists) |list| try chunks.put(.point, list.points, null);
         }
         try chunks.put(.firing_arc, model.firing_arcs, null);
-        try out.writeAll(std.mem.asBytes(&ChunkHeader{ .tag = .end, .record_size = 0, .count = 0 }));
+        try out.writeAll(std.mem.asBytes(&ChunkHeader.terminator));
     }
 };
 
@@ -1329,7 +1333,7 @@ test "a model built by hand reads back as it was written" {
     var tracks = [_]Track{.{ .clip = fire, .keyframes = &keyframes, .events = &events }};
     var points = [_]Point{.{ ._unknown_00 = 0, .vertex = 1, .position = vertices[1].position }};
     var point_lists = [_]PointList{.{ .kind = .light, .points = &points }};
-    var triggers = [_]TriggerPolygon{.{ ._undecoded = .{ 1, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF } }};
+    var triggers = [_]TriggerPolygon{.{ ._unknown_00 = .{ 1, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF } }};
 
     var parts = [_]PartData{
         testPart("Hull", false, &attachments),
