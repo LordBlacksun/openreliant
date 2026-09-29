@@ -1086,19 +1086,19 @@ pub const testing = struct {
         const mss = @import("../../mss.zig");
         const container = @import("../../../formats/bink.zig");
 
-        pub fn init(tested: *Tested, names: []const []const u8, others: []const bigfile.testing.Member, resources: []const bigfile.testing.Member) !void {
+        pub fn init(tested: *Tested, names: []const []const u8, others: []const hog.Member, resources: []const hog.Member) !void {
             const gpa = std.testing.allocator;
             const io = std.testing.io;
             tested.tmp = std.testing.tmpDir(.{ .iterate = true });
             var buffers: [8][256]u8 = undefined;
-            var members: [12]bigfile.testing.Member = undefined;
+            var members: [12]hog.Member = undefined;
             for (members[0..names.len], names, buffers[0..names.len]) |*member, name, *buffer| {
                 member.* = .{ .name = name, .data = container.testing.movie(buffer, 3, &.{}) };
             }
             @memcpy(members[names.len..][0..others.len], others);
             try bigfile.testing.write(gpa, io, tested.tmp.dir, "CD2.HOG", members[0 .. names.len + others.len]);
             // The pointer's shapes, which don't parse, and so are left out, and `resources`.
-            var resource_members: [12]bigfile.testing.Member = undefined;
+            var resource_members: [12]hog.Member = undefined;
             resource_members[0] = .{ .name = "vrgfx.spr", .data = "x" };
             @memcpy(resource_members[1..][0..resources.len], resources);
             try bigfile.testing.write(gpa, io, tested.tmp.dir, bigfile.resource_name, resource_members[0 .. resources.len + 1]);

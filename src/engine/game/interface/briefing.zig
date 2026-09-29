@@ -729,7 +729,7 @@ fn testFiles(tested: *rooms.testing.Tested, movie_names: []const []const u8) !vo
 }
 
 /// A speech archive of `lines` in `tested`'s folder, `speech_hog`.
-fn testLines(tested: *rooms.testing.Tested, lines: []const hog.testing.Member) !hog.Archive {
+fn testLines(tested: *rooms.testing.Tested, lines: []const hog.Member) !hog.Archive {
     const gpa = std.testing.allocator;
     try hog.testing.write(gpa, std.testing.io, tested.tmp.dir, "msspeech.hog", lines);
     return .open(gpa, std.testing.io, tested.tmp.dir, "msspeech.hog");

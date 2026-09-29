@@ -216,8 +216,6 @@ test parseEntry {
     try std.testing.expectEqual(@as(?ParsedEntry, null), parseEntry(&(@as([32]u8, @splat(0xCD))), 0x100000));
 }
 
-const root = @This();
-
 /// A member to write: its name, and its bytes as they are to be stored.
 pub const Member = struct { name: []const u8, data: []const u8 };
 
@@ -356,14 +354,11 @@ fn packContent(gpa: Allocator, compressor: *refpack.Compressor, packing: Packing
     return .{ .bytes = try gpa.dupe(u8, data), .storage = .stored };
 }
 
-/// Builds archives in memory, for the tests of code that reads them.
+/// Writes archives, for the tests of code that reads them.
 pub const testing = struct {
-    pub const Member = root.Member;
-    pub const build = root.build;
-
     /// Writes an archive of `members`, as `build` makes it, to `path` in `dir`.
-    pub fn write(gpa: Allocator, io: Io, dir: Io.Dir, path: []const u8, members: []const root.Member) !void {
-        const bytes = try root.build(gpa, members);
+    pub fn write(gpa: Allocator, io: Io, dir: Io.Dir, path: []const u8, members: []const Member) !void {
+        const bytes = try build(gpa, members);
         defer gpa.free(bytes);
         try dir.writeFile(io, .{ .sub_path = path, .data = bytes });
     }
@@ -417,7 +412,7 @@ test "a header counting entries the directory lacks" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const bytes = try testing.build(gpa, &.{.{ .name = "a.tga", .data = "x" }});
+    const bytes = try build(gpa, &.{.{ .name = "a.tga", .data = "x" }});
     defer gpa.free(bytes);
     const header = try layout.viewMut(Header, bytes);
     header.entry_count = .of(header.entry_count.get() + 1);
