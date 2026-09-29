@@ -169,8 +169,10 @@ once the music playing has faded out. The mission script's `PlayMusic` (`cmd_Pla
 `music\` and the name it is given, for ever, at level 80. A piece the table at `0x005017A0` names
 loops back to its own point, a byte offset into its data, once it has played through; the rest from
 the start. The stream's volume is `round(((Musicvolume × level) / 127) × Mastervolume / 127)`.
-`music_fade_out` (`0x00482960`) takes 5 off the level every five ticks until the stream closes, and
-`music_update` (`0x00482C30`) then starts the piece waiting. Mission 1 plays `new_launch.wav` as its
+`music_play` fades the music playing out with `music_fade_out` (`0x00482960`), which takes the step
+it is given, 5 here, off the level every five ticks from the tick it starts on, until the stream
+closes, and `music_update` (`0x00482C30`) then starts the piece waiting. `WinMain` fades the music
+out by 15 before the hangar's movie of a mission it flies ([Movies](movies.md#the-hangar)). Mission 1 plays `new_launch.wav` as its
 wing launches, and `new_searching mission 09.wav` once it is out.
 
 ## Speech

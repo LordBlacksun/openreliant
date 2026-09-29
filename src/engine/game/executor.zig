@@ -458,7 +458,7 @@ fn playMusic(call: Call) u32 {
         log.warn("the music {s} is left out: its path is too long", .{name});
         return 1;
     };
-    hearing.sound.playMusic(path, music_forever, music_level, call.args[1] != 0);
+    hearing.sound.playMusic(path, music_forever, music_level, if (call.args[1] != 0) .now else .{ .after_fade = game.clock.game_ticks });
     return 1;
 }
 

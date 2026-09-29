@@ -34,6 +34,11 @@ const install = @import("install.zig");
 const joysticks = @import("joysticks.zig");
 const mission0 = @import("mission0.zig");
 const missions = @import("missions.zig");
+const Movies = @import("movies.zig").Movies;
+const presenting = @import("presenter.zig");
+const Presenter = presenting.Presenter;
+const Screen = presenting.Screen;
+const frameSize = presenting.frameSize;
 const test_keys = @import("test_keys.zig");
 const version = @import("version.zig");
 
@@ -452,19 +457,6 @@ const Options = struct {
     }
 };
 
-/// What the driver draws with: the GPU, or the software device, OpenReliant's reference, whose
-/// frames the window shows.
-const Screen = union(enum) {
-    gpu: platform.gpu.Gpu,
-    software: srd3d.software.Software,
-
-    fn interface(screen: *Screen) srd3d.device.Device {
-        return switch (screen.*) {
-            inline else => |*device| device.interface(),
-        };
-    }
-};
-
 /// Writes `text` to standard output, for a command that only says something: 0, its exit status.
 fn say(io: Io, text: []const u8) !u8 {
     var buffer: [4096]u8 = undefined;
@@ -632,13 +624,18 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
     // What `WinMain` reads from `[Device]`: the options' cockpit setting, the brightness, and
     // whether the transitions play.
     const device_settings: game.winmain.Device = .read(settings_file.profile);
-    // The movies: FFmpeg's decoders behind the stand-in for Bink, and what plays them in a loop of
-    // their own. As the renderer first starts, before its loading screens, `renderer_load` plays the
-    // intro; a mission `--mission` names, or a screenshot, starts without it.
     // What draws the frames outside the game's loop: the movies', and the loading screens'.
     var presenter: Presenter = .{ .window = &window, .screen = screen, .driver = &driver, .context = &context, .wanted = options.settings.size, .arena = arena };
     defer presenter.close(gpa);
+    // The movies: FFmpeg's decoders behind the stand-in for Bink, and what plays them in a loop of
+    // their own. As the renderer first starts, before its loading screens, `renderer_load` plays the
+    // intro; a mission `--mission` names, or a screenshot, starts without it.
     var decoders: platform.video.Decoders = .init();
+    // The discs' archives, which a full install keeps in the game's folder (`cd_hog_open`), and
+    // the hangar's movie played last (`hangar_movie_last`, `0x005D6C8C`).
+    var disc: game.interface.disc.Disc = .{ .gpa = gpa, .io = io, .directory = directory };
+    defer disc.close();
+    var hangar: game.xtrabits.movie.Hangar = .{};
     var movies: Movies = .{
         .gpa = gpa,
         .io = io,
@@ -653,9 +650,10 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
         .look = options.movie_look,
         .transitions = device_settings.transitions,
         .hardware = !options.software,
+        .disc = &disc,
     };
     if (options.mission == null and options.screenshot == null) {
-        for (game.xtrabits.movie.intro) |name| if (!try movies.play(name, .cleared)) return;
+        for (game.xtrabits.movie.intro) |name| _ = try movies.play(name, .cleared) orelse return;
     }
     // The loading screen the renderer's start shows as the game loads, and each mission's start
     // after it: the picture alone, then with LOADING before each part of the game it loads.
@@ -880,7 +878,7 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
     // for ever, at 80.
     if (options.music) |name| {
         const path = try std.fmt.allocPrint(arena, "music\\{s}", .{name});
-        sound.playMusic(path, 0, 80, true);
+        sound.playMusic(path, 0, 80, .now);
     }
     // A screenshot waits for the chase view to settle, then runs its ticks, one a frame, at least
     // until the second frame, which draws the sun by how much of it the first found showing.
@@ -914,7 +912,7 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
     var mouse_held = false;
     // As `WinMain` opens the front end, the splash leads into the main menu (`0x004AB6A0`).
     if (in_front_end and options.screenshot == null) {
-        if (!try movies.play(game.xtrabits.movie.splash_to_menu, .over_screen)) return;
+        _ = try movies.play(game.xtrabits.movie.splash_to_menu, .over_screen) orelse return;
     }
     while (true) {
         if (movies.controllers_changed) {
@@ -986,6 +984,13 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
                     // lines in the pilot's voice, and hits land by the game's difficulty.
                     player.female = front.pilot.female;
                     world.difficulty = front.pilot.difficulty;
+                    // `WinMain` fades the music out over a second, then plays the hangar's movie
+                    // before the mission's loading, and the landing after it.
+                    play.winmain_flight = flight.byWinMain();
+                    if (play.winmain_flight) {
+                        waitBeforeLaunch(&clock, sound);
+                        if (!try movies.launch(&hangar, flight.mission)) return;
+                    }
                     sound.closeMusic();
                     clock.start(platform.window.ticks());
                     try play.start(.{ .world = world, .clock = &clock, .devices = &devices });
@@ -997,7 +1002,7 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
         // The movie a screen of the front end plays as it leads to another.
         if (front.movie) |name| {
             front.movie = null;
-            if (!try movies.play(name, .over_screen)) return;
+            _ = try movies.play(name, .over_screen) orelse return;
         }
         // The window takes text while the front end has a line to type into.
         window.takeText(in_front_end and front.takesText());
@@ -1038,7 +1043,7 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
                 if (over) {
                     game.main.missionRunEnd(world.player, objects.mission_number);
                     if (from_front_end) {
-                        backToFrontEnd(&play, &front, sound, objects);
+                        if (!try backToFrontEnd(&play, &front, sound, objects, player.ending, &movies, &resources)) return;
                         in_front_end = true;
                         from_front_end = false;
                     } else if (endsInPauseMenu(options, frames_left)) {
@@ -1145,7 +1150,8 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
                     .restart => try play.again(orders),
                     .leave_mission => {
                         if (!from_front_end) return;
-                        backToFrontEnd(&play, &front, sound, objects);
+                        player.ending = .left;
+                        if (!try backToFrontEnd(&play, &front, sound, objects, player.ending, &movies, &resources)) return;
                         in_front_end = true;
                         from_front_end = false;
                     },
@@ -1228,15 +1234,34 @@ test endsInPauseMenu {
     try std.testing.expect(!endsInPauseMenu(try parsed(&.{ "--mission", "1" }), 2));
 }
 
-/// Goes back to the front end as a mission it started ends, or is left: the mission let go, out of
-/// the simulator, its sounds and music ended, and the front end's main menu entered again
-/// (`Interface.back`).
-fn backToFrontEnd(play: *Play, front: *engine.genilib.interf.Interface, sound: *game.hog_snd.Sound, all: *game.create.Objects) void {
+/// `WinMain`'s second before the hangar's movie (`game.winmain.launchFade`), the timer run on
+/// through it from the flight's start, as it fades the music out. The window waits as the game's
+/// does, its messages left for the movie's loop.
+fn waitBeforeLaunch(clock: *game.main.Clock, sound: *game.hog_snd.Sound) void {
+    const start = platform.window.nanoseconds();
+    clock.start(platform.window.ticks());
+    game.winmain.launchFade(sound, clock.game_ticks);
+    var pacer: platform.window.Pacer = .{};
+    while (platform.window.nanoseconds() - start < game.winmain.launch_wait) {
+        pacer.wait(game.main.ticks_per_second);
+        clock.advanceTo(platform.window.ticks());
+        sound.timerTick(clock.game_ticks);
+    }
+}
+
+/// Goes back to the front end as a mission it started ends as `ending`, or is left: the mission
+/// let go, out of the simulator, its sounds and music ended, what `play_landing_movie` plays where
+/// `WinMain` plays it (`Play.landing`), and the front end's main menu entered again
+/// (`Interface.back`). False where the window was closed meanwhile.
+fn backToFrontEnd(play: *Play, front: *engine.genilib.interf.Interface, sound: *game.hog_snd.Sound, all: *game.create.Objects, ending: game.main.Ending, movies: *Movies, resources: *const game.bigfile.Hog) !bool {
+    const landing = play.landing(ending, all.mission25_second_part);
     play.end();
     all.simulator = .{};
     sound.endAll();
     sound.closeMusic();
+    if (landing) |what| if (!try movies.land(what, resources, sound)) return false;
     front.back();
+    return true;
 }
 
 /// What draws the front end over the cleared frame: its render hook (`sr + 0x88`), which
@@ -1261,128 +1286,6 @@ const FrontEndDisplay = struct {
 /// The loading screens as the driver shows them (`game.xtrabits.loading`): each frame drawn over an
 /// empty scene at once and put on the window, the system's events gathered for the loop meanwhile
 /// (`message_pump`).
-/// Frames drawn outside the game's loop, as the loading screens' and the movies' are: an overlay
-/// drawn over an empty scene and put on the window at once.
-const Presenter = struct {
-    window: *platform.window.Window,
-    screen: *Screen,
-    driver: *srd3d.srd3d.Driver,
-    context: *srapi.Context,
-    /// The size `--size` asks the frames to be drawn at, where it does.
-    wanted: ?[2]u32,
-    /// What the software device is made in.
-    arena: Allocator,
-    /// The scene, empty, and what a frame is drawn in.
-    scene: srcore.Scene = .{},
-    frame_arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator),
-
-    fn close(presenter: *Presenter, gpa: Allocator) void {
-        presenter.scene.deinit(gpa);
-        presenter.frame_arena.deinit();
-    }
-
-    /// The size the frames are drawn at.
-    fn size(presenter: *Presenter) ![2]u32 {
-        return frameSize(presenter.screen, presenter.window, presenter.wanted, presenter.arena);
-    }
-
-    /// Draws a frame `pixels` in size of `overlay` alone and puts it on the window.
-    fn present(presenter: *Presenter, pixels: [2]u32, overlay: srcore.Overlay) !void {
-        _ = presenter.frame_arena.reset(.retain_capacity);
-        const arena = presenter.frame_arena.allocator();
-        try srcore.render(arena, presenter.context, &presenter.scene, presenter.driver.interface(), overlay);
-        if (presenter.screen.* == .software) try presenter.window.present(try presenter.screen.software.rgba(arena), pixels[0], pixels[1]);
-    }
-};
-
-/// The movies as the driver plays them (`game.xtrabits.movie`): each in a loop of its own, as the
-/// game plays them, each frame drawn over an empty scene and put on the window, with the window's
-/// messages read as the message pump reads them.
-const Movies = struct {
-    gpa: Allocator,
-    io: Io,
-    directory: Io.Dir,
-    codec: engine.bink.Codec,
-    /// The Miles driver the movies' sound plays through, where there is sound.
-    sound: ?engine.mss.Driver,
-    presenter: *Presenter,
-    devices: *engine.input.Devices,
-    pacer: *platform.window.Pacer,
-    /// The frames a second the loop keeps to, where the display does not keep it.
-    frame_rate: ?f32,
-    size: game.xtrabits.movie.Size,
-    look: engine.bink.Look,
-    /// The video settings' `Transitions`, and whether the renderer is a hardware one, which decide
-    /// whether a movie plays (`game.xtrabits.movie.Kind.plays`).
-    transitions: bool,
-    hardware: bool,
-    /// Whether a controller was connected or taken out while a movie played, which the game's loop
-    /// then takes up.
-    controllers_changed: bool = false,
-
-    /// Plays the movie `name` names in the game's folder as `kind` has it, until it ends or is
-    /// skipped. False where the window was closed meanwhile, which quits the game, as it quits the
-    /// game's loop (`game_exit`). A movie the folder lacks, or that cannot be decoded, is left out.
-    fn play(movies: *Movies, name: []const u8, kind: game.xtrabits.movie.Kind) !bool {
-        if (!kind.plays(movies.transitions, movies.hardware)) return true;
-        const found = engine.files.readFile(movies.io, movies.gpa, movies.directory, name, .limited(engine.files.max_file_size)) catch |err| {
-            std.log.warn("the movie {s} is left out: {s}", .{ name, @errorName(err) });
-            return true;
-        };
-        const file = found orelse {
-            std.log.warn("the movie {s} is left out: the game's folder has none", .{name});
-            return true;
-        };
-        var player = game.xtrabits.movie.Player.open(movies.gpa, movies.codec, file, kind, movies.sound, movies.look) catch |err| {
-            std.log.warn("the movie {s} is left out: {s}", .{ name, @errorName(err) });
-            return true;
-        };
-        defer player.close();
-        const devices = movies.devices;
-        while (true) {
-            while (movies.presenter.window.poll()) |event| switch (event) {
-                .quit => return false,
-                .key => |key| devices.keyboard.down[@intFromEnum(key.scan)] = key.down,
-                .pointer => |pointer| devices.mouse.at = pointer.at,
-                .button => |button| switch (button.which) {
-                    .left => devices.mouse.buttons.left = button.down,
-                    .right => devices.mouse.buttons.right = button.down,
-                },
-                // The message pump pauses the movie while the window is away (`BinkPause`).
-                .active => |active| player.bink.pause(!active, platform.window.nanoseconds()),
-                .controllers => movies.controllers_changed = true,
-                .typed => {},
-            };
-            devices.keyboard.read();
-            const over = player.pass(&devices.keyboard, devices.mouse.buttons.right, platform.window.nanoseconds()) catch |err| over: {
-                std.log.warn("the movie {s} stops short: {s}", .{ name, @errorName(err) });
-                break :over true;
-            };
-            if (over) return true;
-            const pixels = try movies.presenter.size();
-            var shown: Shown = .{ .movies = movies, .player = &player, .window = pixels };
-            try movies.presenter.present(pixels, shown.overlay());
-            if (movies.frame_rate) |rate| movies.pacer.wait(rate);
-        }
-    }
-
-    /// A frame's overlay: the movie's frame, over the cleared frame.
-    const Shown = struct {
-        movies: *Movies,
-        player: *game.xtrabits.movie.Player,
-        window: [2]u32,
-
-        fn overlay(shown: *Shown) srcore.Overlay {
-            return .{ .context = shown, .draw = draw };
-        }
-
-        fn draw(context: *anyopaque) Allocator.Error!void {
-            const shown: *Shown = @ptrCast(@alignCast(context));
-            shown.player.draw(shown.movies.presenter.screen.interface(), shown.window, shown.movies.size);
-        }
-    };
-};
-
 const Loading = struct {
     resources: game.xtrabits.loading.Resources,
     archive: *const game.bigfile.Hog,
@@ -1432,22 +1335,6 @@ const Loading = struct {
     };
 };
 
-/// The size a frame is drawn at: on the GPU the display's own resolution; for the software device
-/// `wanted`, or else the window's size in points, the device made again when it changes.
-fn frameSize(screen: *Screen, window: *const platform.window.Window, wanted: ?[2]u32, arena: Allocator) ![2]u32 {
-    return switch (screen.*) {
-        .gpu => |*device| device.frameSize(),
-        .software => |*device| resized: {
-            const size = wanted orelse window.size();
-            if (device.width != size[0] or device.height != size[1]) {
-                device.deinit(arena);
-                device.* = try .init(arena, size[0], size[1]);
-            }
-            break :resized size;
-        },
-    };
-}
-
 /// What an overlay's drawing fails with: running out of memory alone. A shape the file does not
 /// hold draws nothing, as it does in the game.
 fn drawn(result: anytype) Allocator.Error!void {
@@ -1475,6 +1362,8 @@ const Play = struct {
     view: *camera.Camera,
     /// Whether the attempt is over, the pause menu standing in the debriefing's place.
     over: bool = false,
+    /// Whether `WinMain` flies the mission (`main_menu.Flight.byWinMain`), which lands after it.
+    winmain_flight: bool = false,
     /// The loading screen each start shows.
     loading: ?*Loading = null,
 
@@ -1527,6 +1416,16 @@ const Play = struct {
     fn end(play: *Play) void {
         if (play.loaded) |loaded| loaded.destroy();
         play.loaded = null;
+    }
+
+    /// What `play_landing_movie` plays after the mission ended as `ending`, by its rating and the
+    /// game's variables, where `WinMain` flew it and plays it (`game.winmain.landsAfter`).
+    /// `second_part` is mission 25's second part.
+    fn landing(play: *Play, ending: game.main.Ending, second_part: bool) ?game.xtrabits.landing.Landing {
+        if (!play.winmain_flight) return null;
+        const loaded = play.loaded orelse return null;
+        if (!game.winmain.landsAfter(ending, play.number, second_part)) return null;
+        return game.xtrabits.landing.landing(play.number, second_part, ending, &loaded.script.variables);
     }
 };
 

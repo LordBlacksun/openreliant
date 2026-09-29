@@ -1,12 +1,13 @@
 //! `C:\lancer\game\interface.cpp`: the front end's screens and the settings they manage. Ported so
 //! far: loading the input settings and bindings from `starlancer.ini` (`load_key_config`), the main
 //! menu (`main_menu`) with its dialog (`dialog`), and the pilot roster (`pilot_roster`), on the
-//! front end's screen (`canvas`).
+//! front end's screen (`canvas`); and opening the discs' archives (`disc`).
 
 const std = @import("std");
 
 pub const canvas = @import("interface/canvas.zig");
 pub const dialog = @import("interface/dialog.zig");
+pub const disc = @import("interface/disc.zig");
 pub const main_menu = @import("interface/main_menu.zig");
 pub const pilot_roster = @import("interface/pilot_roster.zig");
 
@@ -223,6 +224,7 @@ test deadZone {
 test {
     _ = canvas;
     _ = dialog;
+    _ = disc;
     _ = main_menu;
     _ = pilot_roster;
 }
