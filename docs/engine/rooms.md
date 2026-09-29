@@ -23,7 +23,7 @@ Not ported:
 **Improvements**, each marked so in the code:
 
 - The rooms' pointer, and the in-game options', is where the system's is over the window, as the front end's is ([Front end](front-end.md#the-pointer)). The game adds up DirectInput's movements.
-- OpenReliant's version is written in the window's corner of the rooms, the induction and the in-game options, as on the front end's screens.
+- OpenReliant's version is written in the window's corner of the in-game options, as on the front end's screens. The rooms, the news report and the induction don't show it.
 - The in-game options' ABOUT STARLANCER is ABOUT OPENRELIANT ([The in-game options](#the-in-game-options)).
 - The loudest peaks of Enriquez's scenes are rounded off, as the radio's lines' are ([Radio](radio.md)). `--original` cuts them flat.
 

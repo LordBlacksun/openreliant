@@ -40,6 +40,12 @@ pub const Image = struct {
         /// 1.0), which keeps the edges of a picture stretched far sharp without steps, as the
         /// movies are.
         edge_adaptive,
+        /// **Improvement:** as a glyph's coverage, the grey its levels are drawn in: taken
+        /// straight between the texels' centres and sharpened about half over half a texel, so
+        /// that the menus' text keeps straight, crisp edges however far it is stretched, and the
+        /// greys the fonts join their strokes with stay part lit. It takes the colour it is drawn
+        /// in alone.
+        coverage,
     };
 
     /// An image of one level, `across` by `down` pixels of `rgba`, which it takes: `deinit` frees

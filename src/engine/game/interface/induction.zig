@@ -150,11 +150,9 @@ pub const Induction = struct {
         if (induction.film.advance(now)) induction.film.loopBack(now);
     }
 
-    /// `induction_draw` (`0x00439330`), the induction's drawing: its movie alone, and
-    /// OpenReliant's version.
-    pub fn draw(induction: *Induction, target: canvas.Canvas) std.mem.Allocator.Error!void {
+    /// `induction_draw` (`0x00439330`), the induction's drawing: its movie alone.
+    pub fn draw(induction: *Induction, target: canvas.Canvas) void {
         induction.film.draw(target);
-        try target.drawVersion();
     }
 };
 

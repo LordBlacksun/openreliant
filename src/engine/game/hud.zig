@@ -728,7 +728,10 @@ fn glyphImage(opened: *Opened, gpa: Allocator, code: u8) Allocator.Error!?*srtex
         }
         pixel[3] = if (index == 0) 0 else 255;
     }
-    opened.images[code] = try srtexture.Image.single(gpa, glyph.width, opened.font.header.height, rgba);
+    var image: srtexture.Image = try .single(gpa, glyph.width, opened.font.header.height, rgba);
+    // **Improvement:** the menus' text, magnified from its coverage (`srtexture.Image.Magnify`).
+    if (opened.paint == .ramp) image.magnify = .coverage;
+    opened.images[code] = image;
     return &opened.images[code].?;
 }
 
@@ -770,8 +773,9 @@ pub fn drawText(
 
 /// **Improvement:** OpenReliant's name and `version`, written in `font`, the menus' small font
 /// (`small_menu_font`), dimmed and right-aligned in the bottom right corner of a window `screen`
-/// pixels in size, scaled as the display is (`scaleFor`). The pause menu and every screen outside
-/// a mission's flight show it.
+/// pixels in size, scaled as the display is (`scaleFor`). The menus show it (the front end's
+/// screens, the loading screens, the in-game options and the pause menu), but not the Reliant's
+/// rooms, which are gameplay.
 pub fn drawVersion(font: *Opened, gpa: Allocator, target: device.Device, screen: [2]u32, version: []const u8) Allocator.Error!void {
     var buffer: [64]u8 = undefined;
     const text = std.fmt.bufPrint(&buffer, "OpenReliant {s}", .{version}) catch version;
@@ -1125,6 +1129,22 @@ test drawVersion {
     try std.testing.expectEqual(1536 - 16, corners[2].y);
     try std.testing.expectEqual(2048 - 16 - width * 2, corners[0].x);
     try std.testing.expectEqual(1536 - 16 - height * 2, corners[0].y);
+}
+
+test "the menus' glyphs are magnified from their coverage" {
+    const gpa = std.testing.allocator;
+    var recorder: device.testing.Recorder = .{ .gpa = gpa };
+    defer recorder.deinit();
+    // The display's text keeps the device's filter; the menus', drawn as levels of one colour, is
+    // magnified from its coverage.
+    var display: Opened = .open(try fnt.Font.parse(comptime fnt.testing.font(true)), null);
+    defer display.deinit(gpa);
+    var menus: Opened = .ramp(try fnt.Font.parse(comptime fnt.testing.font(true)));
+    defer menus.deinit(gpa);
+    _ = try drawText(&display, gpa, recorder.interface(), .{ 0, 0 }, "\x01", .{ 1, 1, 1, 1 }, .left, 2);
+    _ = try drawText(&menus, gpa, recorder.interface(), .{ 0, 0 }, "\x01", .{ 1, 1, 1, 1 }, .left, 2);
+    try std.testing.expectEqual(.sharp, display.images[1].?.magnify);
+    try std.testing.expectEqual(.coverage, menus.images[1].?.magnify);
 }
 
 test drawText {
