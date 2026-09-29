@@ -62,3 +62,49 @@ the end of the input, a match reaching before the start of the output, or a tota
 with the header's decompressed size are all rejected rather than producing truncated output.
 
 Every compressed member of `resource.hog` decompresses to exactly the size its header declares.
+
+## Compressing
+
+`refpack.compressAlloc` writes a stream of the one form the game expands: `10 FB`, a 3-byte size,
+the commands, and a terminator with nothing after it. It is a lazy parse over hash chains, not EA's
+compressor, so its streams differ from the shipped ones while expanding to the same bytes. Each
+match takes the smallest form that holds it, as every match in the shipped streams does. Matches
+reach back at most 131071 bytes, the furthest the shipped streams go, though the long form's field
+holds one more.
+
+Literals are written as runs of 4 to 112 bytes, and the last 0 to 3 before a match ride in its
+command, or in the terminator at the end. A payload of 16777216 bytes or more has no stream: the
+game reads only 3-byte sizes.
+
+### What the game's expansion demands
+
+`hog_unpack` (`0x004C8480`) allocates the expanded size plus `0x2800` bytes, reads the stream to the
+end of that block, and calls `refpack_expand` (`0x004CC350`) to expand it from the start of the same
+block. The expansion checks nothing, so a stream loads only where the output never overtakes the
+input still to read. At the start of the stream, and after each command, the input still to read
+less the output still to write is at most `0x2800`: `refpack.inPlaceExcess` is the largest of those
+values. Two shapes break it. A stream longer than its data by more than `0x2800` puts the read
+before the block. Or a run of matches puts the output far ahead, and literals then take the input
+past it, after which the expansion reads its own output as commands and overwrites the heap.
+
+The literals of a payload that does not compress take 1 byte in 112 for their control bytes, so
+`compressAlloc` fails with `error.NotInPlace` for one of 1146212 bytes or more, and for a
+compressible one with a tail of that size. The tightest shipped stream is `smp3d.fat`, at 486, and the next is
+`WLKSMP.FAT`, at 74; every other is at 3 or under.
+
+Where there is no stream, or none that loads, the member is stored as it is, which the game reads
+verbatim. A payload that itself begins `10 FB` cannot be stored so: the game would take it for a
+stream.
+
+The flags byte of a stream must be exactly `0x10`. `hog_read_file` expands a member only when it
+begins `10 FB`, and `refpack_expand` takes bit 0 as the compressed size's presence, which would
+make it read that size as the expanded one, and has no path for bit 7 (4-byte sizes), which is why
+a member holds at most 16777215 bytes.
+
+The bound, its two shapes and the shipped streams' values are from a comment on
+[#113](https://github.com/vdmkenny/openreliant/issues/113) by the
+[Starlancer-OSS](https://github.com/LordBlacksun/Starlancer-OSS) project (its documentation is
+licensed CC BY 4.0), which ran `refpack_expand` on generated streams under emulation: 1146211 bytes
+of literals load and 1146212 do not, and neither does 2000000 zero bytes followed by a tail of
+literals that takes the input 2 bytes past the slack. **Unverified:** here, where the port cannot
+run `refpack_expand`; the tests check `inPlaceExcess` against the same figures.
