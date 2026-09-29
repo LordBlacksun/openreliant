@@ -87,10 +87,11 @@ name order. It stores each member as `hog.packMember` finds best:
   expand it in place, and otherwise the file as it is, which the game reads verbatim.
 - A file that already begins `10 FB`, as `sltool hog extract --raw` gives a packed member, as it
   is: the game expands it.
-- Movies (`.bik`) and face films (`.fm8`) as they are. Bink opens a movie where it lies in the
-  archive (`hog_locate`, `0x004C83F0`), and OpenReliant reads the films as stored for
-  `hudmovie_play` (`0x0048D120`). **Unverified:** whether `hudmovie_play` would expand a packed
-  film; no shipped one is packed.
+- Movies (`.bik`) and face films (`.fm8`) as they are: the game reads both where they lie.
+  Bink opens a movie in the archive once `hog_locate` (`0x004C83F0`) has found it, and
+  `hudmovie_play` (`0x0048D120`) finds a film with `hog_seek` (`0x004C8370`) and reads it from
+  the archive's file where the seek leaves it. Neither goes through `hog_read_file`, the one path
+  that expands a packed member.
 
 `--store` keeps every file as it is. The `~N` suffix `extract` gives a repeated name stays in the
 member's name.

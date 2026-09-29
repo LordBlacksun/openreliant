@@ -269,9 +269,9 @@ pub fn build(gpa: Allocator, members: []const Member) BuildError![]u8 {
 
 /// The extensions of the members the game opens where they lie, not through `hog_read_file`
 /// (`0x004C7F60`), so that they are stored as they are: Bink's movies, which `hog_locate`
-/// (`0x004C83F0`) finds for Bink to open in the archive, and the face films of `hudmovie_play`
-/// (`0x0048D120`), which OpenReliant reads as stored. **Unverified:** whether `hudmovie_play` would
-/// expand a packed film; no shipped one is packed.
+/// (`0x004C83F0`) finds for Bink to open in the archive, and the face films, which
+/// `hudmovie_play` (`0x0048D120`) finds with `hog_seek` (`0x004C8370`) and reads from the archive's
+/// file where the seek leaves it.
 const opened_in_place = [_][]const u8{ ".bik", ".fm8" };
 
 /// Whether the game opens the member `name` where it lies (`opened_in_place`).
