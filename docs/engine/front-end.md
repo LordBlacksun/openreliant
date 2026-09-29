@@ -22,7 +22,7 @@ Ported so far: the screen loop, the main menu, QUIT's dialog, INSTANT ACTION, th
 
 - The game switches the display to 640 by 480 for the front end. OpenReliant keeps the window as it is, and draws the front end as large as fits in it, centred, so that it keeps its shape.
 - The pointer is where the system's is over the window, rather than DirectInput's movements added up.
-- OpenReliant's version is written, dimmed, in the window's bottom right corner, as the pause menu writes it ([Pause menu](pause-menu.md)): on the front end's screens, the loading screens and the Reliant's rooms ([The Reliant's rooms](rooms.md)).
+- OpenReliant's version is written, dimmed, in the window's bottom right corner, as the pause menu writes it ([Pause menu](pause-menu.md)): on the front end's screens, the loading screens and the in-game options over the Reliant's rooms ([The Reliant's rooms](rooms.md)), though not in the rooms themselves.
 
 ## The screens
 
@@ -56,6 +56,8 @@ Any other number returns 3. **Unknown:** what selects screen 8: `WinMain` plays 
 ## Text
 
 The front end writes with `hud_text` and `hud_text_wrapped` through `interface_text_remap`, ramped by `interface_palette_ramp` (`0x004287C0`), the front end's copy of `hud_palette_ramp` ([Pause menu](pause-menu.md)): entries 1 to 15 of VFX's global palette, a ramp of a `0xRRGGBB` colour at `palette_ramp_brightness`.
+
+**Improvement:** with the crisp filter, the default, the menus' text is drawn from its glyphs' coverage at the window's size: taken straight between the glyph's pixels and sharpened, so that the letters keep the fonts' shapes and straight lines with crisp edges at any size, where a glyph magnified as it stands comes out soft ([Renderer](../port/renderer.md)). `--original` draws them as they stand, bilinearly.
 
 | Colour | Where |
 |---|---|

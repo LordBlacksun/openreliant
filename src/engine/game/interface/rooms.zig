@@ -929,7 +929,7 @@ pub const Rooms = struct {
     }
 
     /// `vr_draw` (`0x0043C1C0`): the movie, the label of the exit under the pointer, the fish's
-    /// food, OpenReliant's version, and the pointer, at `ticks`.
+    /// food, and the pointer, at `ticks`.
     ///
     /// **Fix:** the game moves the food on by the ticks from the pass's start to the drawing, just
     /// after the pass takes them up, so that it falls only as the drawing takes time, and hardly at
@@ -943,7 +943,6 @@ pub const Rooms = struct {
         else if (rooms.fish.over_food) Fish.food_label else null;
         if (label) |id| try target.string(target.fonts.large, label_at, id, canvas.white, .centre);
         try rooms.drawFood(target, ticks);
-        try target.drawVersion();
         try rooms.drawPointer(target);
     }
 

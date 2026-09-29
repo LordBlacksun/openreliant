@@ -13,7 +13,8 @@ While a mission is paused, the game draws a configuration menu in place of the h
 - The menu is drawn `hud.scaleFor` times larger, as the display is, so it keeps its proportions on a larger screen.
 - The pointer is where the system's is over the window, rather than DirectInput's motion added up.
 - Losing the window's focus pauses into the menu in single player too.
-- OpenReliant's version is written, dimmed, in the bottom right corner, as on every screen outside a mission's flight ([Front end](front-end.md)).
+- OpenReliant's version is written, dimmed, in the bottom right corner, as on the front end's menus ([Front end](front-end.md)).
+- The text is drawn crisp from its glyphs' coverage, as the front end's is ([Front end](front-end.md#text)).
 - A mission `--mission` names starts in the menu, and `--no-pause-menu` starts it flying. One the [front end](front-end.md) starts flies at once, and its LEAVE MISSION goes back to the front end.
 
 **Fixes** of the game's bugs, each marked so in the code:

@@ -25,8 +25,8 @@ layout(location = 6) in uint lightMask;
 // What its pixels take besides their lights (gpu.zig's Shading): in the low byte the shadows, 0
 // none, 1 the world's cascades, 2 the cockpit's map (device.zig's Receives); in the next two bits,
 // how its texture is magnified, 0 by the settings' filter, 1 smoothly, 2 by FSR 1's edge-adaptive
-// upscale (srtexture.zig's Magnify); in the one after, 1 for the key lights to reach past its
-// terminator, as a planet's atmosphere carries them.
+// upscale, 3 as a glyph's coverage (srtexture.zig's Magnify); in the one after, 1 for the key
+// lights to reach past its terminator, as a planet's atmosphere carries them.
 layout(location = 7) in uint shading;
 
 layout(set = 1, binding = 0) uniform Target {
@@ -405,12 +405,40 @@ vec4 easu(vec2 at, float layer) {
     return vec4(rgb, textureLod(images, vec3(at, layer), 0.0).a);
 }
 
-// The texture at the fragment: magnified as the settings say, smoothly or by FSR 1 where its
-// shading asks, minified by the sampler.
-vec4 sampled() {
+// The coverage of the texel at `at` of the glyph in `layer`, the grey its level is drawn in, none
+// outside the glyph.
+float coverageAt(ivec2 at, float layer, ivec2 size) {
+    if (any(lessThan(at, ivec2(0))) || any(greaterThanEqual(at, size))) return 0.0;
+    return texelFetch(images, ivec3(at, int(layer)), 0).r;
+}
+
+// A glyph of the menus' fonts from its coverage, the grey its levels are drawn in, as crisp as the
+// frame allows: the coverage taken straight between the four texels' centres about the fragment,
+// so that the glyph's straight edges stay straight without the rounding or ringing of a cubic
+// filter, then sharpened about half over half a texel, or a pixel of the frame where that is
+// wider. A grey the font joins its strokes with stays part lit, as it does at the font's own size.
+// Its colour is the vertex's alone. texels is how many of the texture's texels a pixel of the frame
+// spans.
+vec4 glyph(vec2 at, float layer, float texels) {
+    ivec2 size = textureSize(images, 0).xy;
+    vec2 position = at * vec2(size) - 0.5;
+    ivec2 cell = ivec2(floor(position));
+    vec2 f = position - vec2(cell);
+    float coverage = mix(
+        mix(coverageAt(cell, layer, size), coverageAt(cell + ivec2(1, 0), layer, size), f.x),
+        mix(coverageAt(cell + ivec2(0, 1), layer, size), coverageAt(cell + ivec2(1, 1), layer, size), f.x),
+        f.y);
+    float ease = max(0.25, 0.5 * texels);
+    return vec4(1.0, 1.0, 1.0, smoothstep(0.5 - ease, 0.5 + ease, coverage));
+}
+
+// The texture at the fragment: magnified as the settings say, smoothly, by FSR 1 or as a glyph
+// where its shading asks, minified by the sampler. texels is how many texels a pixel spans.
+vec4 sampled(float texels) {
     float layer = float(image);
     if (frame.settings.y > 0.0 && textureQueryLod(images, uv).y < 0.0) {
         uint magnify = (shade >> 8) & 3u;
+        if (magnify == 3u) return glyph(uv, layer, texels);
         if (magnify == 2u) return easu(uv, layer);
         return magnify == 1u ? bSpline(uv, layer) : catmullRom(uv, layer);
     }
@@ -418,7 +446,9 @@ vec4 sampled() {
 }
 
 void main() {
-    vec4 texel = image < 0 ? vec4(1.0) : sampled();
+    // Worked out here, where every pixel of a quad reaches it, as a derivative needs.
+    vec2 span = fwidth(uv) * vec2(textureSize(images, 0).xy);
+    vec4 texel = image < 0 ? vec4(1.0) : sampled(max(span.x, span.y));
     vec3 added = lights();
     vec4 c = vec4(0.0, 0.0, 0.0, texel.a * colour.a);
     if (frame.settings.w > 0.0) {

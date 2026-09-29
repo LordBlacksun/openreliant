@@ -247,7 +247,7 @@ const Shown = struct {
         const driver = shown.driver;
         const target = driver.canvasFor(shown.window);
         switch (shown.screen) {
-            .induction => |tour| try tour.draw(target),
+            .induction => |tour| tour.draw(target),
             .rooms => |inside| try drawn(inside.draw(target, driver.clock.game_ticks)),
             .options => |menu| try drawn(menu.draw(target, &driver.front.dialog, driver.pointer)),
         }
