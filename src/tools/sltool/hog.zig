@@ -25,12 +25,7 @@ pub const Command = union(enum) {
         \\  hog extract <archive> <out-dir> [--raw]
         \\                                  extract every member, decompressing by default
         \\  hog pack <dir> <archive> [--store]
-        \\                                  pack every file of a folder into a new archive,
-        \\                                  compressing what the game can expand by default;
-        \\                                  --store compresses only what must be: a file that
-        \\                                  begins 10 FB is kept where it loads in place,
-        \\                                  stored expanded past the in-place bound, and
-        \\                                  compressed where it is no stream at all
+        \\                                  pack every file of a folder, compressing by default
         \\
     ;
 

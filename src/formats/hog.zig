@@ -285,21 +285,17 @@ pub fn opensInPlace(name: []const u8) bool {
 pub const Packing = enum {
     /// A RefPack stream where one is smaller and the game can expand it in place.
     compress,
-    /// As it is (`sltool hog pack --store`), where the game reads it so. Data that begins `10 FB`
-    /// the game takes for a stream, which `packMember` keeps where it loads in place, stores as
-    /// what it expands to where it is one over the bound, and compresses where it is none.
+    /// As it is (`sltool hog pack --store`), where the game reads it so.
     store,
 };
 
 /// How `packMember` stored a member.
 pub const Storage = enum {
-    /// As it came, or as what a stream the game could not load expands to, which the game reads
-    /// verbatim.
+    /// As bytes the game reads verbatim.
     stored,
     /// As a RefPack stream `packMember` wrote.
     compressed,
-    /// As it came, being a stream the game expands to its declared size in place, as a member
-    /// extracted as stored is.
+    /// As it came, being a stream the game loads.
     already_compressed,
 };
 
@@ -321,10 +317,12 @@ pub const PackError = error{
 /// member the game opens in place (`opensInPlace`) is stored as it is, since the game never expands
 /// it.
 ///
-/// Data that begins `10 FB` the game takes for a stream whatever the packing. It is kept as it is
-/// where it is a stream that expands to its declared size in place (`refpack.loadsInPlace`), as a
-/// member extracted as stored is. Otherwise what it expands to goes in instead, and where it
-/// expands to nothing, the data itself is compressed, having no form the game reads as it is.
+/// Data that begins `10 FB` the game takes for a stream whatever the packing, so it goes in only as
+/// a stream that expands to its declared size in place (`refpack.loadsInPlace`). Such a stream is
+/// kept as it came, as a member extracted as stored is. A stream over the bound, from another tool
+/// say, is expanded, and what it expands to packed in its place. Any other data that begins `10 FB`
+/// is compressed, having no form the game reads as it is, and where no stream of it loads, the
+/// member is `error.Unloadable`.
 pub fn packMember(gpa: Allocator, compressor: *refpack.Compressor, packing: Packing, name: []const u8, data: []const u8) PackError!Packed {
     if (opensInPlace(name)) return .{ .bytes = try gpa.dupe(u8, data), .storage = .stored };
     if (!refpack.gameExpands(data)) return packContent(gpa, compressor, packing, data);
@@ -340,8 +338,7 @@ pub fn packMember(gpa: Allocator, compressor: *refpack.Compressor, packing: Pack
 }
 
 /// `data` as the game is to read it, for a member it reads through `hog_read_file`: as it is, or
-/// with `.compress` a RefPack stream where one is smaller and loads. Data that begins `10 FB` has
-/// only the stream.
+/// with `.compress` a RefPack stream where one is smaller and loads.
 fn packContent(gpa: Allocator, compressor: *refpack.Compressor, packing: Packing, data: []const u8) PackError!Packed {
     const needs_stream = refpack.gameExpands(data);
     if (packing == .compress or needs_stream) {
