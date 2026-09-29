@@ -31,12 +31,21 @@ pub const key = [4]u8{ 0xAB, 0x2D, 0x9A, 0xAA };
 pub const Header = extern struct {
     /// The file's length past this field.
     length: u32,
-    /// `CB00`.
+    /// Its tag: `line_magic` or `scene_magic`.
     magic: [4]u8,
     /// The speech's size as 16-bit samples, in bytes: twice its samples.
     size: u32,
 
-    pub const magic_value = "CB00";
+    /// The tags the game's speech files carry: the radio's lines, and the scenes, the `.box` files
+    /// of the discs' archives, which the Reliant's rooms and the briefings play. The game plays a
+    /// file whatever its tag.
+    pub const line_magic = "CB00";
+    pub const scene_magic = "CB97";
+
+    /// Whether it carries one of the tags the game's files carry.
+    pub fn tagged(header: Header) bool {
+        return std.mem.eql(u8, &header.magic, line_magic) or std.mem.eql(u8, &header.magic, scene_magic);
+    }
 
     comptime {
         assert(@sizeOf(Header) == 12);
@@ -55,10 +64,11 @@ pub const Speech = struct {
     stream: []const u8,
 
     /// `bytes`, a speech file as the archive holds it, unscrambled in place (`unscramble`). Null
-    /// for a file too short for its header or not marked `CB00`.
+    /// for a file too short for its header or not tagged as the game's are (`Header.tagged`), which
+    /// the game does not check, so that what else an archive holds is passed over.
     pub fn parse(bytes: []u8) ?Speech {
         const header = layout.view(Header, bytes) catch return null;
-        if (!std.mem.eql(u8, &header.magic, Header.magic_value)) return null;
+        if (!header.tagged()) return null;
         const kept = header.*;
         unscramble(bytes);
         return .{ .header = kept, .stream = bytes[@sizeOf(Header)..] };
@@ -224,7 +234,7 @@ pub const Player = struct {
 /// zero bits, scrambled as the files are, in `gpa`.
 pub fn testFile(gpa: Allocator, samples: u32, stream_len: usize) Allocator.Error![]u8 {
     const file = try gpa.alloc(u8, @sizeOf(Header) + stream_len);
-    const header: Header = .{ .length = @intCast(file.len - 4), .magic = Header.magic_value.*, .size = samples * 2 };
+    const header: Header = .{ .length = @intCast(file.len - 4), .magic = Header.line_magic.*, .size = samples * 2 };
     @memcpy(file[0..@sizeOf(Header)], std.mem.asBytes(&header));
     @memset(file[@sizeOf(Header)..], 0);
     unscramble(file);
@@ -256,6 +266,11 @@ test Speech {
     try std.testing.expectEqual(1000, speech.samples());
     try std.testing.expectEqual(40, speech.stream.len);
     try std.testing.expectEqual(0, speech.stream[0]);
+    // A scene is read alike.
+    const scene = try testFile(gpa, 10, 16);
+    defer gpa.free(scene);
+    scene[4..8].* = Header.scene_magic.*;
+    try std.testing.expectEqual(10, Speech.parse(scene).?.samples());
     // Not a speech file.
     var other = "RIFF\x00\x00\x00\x00WAVEfmt ".*;
     try std.testing.expectEqual(null, Speech.parse(&other));

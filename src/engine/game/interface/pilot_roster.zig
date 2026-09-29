@@ -145,7 +145,7 @@ const blink_ticks = 25;
 
 /// The colour the roster ramps its text through besides blue (`canvas.blue`): white, for the call
 /// sign while it is typed, the list's call signs, and the label under the pointer.
-const white = hud.rgb(0xFFFFFF);
+const white = canvas_module.white;
 
 /// A line of text of at most `room` bytes, as the game keeps one, with its terminator, in a buffer
 /// one longer.
@@ -496,6 +496,7 @@ pub const Roster = struct {
         }
         if (roster.difficulty) |box| try box.draw(canvas, art, pilot.difficulty);
         if (roster.confirm) |confirm| try confirm.draw(canvas, dialog_art);
+        try canvas.drawVersion();
         try canvas.shape(art, pointer.shape(), pointer.at);
     }
 };
@@ -508,7 +509,7 @@ fn rowRects() [list_rows]Rect {
 }
 
 /// The black the list's rows are wiped to.
-const black: [3]f32 = .{ 0, 0, 0 };
+const black = canvas_module.black;
 
 /// Writes `label` in `colour`.
 fn writeLabel(canvas: Canvas, label: Label, colour: [3]f32) canvas_module.Error!void {

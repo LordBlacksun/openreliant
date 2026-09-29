@@ -768,6 +768,28 @@ pub fn drawText(
     return @intFromFloat(x);
 }
 
+/// **Improvement:** OpenReliant's name and `version`, written in `font`, the menus' small font
+/// (`small_menu_font`), dimmed and right-aligned in the bottom right corner of a window `screen`
+/// pixels in size, scaled as the display is (`scaleFor`). The pause menu and every screen outside
+/// a mission's flight show it.
+pub fn drawVersion(font: *Opened, gpa: Allocator, target: device.Device, screen: [2]u32, version: []const u8) Allocator.Error!void {
+    var buffer: [64]u8 = undefined;
+    const text = std.fmt.bufPrint(&buffer, "OpenReliant {s}", .{version}) catch version;
+    const scale = scaleFor(screen);
+    const height: i32 = @intCast(font.font.header.height);
+    const at: [2]i32 = .{
+        @as(i32, @intCast(screen[0])) - pixels(version_margin, scale),
+        @as(i32, @intCast(screen[1])) - pixels(version_margin + height, scale),
+    };
+    _ = try drawText(font, gpa, target, at, text, atBrightness(version_colour, version_brightness), .right, scale);
+}
+
+/// The version's distance from the window's edges, in the display's pixels, and its colour: the
+/// menus' orange at half its brightness.
+const version_margin = 8;
+const version_colour = rgb(0xFE851A);
+const version_brightness = 0.5;
+
 /// `text_entry_step` (`0x004812F0`), with the line set up for it each frame (`text_entry_set_up`,
 /// `0x004812B0`): takes the next character typed (`winmain.Typed.pop`) into the line, the first
 /// `length` of `buffer`. A backspace takes the last character off; any other goes on the end where
@@ -1082,6 +1104,27 @@ test typeInto {
     for (0..6) |_| typed.push(2);
     for (0..6) |_| typeInto(&typed, &buffer, &length, &opened, width * 3);
     try std.testing.expectEqual(buffer.len, length);
+}
+
+test drawVersion {
+    const gpa = std.testing.allocator;
+    var opened: Opened = .open(try fnt.Font.parse(comptime fnt.testing.font(true)), null);
+    defer opened.deinit(gpa);
+    var recorder: device.testing.Recorder = .{ .gpa = gpa };
+    defer recorder.deinit();
+
+    // On a window twice the display's size, the line ends 16 pixels in from the right edge and 16
+    // up from the foot. The fixture's code 1, the version's last character, is the only one with
+    // a glyph.
+    try drawVersion(&opened, gpa, recorder.interface(), .{ 2048, 1536 }, "\x01");
+    try std.testing.expectEqual(1, recorder.draws.items.len);
+    const width: f32 = @floatFromInt(opened.widths[1]);
+    const height: f32 = @floatFromInt(opened.font.header.height);
+    const corners = recorder.drawn(0);
+    try std.testing.expectEqual(2048 - 16, corners[2].x);
+    try std.testing.expectEqual(1536 - 16, corners[2].y);
+    try std.testing.expectEqual(2048 - 16 - width * 2, corners[0].x);
+    try std.testing.expectEqual(1536 - 16 - height * 2, corners[0].y);
 }
 
 test drawText {

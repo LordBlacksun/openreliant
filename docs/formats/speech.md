@@ -1,8 +1,10 @@
 # Speech files
 
 The radio's lines, one file each in `ms_speech\msspeech.hog` ([`.HOG`](hog.md)), kept without the
-`.ut` extension the missions' scripts name them by: `ms1_ban_001.ut` is the member `MS1_BAN_001`.
-Each is a stream of the game's own speech codec, scrambled.
+`.ut` extension the missions' scripts name them by: `ms1_ban_001.ut` is the member `MS1_BAN_001`;
+and the scenes, the `.box` files of the discs' archives, Enriquez's in the Reliant's rooms and the
+news reports ([The Reliant's rooms](../engine/rooms.md)). Each is a stream of the game's own speech
+codec, scrambled.
 [`engine/game/cbox.zig`](../../src/engine/game/cbox.zig) reads a file and
 [`engine/game/voice.zig`](../../src/engine/game/voice.zig) decodes its stream.
 
@@ -16,11 +18,11 @@ sltool speech extract <archive> <out-dir>   # every line of an archive
 | Offset | Size | Field |
 |---|---|---|
 | 0 | 4 | The file's length past this field |
-| 4 | 4 | `CB00` |
+| 4 | 4 | `CB00`, or `CB97` for a scene |
 | 8 | 4 | The speech's size as 16-bit samples, in bytes: twice the samples it plays |
 | 12 | | The stream, to the end of the file |
 
-The stream is XORed with the key `AB 2D 9A AA`, repeating from its first byte, up to 8 bytes before
+The game plays a file whatever its tag. The stream is XORed with the key `AB 2D 9A AA`, repeating from its first byte, up to 8 bytes before
 the file's end; the last 8 bytes are plain, in every shipped file. The game unscrambles a file in
 place as it loads it (`speech_unscramble`, `0x00462000`), writes `man` over the length as its mark
 of having done so, and leaves a file so marked, or one beginning `CB`, as it is.

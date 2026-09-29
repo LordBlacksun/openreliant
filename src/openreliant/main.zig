@@ -39,6 +39,8 @@ const presenting = @import("presenter.zig");
 const Presenter = presenting.Presenter;
 const Screen = presenting.Screen;
 const frameSize = presenting.frameSize;
+const drawn = presenting.drawn;
+const Rooms = @import("rooms.zig").Driver;
 const test_keys = @import("test_keys.zig");
 const version = @import("version.zig");
 
@@ -638,8 +640,6 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
     var hangar: game.xtrabits.movie.Hangar = .{};
     var movies: Movies = .{
         .gpa = gpa,
-        .io = io,
-        .directory = directory,
         .codec = decoders.codec(),
         .sound = if (output) |open| open.driver() else null,
         .presenter = &presenter,
@@ -968,36 +968,57 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options) !void {
                 .bank = stdsmp,
                 .resources = &front_resources.?,
                 .settings = &settings_file,
-            })) |outcome| switch (outcome) {
-                .quit => return,
-                .fly => |flight| {
-                    play.number = flight.mission;
-                    play.file = missionFile(io, arena, directory, &resources, flight.mission) catch |err| switch (err) {
-                        error.MissingMission => continue,
-                        else => |other| return other,
-                    };
-                    // The flight's ship, else the one `--ship` names, else the mission's ship; and
-                    // the simulator it runs in.
-                    objects.loadout_ships[objects.player] = if (flight.ship orelse options.ship) |ship| @enumFromInt(ship) else null;
-                    objects.simulator = flight.simulator;
-                    // The pilot the front end has set flies it: the radio says the pilot's own
-                    // lines in the pilot's voice, and hits land by the game's difficulty.
-                    player.female = front.pilot.female;
-                    world.difficulty = front.pilot.difficulty;
-                    // `WinMain` fades the music out over a second, then plays the hangar's movie
-                    // before the mission's loading, and the landing after it.
-                    play.winmain_flight = flight.byWinMain();
-                    if (play.winmain_flight) {
-                        waitBeforeLaunch(&clock, sound);
-                        if (!try movies.launch(&hangar, flight.mission)) return;
-                    }
-                    sound.closeMusic();
-                    clock.start(platform.window.ticks());
-                    try play.start(.{ .world = world, .clock = &clock, .devices = &devices });
-                    in_front_end = false;
-                    from_front_end = true;
-                },
-            };
+            })) |outcome| {
+                const flight: game.interface.main_menu.Flight = switch (outcome) {
+                    .quit => return,
+                    .fly => |flight| flight,
+                    // START GAME: `WinMain` takes the campaign into the Reliant's rooms, whose
+                    // briefing room's door flies the mission until the briefing is ported (#73).
+                    .campaign => |mission| campaign: {
+                        var rooms: Rooms = .{
+                            .movies = &movies,
+                            .sound = sound,
+                            .clock = &clock,
+                            .resources = &resources,
+                            .front = &front_resources.?,
+                            .strings = &strings,
+                            .peaks = options.speech.peaks,
+                        };
+                        switch (try rooms.campaign(mission) orelse return) {
+                            .briefing => break :campaign .{ .mission = mission },
+                            .main_menu => {
+                                front.back();
+                                continue;
+                            },
+                        }
+                    },
+                };
+                play.number = flight.mission;
+                play.file = missionFile(io, arena, directory, &resources, flight.mission) catch |err| switch (err) {
+                    error.MissingMission => continue,
+                    else => |other| return other,
+                };
+                // The flight's ship, else the one `--ship` names, else the mission's ship; and
+                // the simulator it runs in.
+                objects.loadout_ships[objects.player] = if (flight.ship orelse options.ship) |ship| @enumFromInt(ship) else null;
+                objects.simulator = flight.simulator;
+                // The pilot the front end has set flies it: the radio says the pilot's own
+                // lines in the pilot's voice, and hits land by the game's difficulty.
+                player.female = front.pilot.female;
+                world.difficulty = front.pilot.difficulty;
+                // `WinMain` fades the music out over a second, then plays the hangar's movie
+                // before the mission's loading, and the landing after it.
+                play.winmain_flight = flight.byWinMain();
+                if (play.winmain_flight) {
+                    waitBeforeLaunch(&clock, sound);
+                    if (!try movies.launch(&hangar, flight.mission)) return;
+                }
+                sound.closeMusic();
+                clock.start(platform.window.ticks());
+                try play.start(.{ .world = world, .clock = &clock, .devices = &devices });
+                in_front_end = false;
+                from_front_end = true;
+            }
         }
         // The movie a screen of the front end plays as it leads to another.
         if (front.movie) |name| {
@@ -1279,7 +1300,7 @@ const FrontEndDisplay = struct {
 
     fn draw(context: *anyopaque) Allocator.Error!void {
         const shown: *FrontEndDisplay = @ptrCast(@alignCast(context));
-        return drawn(shown.front.draw(shown.resources, shown.target, shown.window, shown.strings));
+        return drawn(shown.front.draw(shown.resources, shown.target, shown.window, shown.strings, version.string));
     }
 };
 
@@ -1328,21 +1349,13 @@ const Loading = struct {
                 .gpa = resources.gpa,
                 .target = shown.loading.presenter.screen.interface(),
                 .window = shown.window,
-                .fonts = .{ .large = &resources.font, .small = &resources.font },
+                .fonts = .{ .large = &resources.font, .small = &resources.small },
                 .strings = shown.loading.strings,
+                .version = version.string,
             }, shown.line);
         }
     };
 };
-
-/// What an overlay's drawing fails with: running out of memory alone. A shape the file does not
-/// hold draws nothing, as it does in the game.
-fn drawn(result: anytype) Allocator.Error!void {
-    result catch |err| switch (err) {
-        error.OutOfMemory => |out| return out,
-        else => {},
-    };
-}
 
 /// The mission being played: the file it starts from, and the mission loaded for play, which
 /// starts again as each attempt ends, with what each start readies (`game.main.startMission`).

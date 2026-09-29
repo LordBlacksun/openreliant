@@ -124,6 +124,11 @@ pub const exported = [_]Export{
     .{ "MenuItemStyle", engine.game.hudoptions.menu.Item.Style },
     .{ "MenuAlignment", engine.game.hudoptions.menu.Alignment },
 
+    // The front end and the Reliant's rooms.
+    .{ "InterfaceRect", engine.game.interface.canvas.Rect },
+    .{ "VrView", engine.game.interface.rooms.View.Record },
+    .{ "VrAction", engine.game.interface.rooms.Action },
+
     // Orders.
     .{ "Order", engine.game.ai.orders.Order },
     .{ "OrderRecord", engine.game.ai.Record },

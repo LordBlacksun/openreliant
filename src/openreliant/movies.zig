@@ -5,7 +5,6 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const Io = std.Io;
 
 const openreliant = @import("openreliant");
 const platform = @import("platform");
@@ -20,8 +19,6 @@ const Presenter = @import("presenter.zig").Presenter;
 
 pub const Movies = struct {
     gpa: Allocator,
-    io: Io,
-    directory: Io.Dir,
     codec: engine.bink.Codec,
     /// The Miles driver the movies' sound plays through, where there is sound.
     sound: ?engine.mss.Driver,
@@ -36,7 +33,8 @@ pub const Movies = struct {
     /// whether a movie plays (`movie.Kind.plays`).
     transitions: bool,
     hardware: bool,
-    /// The disc's archive open, which the movies of a mission's flight come from.
+    /// The disc's archive open, which the movies of a mission's flight come from, and whose folder,
+    /// the game's, holds the others.
     disc: *game.interface.disc.Disc,
     /// Whether a controller was connected or taken out while a movie played, which the game's loop
     /// then takes up.
@@ -55,45 +53,42 @@ pub const Movies = struct {
     /// The movie `name` names, read from where `kind` reads it and opened to play as it has it;
     /// null where it is left out.
     fn open(movies: *Movies, name: []const u8, kind: movie.Kind) ?movie.Player {
-        const source = kind.source();
-        const found = switch (source) {
-            .folder => engine.files.readFile(movies.io, movies.gpa, movies.directory, name, .limited(engine.files.max_file_size)),
-            .disc => movies.disc.readStored(movies.gpa, name),
-        } catch |err| {
-            std.log.warn("the movie {s} is left out: {s}", .{ name, @errorName(err) });
-            return null;
-        };
-        const file = found orelse {
-            std.log.warn("the movie {s} is left out: {s}", .{ name, switch (source) {
-                .folder => "the game's folder has none",
-                .disc => "no disc's archive open holds it",
-            } });
-            return null;
-        };
-        return movie.Player.open(movies.gpa, movies.codec, file, kind, movies.sound, movies.look) catch |err| {
-            std.log.warn("the movie {s} is left out: {s}", .{ name, @errorName(err) });
-            return null;
-        };
+        return .load(movies.gpa, movies.codec, movies.disc, name, kind, movies.sound, movies.look);
     }
+
+    /// The window's messages since the last pass, as the message pump reads them: the keys, the
+    /// pointer and its buttons into the devices, and a controller connected or taken out noted.
+    /// Null where the window was closed, which quits the game (`game_exit`).
+    pub fn pump(movies: *Movies) ?Pumped {
+        const devices = movies.devices;
+        var pumped: Pumped = .{};
+        while (movies.presenter.window.poll()) |event| switch (event) {
+            .quit => return null,
+            .key => |key| devices.keyboard.down[@intFromEnum(key.scan)] = key.down,
+            .pointer => |pointer| devices.mouse.at = pointer.at,
+            .button => |button| switch (button.which) {
+                .left => devices.mouse.buttons.left = button.down,
+                .right => devices.mouse.buttons.right = button.down,
+            },
+            .active => |active| pumped.active = active,
+            .controllers => movies.controllers_changed = true,
+            .typed => {},
+        };
+        return pumped;
+    }
+
+    /// What the messages told besides the input: whether the window went inactive or active
+    /// again, where it did.
+    pub const Pumped = struct { active: ?bool = null };
 
     /// Runs the loop of `player`, the movie `name` names, until it ends; null where the window was
     /// closed meanwhile.
     fn run(movies: *Movies, player: *movie.Player, name: []const u8) !?movie.End {
         const devices = movies.devices;
         while (true) {
-            while (movies.presenter.window.poll()) |event| switch (event) {
-                .quit => return null,
-                .key => |key| devices.keyboard.down[@intFromEnum(key.scan)] = key.down,
-                .pointer => |pointer| devices.mouse.at = pointer.at,
-                .button => |button| switch (button.which) {
-                    .left => devices.mouse.buttons.left = button.down,
-                    .right => devices.mouse.buttons.right = button.down,
-                },
-                // The message pump pauses the movie while the window is away (`BinkPause`).
-                .active => |active| player.bink.pause(!active, platform.window.nanoseconds()),
-                .controllers => movies.controllers_changed = true,
-                .typed => {},
-            };
+            const pumped = movies.pump() orelse return null;
+            // The message pump pauses the movie while the window is away (`BinkPause`).
+            if (pumped.active) |active| player.bink.pause(!active, platform.window.nanoseconds());
             devices.keyboard.read();
             const end = player.pass(&devices.keyboard, devices.mouse.buttons.right, platform.window.nanoseconds()) catch |err| end: {
                 std.log.warn("the movie {s} stops short: {s}", .{ name, @errorName(err) });

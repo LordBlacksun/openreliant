@@ -67,6 +67,14 @@ pub const Disc = struct {
         const hog = disc.hog orelse return null;
         return hog.readStored(gpa, name);
     }
+
+    /// The file `name` names in the archive open, expanded where RefPack packed it (`hog_read_file`
+    /// on `cd_hog`); null where no archive is open, or it has none.
+    pub fn readFile(disc: Disc, gpa: Allocator, name: []const u8) bigfile.ReadError!?[]u8 {
+        const hog = disc.hog orelse return null;
+        if (!hog.has(name)) return null;
+        return try hog.readFile(gpa, name);
+    }
 };
 
 test Number {
@@ -91,6 +99,10 @@ test Disc {
     defer gpa.free(movie);
     try std.testing.expectEqualStrings("BIKf", movie);
     try std.testing.expectEqual(null, try disc.readStored(gpa, "y_h_ta.bik"));
+    const read = (try disc.readFile(gpa, "r_h_ta.bik")).?;
+    defer gpa.free(read);
+    try std.testing.expectEqualStrings("BIKf", read);
+    try std.testing.expectEqual(null, try disc.readFile(gpa, "vrsnd.fat"));
 
     // The first disc's archive is missing: the second is closed all the same, and nothing is open.
     disc.open(.one);

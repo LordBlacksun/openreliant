@@ -17,6 +17,8 @@ const camera = @import("camera.zig");
 const hog_snd = @import("hog_snd.zig");
 const hudoptions = @import("hudoptions.zig");
 const pilot_roster = @import("interface/pilot_roster.zig");
+const rooms = @import("interface/rooms.zig");
+const disc = @import("interface/disc.zig");
 const CallSigns = pilot_roster.CallSigns;
 const profile = @import("../profile.zig");
 const Profile = profile.Profile;
@@ -195,18 +197,44 @@ test missionNumber {
 }
 
 /// What `WinMain` does before the hangar's movie of a mission it flies (`0x004AA3B2` on, and
-/// `0x004A9BE2` on after a briefing): the music starts fading out by `launch_fade_step` from the
+/// `0x004A9BE2` on after a briefing): the music starts fading out by `music_fade_step` from the
 /// timer's count `game_ticks` (`music_fade_out`), and the voices stop (`sound_pause_all`). It then
 /// waits `launch_wait`, in which the timer fades the music out. **Unverified:** that the call it
 /// waits with, a second's worth of milliseconds its one argument, is `Sleep`, whose import the
 /// executable's protection hides.
 pub fn launchFade(sound: *Sound, game_ticks: u32) void {
-    sound.fadeMusic(launch_fade_step, game_ticks);
+    sound.fadeMusic(music_fade_step, game_ticks);
     sound.pauseAll();
 }
 
-pub const launch_fade_step = 15;
+/// The step `WinMain` fades the music out by, as a campaign starts and before the hangar's movie.
+pub const music_fade_step = 15;
 pub const launch_wait = std.time.ns_per_s;
+
+/// What `WinMain` does as a single-player campaign starts, as START GAME starts one, before the
+/// Reliant's rooms (`vr_rooms`) for mission `mission` (`0x004AA1BA` on): the music starts fading
+/// out by `music_fade_step`, and the archive of the disc that holds the rooms opens
+/// (`rooms.Carrier.disc`). Before mission 1, a new pilot's intro (`new_intro`) and induction
+/// (`interface.induction`) come first.
+pub const CampaignStart = struct {
+    disc: disc.Number,
+    induction: bool,
+
+    pub fn of(mission: u16) CampaignStart {
+        return .{ .disc = rooms.Carrier.of(mission).disc(), .induction = mission == induction_mission };
+    }
+};
+
+/// The mission a new pilot's induction comes before (`0x004AA229`), and the intro before it,
+/// played from the disc on a cleared screen (`play_bink_movie_resourced`, `0x0050967C`).
+pub const induction_mission = 1;
+pub const new_intro = "new_intro.bik";
+
+test CampaignStart {
+    try std.testing.expectEqual(CampaignStart{ .disc = .two, .induction = true }, CampaignStart.of(1));
+    try std.testing.expectEqual(CampaignStart{ .disc = .two, .induction = false }, CampaignStart.of(18));
+    try std.testing.expectEqual(CampaignStart{ .disc = .one, .induction = false }, CampaignStart.of(19));
+}
 
 test launchFade {
     const mss = @import("../mss.zig");

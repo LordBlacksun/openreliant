@@ -242,6 +242,16 @@ face-tables: ## Re-derive the pilots' faces, the string naming each pilot, its s
 	$(ROOT)/zig-out/bin/tablegen faces $(PAYLOAD) $(FACE_TABLES)
 	$(ZIG) fmt $(FACE_TABLES)
 
+ROOM_TABLES := $(ROOT)/src/engine/game/interface/rooms/views.zig
+
+.PHONY: room-tables
+room-tables: ## Re-derive the views of the Reliant's rooms and the Yamato's, their hotspots, movies, labels, exits and actions, from the payload executable
+	@test -f $(PAYLOAD) || { echo "missing $(PAYLOAD), the game executable with its code readable" >&2; exit 1; }
+	$(ZIG) build tablegen
+	mkdir -p $(dir $(ROOM_TABLES))
+	$(ROOT)/zig-out/bin/tablegen rooms $(PAYLOAD) $(ROOM_TABLES)
+	$(ZIG) fmt $(ROOM_TABLES)
+
 VIEW_TABLES := $(ROOT)/src/engine/game/camera/views.zig
 
 .PHONY: view-tables

@@ -16,6 +16,7 @@
 //!     tablegen sequences <LANCER.EXE> <output.zig>
 //!     tablegen speech <LANCER.EXE> <output.zig>
 //!     tablegen faces <LANCER.EXE> <output.zig>
+//!     tablegen rooms <LANCER.EXE> <output.zig>
 //!     tablegen sources <LANCER.EXE> <disassembly.asm> <strings.tsv> <output.zig>
 //!
 //! `opcodes`: the VM dispatches on a byte through a table of handler addresses. Reading that table
@@ -59,6 +60,9 @@
 //! `faces`: the pilots' faces, the string that names each pilot, its side and the films of its
 //! face.
 //!
+//! `rooms`: the views of the Reliant's rooms and the Yamato's, with their hotspots, movies,
+//! labels, exits and actions.
+//!
 //! `sources`: the source files the payload was compiled from, in link order, and the code known to
 //! be each one's, from the paths their assertions hold. `strings.tsv` is the export's too.
 //!
@@ -84,6 +88,7 @@ const image = @import("image.zig");
 const maneuvers = @import("maneuvers.zig");
 const models = @import("models.zig");
 const orders = @import("orders.zig");
+const rooms = @import("rooms.zig");
 const sources = @import("sources.zig");
 const sequences = @import("sequences.zig");
 const speech = @import("speech.zig");
@@ -122,6 +127,7 @@ const usage =
     \\       tablegen sequences <LANCER.EXE> <output.zig>
     \\       tablegen speech <LANCER.EXE> <output.zig>
     \\       tablegen faces <LANCER.EXE> <output.zig>
+    \\       tablegen rooms <LANCER.EXE> <output.zig>
     \\       tablegen sources <LANCER.EXE> <disassembly.asm> <strings.tsv> <output.zig>
     \\
 ;
@@ -143,6 +149,7 @@ const Mode = union(enum) {
     sequences: struct { binary: []const u8, output: []const u8 },
     speech: struct { binary: []const u8, output: []const u8 },
     faces: struct { binary: []const u8, output: []const u8 },
+    rooms: struct { binary: []const u8, output: []const u8 },
     sources: struct { binary: []const u8, listing: []const u8, strings: []const u8, output: []const u8 },
 
     /// The mode `args` names, then its paths in the order its fields list them.
@@ -210,6 +217,7 @@ pub fn main(init: std.process.Init) !u8 {
         .sequences => |paths| sequenceTable(init, arena, paths),
         .speech => |paths| speechTables(init, arena, paths),
         .faces => |paths| faceTable(init, arena, paths),
+        .rooms => |paths| roomTable(init, arena, paths),
         .sources => |paths| sourceMap(init, arena, paths),
     };
 }
@@ -303,6 +311,19 @@ fn faceTable(init: std.process.Init, arena: std.mem.Allocator, paths: @FieldType
     const found = try faces.read(arena, try loadBinary(init, arena, paths.binary));
     try writeOutput(init, paths.output, faces.emit, .{found});
     std.debug.print("{d} pilots' faces -> {s}\n", .{ found.len, paths.output });
+    return 0;
+}
+
+fn roomTable(init: std.process.Init, arena: std.mem.Allocator, paths: @FieldType(Mode, "rooms")) !u8 {
+    const entries = comptime blk: {
+        const values = std.enums.values(openreliant.engine.game.interface.rooms.Entry);
+        var addresses: [values.len]u32 = undefined;
+        for (&addresses, values) |*address, entry| address.* = @intFromEnum(entry);
+        break :blk addresses;
+    };
+    const found = try rooms.read(arena, try loadBinary(init, arena, paths.binary), &entries);
+    try writeOutput(init, paths.output, rooms.emit, .{found});
+    std.debug.print("{d} views of the rooms -> {s}\n", .{ found.len, paths.output });
     return 0;
 }
 
@@ -491,6 +512,7 @@ test {
     _ = maneuvers;
     _ = models;
     _ = orders;
+    _ = rooms;
     _ = sequences;
     _ = sources;
     _ = speech;

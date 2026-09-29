@@ -111,24 +111,35 @@ pub const startup_step: Frame = .{ .picture = startup_picture, .line = .loading 
 const line_rise = 40;
 
 /// What the loading screens draw with: the front end's large font, drawn as levels of one colour
-/// (`hud.Opened.ramp`), and the picture shown.
+/// (`hud.Opened.ramp`), its small one, which OpenReliant's version is written in, and the picture
+/// shown.
 pub const Resources = struct {
     gpa: Allocator,
-    /// The font's file, which its glyphs stay in.
+    /// The fonts' files, which their glyphs stay in.
     font_file: []const u8,
     font: hud.Opened,
+    small_file: []const u8,
+    small: hud.Opened,
     picture: matmanager.Background = .{},
 
     pub fn open(gpa: Allocator, archive: bigfile.Hog) !Resources {
         const font_file = try archive.readFile(gpa, hud.large_menu_font);
         errdefer gpa.free(font_file);
-        return .{ .gpa = gpa, .font_file = font_file, .font = .ramp(try fnt.Font.parse(font_file)) };
+        const small_file = try archive.readFile(gpa, hud.small_menu_font);
+        errdefer gpa.free(small_file);
+        return .{
+            .gpa = gpa,
+            .font_file = font_file,
+            .font = .ramp(try fnt.Font.parse(font_file)),
+            .small_file = small_file,
+            .small = .ramp(try fnt.Font.parse(small_file)),
+        };
     }
 
     pub fn close(resources: *Resources) void {
         resources.picture.deinit(resources.gpa);
-        resources.font.deinit(resources.gpa);
-        resources.gpa.free(resources.font_file);
+        inline for (.{ &resources.font, &resources.small }) |font| font.deinit(resources.gpa);
+        inline for (.{ resources.font_file, resources.small_file }) |file| resources.gpa.free(file);
     }
 
     /// Readies `frame`'s picture (`background_set`), read from `archive` unless it is shown
@@ -142,14 +153,17 @@ pub const Resources = struct {
 
     /// Draws a frame of the loading screen on `drawn`, the front end's screen: the picture over the
     /// whole of it (`background_set`), and `line`, where there is one, in white, centred across it
-    /// and its top `line_rise` above its foot (`loading_line_draw`, `0x004AB2B0`). The game lays
-    /// the line out in the screen's own pixels; OpenReliant lays it out as it does on a screen 640
-    /// by 480, as large as fits in the window, as the front end's screens are.
+    /// and its top `line_rise` above its foot (`loading_line_draw`, `0x004AB2B0`), then
+    /// OpenReliant's version (`canvas.Canvas.drawVersion`). The game lays the line out in the
+    /// screen's pixels; OpenReliant lays it out as it does on a screen 640 by 480, as large as
+    /// fits in the window, as the front end's screens are.
     pub fn draw(resources: *Resources, drawn: canvas.Canvas, line: ?[]const u8) Allocator.Error!void {
         if (resources.picture.image) |*picture| drawn.fill(picture);
-        const words = line orelse return;
-        const at: [2]i32 = .{ @divTrunc(canvas.size[0], 2), canvas.size[1] - line_rise };
-        try drawn.text(&resources.font, at, words, white, .centre);
+        if (line) |words| {
+            const at: [2]i32 = .{ @divTrunc(canvas.size[0], 2), canvas.size[1] - line_rise };
+            try drawn.text(&resources.font, at, words, white, .centre);
+        }
+        try drawn.drawVersion();
     }
 };
 
@@ -182,8 +196,14 @@ test Resources {
     const gpa = std.testing.allocator;
     const device = @import("../../surrender/srd3d/device.zig");
     const srtexture = @import("../../surrender/surrenderlib/srtexture.zig");
-    var resources: Resources = .{ .gpa = gpa, .font_file = &.{}, .font = .ramp(try fnt.Font.parse(comptime fnt.testing.font(true))) };
-    defer resources.font.deinit(gpa);
+    var resources: Resources = .{
+        .gpa = gpa,
+        .font_file = &.{},
+        .font = .ramp(try fnt.Font.parse(comptime fnt.testing.font(true))),
+        .small_file = &.{},
+        .small = .ramp(try fnt.Font.parse(comptime fnt.testing.font(true))),
+    };
+    defer inline for (.{ &resources.font, &resources.small }) |font| font.deinit(gpa);
     // A picture 4 by 3, of the front end's shape.
     const rgba = try gpa.alloc(u8, 4 * 3 * 4);
     @memset(rgba, 0xFF);
@@ -199,7 +219,7 @@ test Resources {
         .gpa = gpa,
         .target = recorder.interface(),
         .window = .{ 1280, 960 },
-        .fonts = .{ .large = &resources.font, .small = &resources.font },
+        .fonts = .{ .large = &resources.font, .small = &resources.small },
         .strings = &strings,
     };
 

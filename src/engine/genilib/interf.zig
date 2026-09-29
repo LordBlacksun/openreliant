@@ -59,13 +59,16 @@ pub const Screen = enum(u8) {
 pub const Outcome = union(enum) {
     /// QUIT, answered YES: 3.
     quit,
-    /// A mission to fly: 1, where the briefing is skipped, else 2 once the briefing has been. The
-    /// pilot the roster set flies it (`Interface.pilot`).
+    /// START GAME: 1, a single-player campaign, which `WinMain` takes into the Reliant's rooms
+    /// before the mission of its number (`winmain.CampaignStart`). The pilot the roster set flies
+    /// its missions (`Interface.pilot`).
+    campaign: u16,
+    /// A mission to fly, as the developers' keys and INSTANT ACTION start one: 1, where the
+    /// briefing is skipped, else 2 once the briefing has been.
     fly: main_menu.Flight,
 };
 
-/// The mission a new campaign starts with (`campaign_new` sets `mission_number` to 1), which
-/// START GAME flies while the Reliant's rooms and the briefing are not ported.
+/// The mission a new campaign starts with (`campaign_new` sets `mission_number` to 1).
 pub const first_mission = 1;
 
 /// What the front end draws with, which it opens as it starts and frees as it ends: the fonts its
@@ -206,8 +209,8 @@ pub const Interface = struct {
     /// what the front end ends in, once it does.
     ///
     /// Not ported: the screens besides the main menu and the pilot roster (#43 lists them). Until
-    /// they are, START GAME flies the campaign's first mission, and MULTI PLAYER, GAME OPTIONS and
-    /// LOAD GAME stay on their screen, without their movies.
+    /// they are, MULTI PLAYER, GAME OPTIONS and LOAD GAME stay on their screen, without their
+    /// movies.
     ///
     /// **Fix:** a screen takes no press until the button held as it was entered comes up. The
     /// movie between two screens gives the press that chose the second time to end; where the
@@ -260,7 +263,7 @@ pub const Interface = struct {
                     .saved_games => log.info("LOAD GAME's saved games are not ported yet", .{}),
                     .start_game => {
                         front.leave(context);
-                        return .{ .fly = .{ .mission = first_mission } };
+                        return .{ .campaign = first_mission };
                     },
                     .quit => return .quit,
                 }
@@ -310,14 +313,16 @@ pub const Interface = struct {
     }
 
     /// The front end's frame as its render hook draws it (`sr + 0x88`): the background behind all,
-    /// then the shown screen.
-    pub fn draw(front: Interface, resources: *Resources, target: device.Device, window: [2]u32, strings: *const language.Language) canvas.Error!void {
+    /// then the shown screen, with OpenReliant's `version` in the window's corner where there is
+    /// one (`canvas.Canvas.drawVersion`).
+    pub fn draw(front: Interface, resources: *Resources, target: device.Device, window: [2]u32, strings: *const language.Language, version: ?[]const u8) canvas.Error!void {
         const drawn: canvas.Canvas = .{
             .gpa = resources.gpa,
             .target = target,
             .window = window,
             .fonts = .{ .large = &resources.large, .small = &resources.small },
             .strings = strings,
+            .version = version,
         };
         if (resources.background.image) |*shown| drawn.image(shown, .{ 0, 0 });
         const art = if (resources.shapes) |*shapes| shapes else return;

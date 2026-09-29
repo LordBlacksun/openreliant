@@ -1,15 +1,20 @@
 //! `C:\lancer\game\interface.cpp`: the front end's screens and the settings they manage. Ported so
 //! far: loading the input settings and bindings from `starlancer.ini` (`load_key_config`), the main
 //! menu (`main_menu`) with its dialog (`dialog`), and the pilot roster (`pilot_roster`), on the
-//! front end's screen (`canvas`); and opening the discs' archives (`disc`).
+//! front end's screen (`canvas`); opening the discs' archives (`disc`); and the Reliant's rooms
+//! (`rooms`), with a new pilot's induction (`induction`) and the in-game options
+//! (`in_game_options`).
 
 const std = @import("std");
 
 pub const canvas = @import("interface/canvas.zig");
 pub const dialog = @import("interface/dialog.zig");
 pub const disc = @import("interface/disc.zig");
+pub const in_game_options = @import("interface/in_game_options.zig");
+pub const induction = @import("interface/induction.zig");
 pub const main_menu = @import("interface/main_menu.zig");
 pub const pilot_roster = @import("interface/pilot_roster.zig");
+pub const rooms = @import("interface/rooms.zig");
 
 const input = @import("../input.zig");
 const controls = input.controls;
@@ -225,6 +230,9 @@ test {
     _ = canvas;
     _ = dialog;
     _ = disc;
+    _ = in_game_options;
+    _ = induction;
     _ = main_menu;
     _ = pilot_roster;
+    _ = rooms;
 }
