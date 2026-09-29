@@ -285,7 +285,9 @@ pub fn opensInPlace(name: []const u8) bool {
 pub const Packing = enum {
     /// A RefPack stream where one is smaller and the game can expand it in place.
     compress,
-    /// As it is (`sltool hog pack --store`).
+    /// As it is (`sltool hog pack --store`), where the game reads it so. Data that begins `10 FB`
+    /// the game takes for a stream, which `packMember` keeps where it loads in place, stores as
+    /// what it expands to where it is one over the bound, and compresses where it is none.
     store,
 };
 
@@ -324,23 +326,23 @@ pub const PackError = error{
 /// member extracted as stored is. Otherwise what it expands to goes in instead, and where it
 /// expands to nothing, the data itself is compressed, having no form the game reads as it is.
 pub fn packMember(gpa: Allocator, compressor: *refpack.Compressor, packing: Packing, name: []const u8, data: []const u8) PackError!Packed {
-    if (opensInPlace(name) or !refpack.gameExpands(data)) return packContent(gpa, compressor, packing, name, data);
+    if (opensInPlace(name)) return .{ .bytes = try gpa.dupe(u8, data), .storage = .stored };
+    if (!refpack.gameExpands(data)) return packContent(gpa, compressor, packing, data);
     const expanded = refpack.decompressAlloc(gpa, data) catch |err| switch (err) {
         error.OutOfMemory => |e| return e,
         error.BadSignature, error.UnexpectedEnd, error.BadReference, error.SizeMismatch => {
-            return packContent(gpa, compressor, packing, name, data);
+            return packContent(gpa, compressor, packing, data);
         },
     };
     defer gpa.free(expanded);
     if (refpack.loadsInPlace(data)) return .{ .bytes = try gpa.dupe(u8, data), .storage = .already_compressed };
-    return packContent(gpa, compressor, packing, name, expanded);
+    return packContent(gpa, compressor, packing, expanded);
 }
 
-/// `data` as the game is to read it: as it is, or with `.compress` a RefPack stream where one is
-/// smaller and loads. Data that begins `10 FB` has only the stream, unless the game opens the member
-/// in place.
-fn packContent(gpa: Allocator, compressor: *refpack.Compressor, packing: Packing, name: []const u8, data: []const u8) PackError!Packed {
-    if (opensInPlace(name)) return .{ .bytes = try gpa.dupe(u8, data), .storage = .stored };
+/// `data` as the game is to read it, for a member it reads through `hog_read_file`: as it is, or
+/// with `.compress` a RefPack stream where one is smaller and loads. Data that begins `10 FB` has
+/// only the stream.
+fn packContent(gpa: Allocator, compressor: *refpack.Compressor, packing: Packing, data: []const u8) PackError!Packed {
     const needs_stream = refpack.gameExpands(data);
     if (packing == .compress or needs_stream) {
         if (compressor.compress(gpa, data)) |stream| {

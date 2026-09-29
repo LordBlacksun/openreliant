@@ -27,8 +27,10 @@ pub const Command = union(enum) {
         \\  hog pack <dir> <archive> [--store]
         \\                                  pack every file of a folder into a new archive,
         \\                                  compressing what the game can expand by default;
-        \\                                  --store keeps files as they are, but for one that
-        \\                                  begins 10 FB and is no stream the game loads
+        \\                                  --store compresses only what must be: a file that
+        \\                                  begins 10 FB is kept where it loads in place,
+        \\                                  stored expanded past the in-place bound, and
+        \\                                  compressed where it is no stream at all
         \\
     ;
 
@@ -174,9 +176,9 @@ fn extract(ctx: Context, archive: hog.Archive, out_path: []const u8, raw: bool) 
 
 /// Packs every file of the folder `dir_path` into a new archive at `path`, each file a member of
 /// its own name, in name order so that a folder packs the same wherever it is. Each member is
-/// stored as `hog.packMember` finds best, or as it is with `store`, except a file that begins
-/// `10 FB`, which the game takes for a stream whichever. The `~N` suffix `extract` gives a repeated
-/// name stays part of the member's name.
+/// stored as `hog.packMember` finds best, or with `store` compressed only where it must be
+/// (`hog.Packing.store`). The `~N` suffix `extract` gives a repeated name stays part of the
+/// member's name.
 fn pack(ctx: Context, dir_path: []const u8, path: []const u8, store: bool) !void {
     const io = ctx.io;
     var dir = try Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true });

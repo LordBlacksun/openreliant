@@ -963,6 +963,32 @@ test "each form's bytes at its limits" {
     }
 }
 
+test "each form's bytes at its limits, as the encoder writes them" {
+    const gpa = std.testing.allocator;
+    const literals = [_]u8{ 0xA1, 0xB2, 0xC3 };
+    // The bytes the decoding test reads, written from the other side: every field at zero, then at
+    // its most (the long form to the furthest the encoder reaches, one short of its field's), then
+    // each field on its own.
+    const cases = [_]struct { match: Match, carried: usize, bytes: []const u8 }{
+        .{ .match = .{ .distance = 1, .len = 3, .form = .short }, .carried = 0, .bytes = &.{ 0x00, 0x00 } },
+        .{ .match = .{ .distance = 1024, .len = 10, .form = .short }, .carried = 3, .bytes = &.{ 0x7F, 0xFF } },
+        .{ .match = .{ .distance = 1, .len = 4, .form = .medium }, .carried = 0, .bytes = &.{ 0x80, 0x00, 0x00 } },
+        .{ .match = .{ .distance = 16384, .len = 67, .form = .medium }, .carried = 3, .bytes = &.{ 0xBF, 0xFF, 0xFF } },
+        .{ .match = .{ .distance = 1, .len = 5, .form = .long }, .carried = 0, .bytes = &.{ 0xC0, 0x00, 0x00, 0x00 } },
+        .{ .match = .{ .distance = 131071, .len = 1028, .form = .long }, .carried = 3, .bytes = &.{ 0xDF, 0xFF, 0xFE, 0xFF } },
+        .{ .match = .{ .distance = 769, .len = 3, .form = .short }, .carried = 0, .bytes = &.{ 0x60, 0x00 } },
+        .{ .match = .{ .distance = 65537, .len = 5, .form = .long }, .carried = 0, .bytes = &.{ 0xD0, 0x00, 0x00, 0x00 } },
+        .{ .match = .{ .distance = 1, .len = 773, .form = .long }, .carried = 0, .bytes = &.{ 0xCC, 0x00, 0x00, 0x00 } },
+    };
+    for (cases) |case| {
+        var stream: Stream = .{};
+        defer stream.deinit(gpa);
+        try stream.match(gpa, &literals, 0, case.carried, case.match);
+        try std.testing.expectEqualSlices(u8, case.bytes, stream.bytes.items[0..case.bytes.len]);
+        try std.testing.expectEqualSlices(u8, literals[0..case.carried], stream.bytes.items[case.bytes.len..]);
+    }
+}
+
 test "literals go in runs of at most 112 and the last few ride the next command" {
     const gpa = std.testing.allocator;
     var data: [303]u8 = undefined;
