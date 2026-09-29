@@ -875,10 +875,10 @@ pub const Reader = struct {
         }
     }
 
-    /// `take`, decoded into records of `T`.
-    pub fn takeRecords(reader: *Reader, comptime T: type, gpa: Allocator, tag: Tag) ![]T {
-        const chunk = try reader.take(tag) orelse return gpa.alloc(T, 0);
-        return records(T, gpa, chunk);
+    /// `take`, decoded into `tag`'s records.
+    pub fn takeRecords(reader: *Reader, gpa: Allocator, comptime tag: Tag) ![]Record(tag) {
+        const chunk = try reader.take(tag) orelse return gpa.alloc(Record(tag), 0);
+        return records(Record(tag), gpa, chunk);
     }
 };
 
@@ -972,44 +972,44 @@ pub const Model = struct {
     pub fn parse(gpa: Allocator, data: []const u8) !Model {
         var reader: Reader = .init(data);
 
-        const headers = try reader.takeRecords(Header, gpa, .header);
+        const headers = try reader.takeRecords(gpa, .header);
         if (headers.len == 0) return error.NotAModel;
 
-        const parts = try reader.takeRecords(Part, gpa, .part);
+        const parts = try reader.takeRecords(gpa, .part);
         const out = try gpa.alloc(PartData, parts.len);
 
         for (parts, out) |part, *entry| {
-            const lods = try reader.takeRecords(Lod, gpa, .lod);
-            const nodes = try reader.takeRecords(TreeNode, gpa, .tree_node);
-            const attachments = try reader.takeRecords(Attachment, gpa, .attachment);
-            const clips = try reader.takeRecords(Clip, gpa, .animation_clip);
-            const kinds = try reader.takeRecords(u32, gpa, .point_list);
-            const triggers = try reader.takeRecords(TriggerPolygon, gpa, .trigger_polygon);
+            const lods = try reader.takeRecords(gpa, .lod);
+            const nodes = try reader.takeRecords(gpa, .tree_node);
+            const attachments = try reader.takeRecords(gpa, .attachment);
+            const clips = try reader.takeRecords(gpa, .animation_clip);
+            const kinds = try reader.takeRecords(gpa, .point_list);
+            const triggers = try reader.takeRecords(gpa, .trigger_polygon);
 
             const meshes = try gpa.alloc(Mesh, lods.len);
             for (lods, meshes) |lod, *mesh| {
                 mesh.* = .{
                     .lod = lod,
-                    .vertices = try reader.takeRecords(Vertex, gpa, .vertex),
-                    .faces = try reader.takeRecords(Face, gpa, .face),
-                    .materials = try reader.takeRecords(Material, gpa, .material),
+                    .vertices = try reader.takeRecords(gpa, .vertex),
+                    .faces = try reader.takeRecords(gpa, .face),
+                    .materials = try reader.takeRecords(gpa, .material),
                 };
             }
 
             // Per-node, per-clip and per-group lists follow the level geometry.
             const node_faces = try gpa.alloc([]u32, nodes.len);
-            for (node_faces) |*faces| faces.* = try reader.takeRecords(u32, gpa, .node_face_list);
+            for (node_faces) |*faces| faces.* = try reader.takeRecords(gpa, .node_face_list);
             const tracks = try gpa.alloc(Track, clips.len);
             for (clips, tracks) |clip, *track| {
                 track.* = .{
                     .clip = clip,
-                    .keyframes = try reader.takeRecords(Keyframe, gpa, .keyframe),
-                    .events = try reader.takeRecords(ClipEvent, gpa, .clip_event),
+                    .keyframes = try reader.takeRecords(gpa, .keyframe),
+                    .events = try reader.takeRecords(gpa, .clip_event),
                 };
             }
             const point_lists = try gpa.alloc(PointList, kinds.len);
             for (kinds, point_lists) |kind, *list| {
-                list.* = .{ .kind = @enumFromInt(kind), .points = try reader.takeRecords(Point, gpa, .point) };
+                list.* = .{ .kind = kind, .points = try reader.takeRecords(gpa, .point) };
             }
 
             entry.* = .{
@@ -1024,7 +1024,7 @@ pub const Model = struct {
             };
         }
 
-        const firing_arcs = try reader.takeRecords(FiringArc, gpa, .firing_arc);
+        const firing_arcs = try reader.takeRecords(gpa, .firing_arc);
 
         // The size of each tag's records, and the terminator, which should be the last thing in
         // the file.

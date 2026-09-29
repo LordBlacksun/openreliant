@@ -6,10 +6,10 @@ Every ship, station, weapon, asteroid and piece of debris in the game is a `.SHP
 ```bash
 sltool shp info <model>                 # header flags, bounds, arcs, parts, levels, turrets
 sltool shp chunks <model>               # the raw chunk stream
-sltool shp check <model>                # validate indices, parents and bounds
+sltool shp check <model>                # validate indices, parents and bounds, and write it again
 sltool shp obj <model> <out.obj> [--lod n]
 make models                             # export every model to game/models
-make check-models                       # validate every model
+make check-models                       # validate every model, and write each again
 ```
 
 ## Chunk stream
@@ -70,6 +70,25 @@ firing arcs
 ```
 
 Every model follows this order and ends with the terminator at the last byte of the file.
+
+### Writing
+
+`shp.Model.write` writes a model as the loader reads it: its chunks in the order above, each record
+at the size its tag has in the model's file, and the terminator with a record size and count of 0.
+In every shipped model each tag has one record size, and a tag's chunk stands wherever the loader
+asks for one or nowhere, with a count of 0 where there are no records. The older exporters wrote no
+point lists, trigger polygons or firing arcs at all. `Model.parse` keeps each tag's size, or that
+the file has none of it (`shp.RecordSizes`), and the writer cuts each record short to that size or
+fills it out with zeros. A model built from scratch gets the whole records the engine keeps.
+
+The attachment records of 136 and 168 bytes hold zeros past the 124 bytes the engine keeps, in every
+shipped model, and the writer writes zeros there. Trigger polygons are written back as the file
+holds them. So every shipped model, written again, comes back byte for byte: `sltool shp check`
+checks it model by model, and `make check-models` for the whole installation.
+
+The writer fails rather than write a file the loader would misread: records of a tag the model's
+sizes leave out, a chunk of more records than its header counts (65535), or a part whose nodes do
+not each have their face list.
 
 ## Records
 
@@ -359,9 +378,10 @@ moved from each part's origin to the object's. **Unverified:** that they are int
 part's volume; the engine uses them as such
 ([Live objects](../engine/objects.md#the-model-hierarchy)).
 
-**Unknown:** the interpretation of trigger polygons (`0x0F`). They are parsed and counted, and their
-records are available, but their fields are not decoded here. One model carries two of them; the
-engine tests the player's ship against them before it descends the collision tree.
+**Unknown:** the interpretation of trigger polygons (`0x0F`). The reader keeps their records as the
+file holds them (`shp.TriggerPolygon`), and the writer writes them back, but their fields are not
+decoded here ([#11](https://github.com/vdmkenny/openreliant/issues/11)). One model carries two of
+them; the engine tests the player's ship against them before it descends the collision tree.
 
 ## Prior art
 
