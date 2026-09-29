@@ -678,7 +678,9 @@ const Stream = struct {
 /// and literals then take the input past it. The retail streams are all far inside: the largest
 /// value is 486 (`smp3d.fat`).
 ///
-/// `stream` must be of the form the game expands (`gameExpands`).
+/// `stream` must be of the form the game expands (`gameExpands`), and its commands must give its
+/// declared size, each match reaching back no further than the start of the output, as
+/// `decompressAlloc` requires.
 pub fn inPlaceExcess(stream: []const u8) Error!i64 {
     if (!gameExpands(stream)) return error.BadSignature;
     const header = try readHeader(stream);
@@ -694,14 +696,18 @@ pub fn inPlaceExcess(stream: []const u8) Error!i64 {
         if (stream.len - read < command.literals) return error.UnexpectedEnd;
         read += command.literals;
         written += @intCast(command.literals);
-        if (!command.last) written += @intCast(command.match_len);
+        if (!command.last) {
+            if (command.match_distance > written) return error.BadReference;
+            written += @intCast(command.match_len);
+        }
         worst = @max(worst, (total - @as(i64, @intCast(read))) - (size - written));
-        if (command.last) return worst;
+        if (command.last) return if (written == size) worst else error.SizeMismatch;
     }
 }
 
 /// Whether the game's in-place expansion of `stream` keeps within its slack (`inPlaceExcess`):
-/// false for one over it, and for bytes that are no stream of the form the game expands.
+/// false for one over it, and for bytes that are no stream of the form the game expands. A stream
+/// it passes expands to its declared size (`decompressAlloc`).
 pub fn loadsInPlace(stream: []const u8) bool {
     const excess = inPlaceExcess(stream) catch return false;
     return excess <= in_place_slack;
@@ -1037,6 +1043,12 @@ test inPlaceExcess {
     // Only the form the game expands has a bound.
     try std.testing.expectError(error.BadSignature, inPlaceExcess(&.{ 0x11, 0xFB, 0, 0, 0, 0, 0, 0, 0xFC }));
     try std.testing.expectError(error.UnexpectedEnd, inPlaceExcess(&.{ 0x10, 0xFB, 0, 0, 4, 0xE0, 'a' }));
+
+    // Commands that give a byte fewer, or a byte more, than the header declares, and a match that
+    // reaches before the start of the output.
+    try std.testing.expectError(error.SizeMismatch, inPlaceExcess(&.{ 0x10, 0xFB, 0x00, 0x00, 0x0D, 0xE0, 'a', 'b', 'c', 'd', 0x14, 0x03, 0xFC }));
+    try std.testing.expectError(error.SizeMismatch, inPlaceExcess(&.{ 0x10, 0xFB, 0x00, 0x00, 0x0B, 0xE0, 'a', 'b', 'c', 'd', 0x14, 0x03, 0xFC }));
+    try std.testing.expectError(error.BadReference, inPlaceExcess(&.{ 0x10, 0xFB, 0x00, 0x00, 0x08, 0x14, 0x03, 0xFC }));
 }
 
 /// A stream of `size` zero bytes written as literals alone, finished as the encoder finishes its
@@ -1074,9 +1086,11 @@ test "the largest literals-only payload the game loads in place" {
 
 test loadsInPlace {
     try std.testing.expect(loadsInPlace(&.{ 0x10, 0xFB, 0x00, 0x00, 0x0C, 0xE0, 'a', 'b', 'c', 'd', 0x14, 0x03, 0xFC }));
-    // Another form of stream, which the game does not expand, one cut short, and no stream at all.
+    // Another form of stream, which the game does not expand, one cut short, one that ends a byte
+    // short of its size, and no stream at all.
     try std.testing.expect(!loadsInPlace(&.{ 0x11, 0xFB, 0, 0, 0, 0, 0, 0, 0xFC }));
     try std.testing.expect(!loadsInPlace(&.{ 0x10, 0xFB, 0, 0, 4, 0xE0, 'a' }));
+    try std.testing.expect(!loadsInPlace(&.{ 0x10, 0xFB, 0x00, 0x00, 0x0D, 0xE0, 'a', 'b', 'c', 'd', 0x14, 0x03, 0xFC }));
     try std.testing.expect(!loadsInPlace("RIFF"));
 }
 

@@ -328,6 +328,7 @@ pub const PackError = error{
 pub fn packMember(gpa: Allocator, compressor: *refpack.Compressor, packing: Packing, name: []const u8, data: []const u8) PackError!Packed {
     if (opensInPlace(name)) return .{ .bytes = try gpa.dupe(u8, data), .storage = .stored };
     if (!refpack.gameExpands(data)) return packContent(gpa, compressor, packing, data);
+    if (refpack.loadsInPlace(data)) return .{ .bytes = try gpa.dupe(u8, data), .storage = .already_compressed };
     const expanded = refpack.decompressAlloc(gpa, data) catch |err| switch (err) {
         error.OutOfMemory => |e| return e,
         error.BadSignature, error.UnexpectedEnd, error.BadReference, error.SizeMismatch => {
@@ -335,7 +336,6 @@ pub fn packMember(gpa: Allocator, compressor: *refpack.Compressor, packing: Pack
         },
     };
     defer gpa.free(expanded);
-    if (refpack.loadsInPlace(data)) return .{ .bytes = try gpa.dupe(u8, data), .storage = .already_compressed };
     return packContent(gpa, compressor, packing, expanded);
 }
 
@@ -549,10 +549,11 @@ test "a member that begins 10 FB is kept only where the game loads it" {
     const past = try refpack.testing.literals(gpa, zeros);
     defer gpa.free(past);
     try std.testing.expect(try refpack.inPlaceExcess(past) > @as(i64, refpack.in_place_slack));
-    // Text that only begins as a stream does, and a stream whose commands give a byte fewer than its
-    // header declares.
+    // Text that only begins as a stream does, a stream whose commands give a byte fewer than its
+    // header declares, and one whose match reaches before the start of the output.
     const not_stream = "\x10\xFBnot a stream, only text that begins as one does";
     const short_by_one = [_]u8{ 0x10, 0xFB, 0x00, 0x00, 0x0D, 0xE0, 'a', 'b', 'c', 'd', 0x14, 0x03, 0xFC };
+    const reaches_back = [_]u8{ 0x10, 0xFB, 0x00, 0x00, 0x08, 0x14, 0x03, 0xFC };
 
     // With and without `--store`.
     for ([_]Packing{ .compress, .store }) |packing| {
@@ -569,7 +570,7 @@ test "a member that begins 10 FB is kept only where the game loads it" {
 
         // Not a stream the game loads, and not one to expand: the file itself is compressed, since
         // the game would take it for a stream as it is.
-        for ([_][]const u8{ not_stream, &short_by_one }) |data| {
+        for ([_][]const u8{ not_stream, &short_by_one, &reaches_back }) |data| {
             const itself = try packMember(gpa, &compressor, packing, "odd.bin", data);
             defer gpa.free(itself.bytes);
             try std.testing.expectEqual(Storage.compressed, itself.storage);
