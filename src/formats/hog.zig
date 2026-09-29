@@ -543,7 +543,7 @@ test "a member that begins 10 FB is kept only where the game loads it" {
     const within = try compressor.compress(gpa, "The quick brown fox jumps over the lazy dog. " ** 20);
     defer gpa.free(within);
     // A stream past it: literals alone, one byte more than the slack allows.
-    const zeros = try gpa.alloc(u8, 1_146_212);
+    const zeros = try gpa.alloc(u8, refpack.testing.largest_in_place + 1);
     defer gpa.free(zeros);
     @memset(zeros, 0);
     const past = try refpack.testing.literals(gpa, zeros);

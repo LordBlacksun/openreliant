@@ -715,8 +715,13 @@ pub fn loadsInPlace(stream: []const u8) bool {
 
 /// Streams built by hand, for the tests of code that reads or stores them.
 pub const testing = struct {
+    /// The largest payload that `literals` writes as a stream the game loads in place: its excess
+    /// comes to `in_place_slack` exactly, and a byte more takes it one over.
+    pub const largest_in_place: usize = 1_146_211;
+
     /// `data` written as literals alone, as the encoder writes what it finds no match in: a stream
-    /// the game expands, past the in-place bound from 1146212 bytes on. The caller owns the bytes.
+    /// the game expands, past the in-place bound for more than `largest_in_place` bytes. The caller
+    /// owns the bytes.
     pub fn literals(gpa: Allocator, data: []const u8) Allocator.Error![]u8 {
         var stream: Stream = .{};
         errdefer stream.deinit(gpa);
@@ -1070,17 +1075,19 @@ test "the largest literals-only payload the game loads in place" {
     const gpa = std.testing.allocator;
     // Each run of 112 adds a control byte, and the header and the terminator add 6, and a last
     // run when 4 or more are left over: a payload of N bytes takes
-    // `5 + N / 112 + (N % 112 >= 4) + 1` more than its own size. That is the slack at 1,146,211
-    // bytes, and one over it at 1,146,212 ([#113](https://github.com/vdmkenny/openreliant/issues/113)).
-    for ([_]usize{ 1000, 1_146_211, 1_146_212 }) |size| {
+    // `5 + N / 112 + (N % 112 >= 4) + 1` more than its own size. That is the slack at
+    // `testing.largest_in_place` bytes, and one over it a byte later
+    // ([#113](https://github.com/vdmkenny/openreliant/issues/113)).
+    const largest = testing.largest_in_place;
+    for ([_]usize{ 1000, largest, largest + 1 }) |size| {
         const stream, const kept = try literalStream(gpa, size);
         defer gpa.free(stream);
         const expected: i64 = @intCast(5 + size / 112 + @intFromBool(size % 112 >= 4) + 1);
         try std.testing.expectEqual(expected, try inPlaceExcess(stream));
         try std.testing.expectEqual(expected, kept);
-        try std.testing.expectEqual(size <= 1_146_211, loadsInPlace(stream));
-        if (size == 1_146_211) try std.testing.expectEqual(@as(i64, in_place_slack), expected);
-        if (size == 1_146_212) try std.testing.expectEqual(@as(i64, in_place_slack) + 1, expected);
+        try std.testing.expectEqual(size <= largest, loadsInPlace(stream));
+        if (size == largest) try std.testing.expectEqual(@as(i64, in_place_slack), expected);
+        if (size == largest + 1) try std.testing.expectEqual(@as(i64, in_place_slack) + 1, expected);
     }
 }
 
