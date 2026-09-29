@@ -907,7 +907,7 @@ fn testMaterial(name: []const u8) shp.Material {
 fn testPart(meshes: []shp.Mesh, flags: shp.Part.Flags) shp.PartData {
     var part = std.mem.zeroes(shp.Part);
     part.flags = flags;
-    return .{ .part = part, .meshes = meshes, .attachments = &.{}, .tracks = &.{}, .nodes = &.{}, .node_faces = &.{}, .trigger_count = 0 };
+    return .{ .part = part, .meshes = meshes, .attachments = &.{}, .tracks = &.{}, .nodes = &.{}, .node_faces = &.{} };
 }
 
 test "build: surfaces, planes and a wire face's edges" {
