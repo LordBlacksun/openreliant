@@ -1143,8 +1143,11 @@ pub const Model = struct {
     /// the others, and the terminator. A tag the sizes leave out gets no chunk, and must have no
     /// records. A model parsed from a file comes back byte for byte, as every shipped model does,
     /// unless the file holds what `parse` does not keep: a chunk of a named tag the loader never
-    /// asks for, header records after the first, bytes after the terminator, or bytes of a record
-    /// past its type's size, other than an attachment's, where they are not zero.
+    /// asks for ([#470](https://github.com/vdmkenny/openreliant/issues/470)), header records after
+    /// the first ([#471](https://github.com/vdmkenny/openreliant/issues/471)), bytes after the
+    /// terminator ([#472](https://github.com/vdmkenny/openreliant/issues/472)), or bytes of a
+    /// record past its type's size, other than an attachment's, where they are not zero
+    /// ([#473](https://github.com/vdmkenny/openreliant/issues/473)).
     pub fn write(model: Model, out: *std.Io.Writer) WriteError!void {
         var chunks: ChunkWriter = .{ .out = out, .sizes = model.record_sizes, .unnamed = model.unnamed_chunks };
         try chunks.put(.header, @as(*const [1]Header, &model.header), null);
