@@ -185,12 +185,19 @@ fn parseEntry(directory: []const u8, file_size: u32) ?ParsedEntry {
 
     const rest = directory[@sizeOf(Record)..];
     const end = std.mem.indexOfScalar(u8, rest, 0) orelse return null;
-    if (end == 0) return null;
     const name = rest[0..end];
-    for (name) |c| {
-        if (c < 0x20 or c >= 0x7F) return null;
-    }
+    if (!validName(name)) return null;
     return .{ .name = name, .offset = offset, .size = size, .encoded_len = @sizeOf(Record) + end + 1 };
+}
+
+/// Whether a directory record holds `name`: one or more bytes of printable ASCII, as `parseEntry`
+/// reads a name, and as every shipped archive's names are.
+pub fn validName(name: []const u8) bool {
+    if (name.len == 0) return false;
+    for (name) |c| {
+        if (c < 0x20 or c >= 0x7F) return false;
+    }
+    return true;
 }
 
 test parseEntry {
@@ -209,41 +216,145 @@ test parseEntry {
     try std.testing.expectEqual(@as(?ParsedEntry, null), parseEntry(&(@as([32]u8, @splat(0xCD))), 0x100000));
 }
 
-/// Builds archives in memory, for the tests of code that reads them.
-pub const testing = struct {
-    pub const Member = struct { name: []const u8, data: []const u8 };
+/// A member to write: its name, and its bytes as they are to be stored.
+pub const Member = struct { name: []const u8, data: []const u8 };
 
-    /// An archive of `members`, stored as they are: its header, then a record and a NUL-terminated
-    /// name for each member, then their data. The caller owns the bytes.
-    pub fn build(gpa: Allocator, members: []const Member) ![]u8 {
-        var data_at: usize = @sizeOf(Header);
-        var data_size: usize = 0;
-        for (members) |member| {
-            data_at += @sizeOf(Record) + member.name.len + 1;
-            data_size += member.data.len;
-        }
-        const bytes = try gpa.alloc(u8, data_at + data_size);
-        errdefer gpa.free(bytes);
-        (try layout.viewMut(Header, bytes)).* = .{
-            .magic = magic.*,
-            .archive_size = .of(@intCast(bytes.len)),
-            .entry_count = .of(@intCast(members.len)),
-            .data_offset = .of(@intCast(data_at)),
-        };
-        var entry_at: usize = @sizeOf(Header);
-        var datum_at = data_at;
-        for (members) |member| {
-            (try layout.viewMut(Record, bytes[entry_at..])).* = .{ .offset = .of(@intCast(datum_at)), .size = .of(@intCast(member.data.len)) };
-            const name_at = entry_at + @sizeOf(Record);
-            @memcpy(bytes[name_at..][0..member.name.len], member.name);
-            bytes[name_at + member.name.len] = 0;
-            entry_at = name_at + member.name.len + 1;
-            @memcpy(bytes[datum_at..][0..member.data.len], member.data);
-            datum_at += member.data.len;
-        }
-        return bytes;
+pub const BuildError = error{
+    /// A name no directory record holds (`validName`).
+    BadName,
+    /// Past the 4 GiB that the header's and the records' 32-bit sizes and offsets reach.
+    TooLarge,
+} || Allocator.Error;
+
+/// An archive of `members`, each stored as given and laid out as every shipped archive is: the
+/// header, a record and a NUL-terminated name for each member in their order, then their data back
+/// to back from `data_offset` to the end of the file (`Archive.isContiguous`), with no trailing
+/// filler. Names are not made unique: the shipped archives repeat some, and a lookup takes the
+/// first. The caller owns the bytes.
+pub fn build(gpa: Allocator, members: []const Member) BuildError![]u8 {
+    var data_at: u64 = @sizeOf(Header);
+    var data_size: u64 = 0;
+    for (members) |member| {
+        if (!validName(member.name)) return error.BadName;
+        data_at += @sizeOf(Record) + member.name.len + 1;
+        data_size += member.data.len;
     }
+    if (data_at + data_size > std.math.maxInt(u32)) return error.TooLarge;
 
+    const bytes = try gpa.alloc(u8, @intCast(data_at + data_size));
+    errdefer gpa.free(bytes);
+    const header: Header = .{
+        .magic = magic.*,
+        .archive_size = .of(@intCast(bytes.len)),
+        .entry_count = .of(@intCast(members.len)),
+        .data_offset = .of(@intCast(data_at)),
+    };
+    @memcpy(bytes[0..@sizeOf(Header)], std.mem.asBytes(&header));
+    var entry_at: usize = @sizeOf(Header);
+    var datum_at: usize = @intCast(data_at);
+    for (members) |member| {
+        const record: Record = .{ .offset = .of(@intCast(datum_at)), .size = .of(@intCast(member.data.len)) };
+        @memcpy(bytes[entry_at..][0..@sizeOf(Record)], std.mem.asBytes(&record));
+        const name_at = entry_at + @sizeOf(Record);
+        @memcpy(bytes[name_at..][0..member.name.len], member.name);
+        bytes[name_at + member.name.len] = 0;
+        entry_at = name_at + member.name.len + 1;
+        @memcpy(bytes[datum_at..][0..member.data.len], member.data);
+        datum_at += member.data.len;
+    }
+    return bytes;
+}
+
+/// The extensions of the members the game opens where they lie, not through `hog_read_file`
+/// (`0x004C7F60`), so that they are stored as they are: Bink's movies, which `hog_locate`
+/// (`0x004C83F0`) finds for Bink to open in the archive, and the face films, which
+/// `hudmovie_play` (`0x0048D120`) finds with `hog_seek` (`0x004C8370`) and reads from the archive's
+/// file where the seek leaves it.
+const opened_in_place = [_][]const u8{ ".bik", ".fm8" };
+
+/// Whether the game opens the member `name` where it lies (`opened_in_place`).
+pub fn opensInPlace(name: []const u8) bool {
+    const extension = std.fs.path.extension(name);
+    for (opened_in_place) |candidate| {
+        if (std.ascii.eqlIgnoreCase(extension, candidate)) return true;
+    }
+    return false;
+}
+
+/// How `packMember` stores what the game could read as it is.
+pub const Packing = enum {
+    /// A RefPack stream where one is smaller and the game can expand it in place.
+    compress,
+    /// As it is (`sltool hog pack --store`), where the game reads it so.
+    store,
+};
+
+/// How `packMember` stored a member.
+pub const Storage = enum {
+    /// As bytes the game reads verbatim.
+    stored,
+    /// As a RefPack stream `packMember` wrote.
+    compressed,
+    /// As it came, being a stream the game loads.
+    already_compressed,
+};
+
+pub const Packed = struct {
+    /// The bytes to store, which the caller owns.
+    bytes: []u8,
+    storage: Storage,
+};
+
+pub const PackError = error{
+    /// The data begins `10 FB`, so the game takes it for a stream, but it is none the game loads in
+    /// place, and no stream of what it holds loads either (`refpack.CompressError`).
+    Unloadable,
+} || Allocator.Error;
+
+/// The bytes to store for the member `name` of `data`, which the game reads back as `data`. With
+/// `.compress`, a RefPack stream where one is smaller and the game can expand it in place, and
+/// otherwise the data as it is, which the game reads verbatim; with `.store`, the data as it is. A
+/// member the game opens in place (`opensInPlace`) is stored as it is, since the game never expands
+/// it.
+///
+/// Data that begins `10 FB` the game takes for a stream whatever the packing, so it goes in only as
+/// a stream that expands to its declared size in place (`refpack.loadsInPlace`). Such a stream is
+/// kept as it came, as a member extracted as stored is. A stream over the bound, from another tool
+/// say, is expanded, and what it expands to packed in its place. Any other data that begins `10 FB`
+/// is compressed, having no form the game reads as it is, and where no stream of it loads, the
+/// member is `error.Unloadable`.
+pub fn packMember(gpa: Allocator, compressor: *refpack.Compressor, packing: Packing, name: []const u8, data: []const u8) PackError!Packed {
+    if (opensInPlace(name)) return .{ .bytes = try gpa.dupe(u8, data), .storage = .stored };
+    if (!refpack.gameExpands(data)) return packContent(gpa, compressor, packing, data);
+    if (refpack.loadsInPlace(data)) return .{ .bytes = try gpa.dupe(u8, data), .storage = .already_compressed };
+    const expanded = refpack.decompressAlloc(gpa, data) catch |err| switch (err) {
+        error.OutOfMemory => |e| return e,
+        error.BadSignature, error.UnexpectedEnd, error.BadReference, error.SizeMismatch => {
+            return packContent(gpa, compressor, packing, data);
+        },
+    };
+    defer gpa.free(expanded);
+    return packContent(gpa, compressor, packing, expanded);
+}
+
+/// `data` as the game is to read it, for a member it reads through `hog_read_file`: as it is, or
+/// with `.compress` a RefPack stream where one is smaller and loads.
+fn packContent(gpa: Allocator, compressor: *refpack.Compressor, packing: Packing, data: []const u8) PackError!Packed {
+    const needs_stream = refpack.gameExpands(data);
+    if (packing == .compress or needs_stream) {
+        if (compressor.compress(gpa, data)) |stream| {
+            if (needs_stream or stream.len < data.len) return .{ .bytes = stream, .storage = .compressed };
+            gpa.free(stream);
+        } else |err| switch (err) {
+            error.TooLarge, error.NotInPlace => if (needs_stream) return error.Unloadable,
+            error.OutOfMemory => |e| return e,
+        }
+    }
+    return .{ .bytes = try gpa.dupe(u8, data), .storage = .stored };
+}
+
+/// Writes archives, for the tests of code that reads them.
+pub const testing = struct {
     /// Writes an archive of `members`, as `build` makes it, to `path` in `dir`.
     pub fn write(gpa: Allocator, io: Io, dir: Io.Dir, path: []const u8, members: []const Member) !void {
         const bytes = try build(gpa, members);
@@ -300,7 +411,7 @@ test "a header counting entries the directory lacks" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const bytes = try testing.build(gpa, &.{.{ .name = "a.tga", .data = "x" }});
+    const bytes = try build(gpa, &.{.{ .name = "a.tga", .data = "x" }});
     defer gpa.free(bytes);
     const header = try layout.viewMut(Header, bytes);
     header.entry_count = .of(header.entry_count.get() + 1);
@@ -317,6 +428,181 @@ test "a header counting entries the directory lacks" {
     header.magic = magic.*;
     try tmp.dir.writeFile(io, .{ .sub_path = "short.hog", .data = bytes[0 .. bytes.len - 1] });
     try std.testing.expectError(error.SizeMismatch, Archive.open(gpa, io, tmp.dir, "short.hog"));
+}
+
+test build {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Names with spaces, a name given twice as the shipped archives give some, and an empty member.
+    const members = [_]Member{
+        .{ .name = "Boridin gun dest.SHP", .data = "model" },
+        .{ .name = "interpal.tga", .data = "first" },
+        .{ .name = "interpal.tga", .data = "second, longer" },
+        .{ .name = "empty.bin", .data = "" },
+    };
+    const bytes = try build(gpa, &members);
+    defer gpa.free(bytes);
+    try tmp.dir.writeFile(io, .{ .sub_path = "built.hog", .data = bytes });
+
+    var archive: Archive = try .open(gpa, io, tmp.dir, "built.hog");
+    defer archive.close(gpa);
+    try std.testing.expectEqual(members.len, archive.entries.len);
+    try std.testing.expectEqual(0, archive.phantom_entries);
+    try std.testing.expect(archive.isContiguous());
+    try std.testing.expectEqual(bytes.len, archive.header.archive_size.get());
+    for (members, archive.entries) |member, entry| {
+        try std.testing.expectEqualStrings(member.name, entry.name);
+        const stored = try archive.readRaw(gpa, entry);
+        defer gpa.free(stored);
+        try std.testing.expectEqualSlices(u8, member.data, stored);
+    }
+    // A lookup takes the first of a repeated name.
+    const first = try archive.readRaw(gpa, archive.find("INTERPAL.TGA").?);
+    defer gpa.free(first);
+    try std.testing.expectEqualStrings("first", first);
+
+    // No member at all is a header alone.
+    const none = try build(gpa, &.{});
+    defer gpa.free(none);
+    try std.testing.expectEqual(@sizeOf(Header), none.len);
+
+    for ([_][]const u8{ "", "tab\there", "caf\xC3\xA9.tga", "line\n" }) |name| {
+        try std.testing.expectError(error.BadName, build(gpa, &.{.{ .name = name, .data = "x" }}));
+    }
+}
+
+test opensInPlace {
+    try std.testing.expect(opensInPlace("New_intro.bik"));
+    try std.testing.expect(opensInPlace("static.FM8"));
+    try std.testing.expect(!opensInPlace("mission1.dte"));
+    try std.testing.expect(!opensInPlace("bik"));
+}
+
+test packMember {
+    const gpa = std.testing.allocator;
+    var compressor: refpack.Compressor = try .init(gpa);
+    defer compressor.deinit(gpa);
+    const text = "The quick brown fox jumps over the lazy dog. " ** 20;
+
+    // Worth packing, and read back whole.
+    const packed_text = try packMember(gpa, &compressor, .compress, "readme.txt", text);
+    defer gpa.free(packed_text.bytes);
+    try std.testing.expectEqual(Storage.compressed, packed_text.storage);
+    try std.testing.expect(packed_text.bytes.len < text.len);
+    const expanded = try refpack.decompressAlloc(gpa, packed_text.bytes);
+    defer gpa.free(expanded);
+    try std.testing.expectEqualStrings(text, expanded);
+
+    // A movie is stored as it is, however well it would pack.
+    const movie = try packMember(gpa, &compressor, .compress, "warty_.bik", text);
+    defer gpa.free(movie.bytes);
+    try std.testing.expectEqual(Storage.stored, movie.storage);
+    try std.testing.expectEqualStrings(text, movie.bytes);
+
+    // A member already packed is kept as it is, not packed twice.
+    const again = try packMember(gpa, &compressor, .compress, "readme.txt", packed_text.bytes);
+    defer gpa.free(again.bytes);
+    try std.testing.expectEqual(Storage.already_compressed, again.storage);
+    try std.testing.expectEqualSlices(u8, packed_text.bytes, again.bytes);
+
+    // Noise does not shrink, so it is stored; and nothing is packed with `.store`.
+    var prng: std.Random.DefaultPrng = .init(1);
+    var noise: [500]u8 = undefined;
+    prng.random().bytes(&noise);
+    const noisy = try packMember(gpa, &compressor, .compress, "noise.bin", &noise);
+    defer gpa.free(noisy.bytes);
+    try std.testing.expectEqual(Storage.stored, noisy.storage);
+    const kept = try packMember(gpa, &compressor, .store, "readme.txt", text);
+    defer gpa.free(kept.bytes);
+    try std.testing.expectEqual(Storage.stored, kept.storage);
+}
+
+/// Checks that the game reads `content` from a member stored as `stored`: it expands one that begins
+/// `10 FB`, which must then load in place, and reads any other verbatim.
+fn expectLoads(stored: []const u8, content: []const u8) !void {
+    const gpa = std.testing.allocator;
+    if (!refpack.gameExpands(stored)) return std.testing.expectEqualSlices(u8, content, stored);
+    try std.testing.expect(try refpack.inPlaceExcess(stored) <= @as(i64, refpack.in_place_slack));
+    const expanded = try refpack.decompressAlloc(gpa, stored);
+    defer gpa.free(expanded);
+    try std.testing.expectEqualSlices(u8, content, expanded);
+}
+
+test "a member that begins 10 FB is kept only where the game loads it" {
+    const gpa = std.testing.allocator;
+    var compressor: refpack.Compressor = try .init(gpa);
+    defer compressor.deinit(gpa);
+
+    // A stream within the bound, as `sltool hog extract --raw` gives one.
+    const within = try compressor.compress(gpa, "The quick brown fox jumps over the lazy dog. " ** 20);
+    defer gpa.free(within);
+    // A stream past it: literals alone, one byte more than the slack allows.
+    const zeros = try gpa.alloc(u8, refpack.testing.largest_in_place + 1);
+    defer gpa.free(zeros);
+    @memset(zeros, 0);
+    const past = try refpack.testing.literals(gpa, zeros);
+    defer gpa.free(past);
+    try std.testing.expect(try refpack.inPlaceExcess(past) > @as(i64, refpack.in_place_slack));
+    // Text that only begins as a stream does, a stream whose commands give a byte fewer than its
+    // header declares, and one whose match reaches before the start of the output.
+    const not_stream = "\x10\xFBnot a stream, only text that begins as one does";
+    const short_by_one = [_]u8{ 0x10, 0xFB, 0x00, 0x00, 0x0D, 0xE0, 'a', 'b', 'c', 'd', 0x14, 0x03, 0xFC };
+    const reaches_back = [_]u8{ 0x10, 0xFB, 0x00, 0x00, 0x08, 0x14, 0x03, 0xFC };
+
+    // With and without `--store`.
+    for ([_]Packing{ .compress, .store }) |packing| {
+        const kept = try packMember(gpa, &compressor, packing, "mission1.dte", within);
+        defer gpa.free(kept.bytes);
+        try std.testing.expectEqual(Storage.already_compressed, kept.storage);
+        try std.testing.expectEqualSlices(u8, within, kept.bytes);
+
+        // Past the bound, what it expands to goes in instead.
+        const repacked = try packMember(gpa, &compressor, packing, "big.tga", past);
+        defer gpa.free(repacked.bytes);
+        try std.testing.expect(repacked.storage != .already_compressed);
+        try expectLoads(repacked.bytes, zeros);
+
+        // Not a stream the game loads, and not one to expand: the file itself is compressed, since
+        // the game would take it for a stream as it is.
+        for ([_][]const u8{ not_stream, &short_by_one, &reaches_back }) |data| {
+            const itself = try packMember(gpa, &compressor, packing, "odd.bin", data);
+            defer gpa.free(itself.bytes);
+            try std.testing.expectEqual(Storage.compressed, itself.storage);
+            try expectLoads(itself.bytes, data);
+        }
+    }
+}
+
+test "a movie that begins 10 FB is stored as it is" {
+    const gpa = std.testing.allocator;
+    var compressor: refpack.Compressor = try .init(gpa);
+    defer compressor.deinit(gpa);
+    // Bink opens a movie where it lies, and never expands it.
+    const movie = "\x10\xFBnot a stream, and never expanded";
+    for ([_]Packing{ .compress, .store }) |packing| {
+        const stored = try packMember(gpa, &compressor, packing, "odd.bik", movie);
+        defer gpa.free(stored.bytes);
+        try std.testing.expectEqual(Storage.stored, stored.storage);
+        try std.testing.expectEqualSlices(u8, movie, stored.bytes);
+    }
+}
+
+test "a member that begins 10 FB and loads no way is refused" {
+    const gpa = std.testing.allocator;
+    var compressor: refpack.Compressor = try .init(gpa);
+    defer compressor.deinit(gpa);
+    // Not a stream, and more than any stream's header holds.
+    const huge = try gpa.alloc(u8, refpack.max_size + 1);
+    defer gpa.free(huge);
+    @memset(huge, 0);
+    huge[0] = 0x10;
+    huge[1] = 0xFB;
+    for ([_]Packing{ .compress, .store }) |packing| {
+        try std.testing.expectError(error.Unloadable, packMember(gpa, &compressor, packing, "huge.bin", huge));
+    }
 }
 
 test "header reads big-endian fields" {

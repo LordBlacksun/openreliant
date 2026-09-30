@@ -298,7 +298,7 @@ pub const testing = struct {
     pub const Film = struct { name: []const u8, frames: usize, colour: u8 };
 
     pub fn write(gpa: Allocator, io: Io, dir: Io.Dir, path: []const u8, films: []const Film) !void {
-        var members: std.ArrayList(hog.testing.Member) = .empty;
+        var members: std.ArrayList(hog.Member) = .empty;
         defer {
             for (members.items) |member| gpa.free(member.data);
             members.deinit(gpa);
