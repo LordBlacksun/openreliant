@@ -758,7 +758,7 @@ pub const TriggerPolygon = extern struct {
 
 /// The type of `tag`'s records, as `parse` keeps them: the longest record of the tag the shipped
 /// models hold, but for an attachment the 124 bytes the engine keeps, its tail apart
-/// (`attachment_tails`). The engine's own records differ in size from most of these: `model_load`
+/// (`attachment_tails`). The engine's records of some tags differ in size: `model_load`
 /// (`0x004A44D0`) takes a trigger polygon at 84 bytes and a point list at 12.
 pub fn Record(comptime tag: Tag) type {
     return switch (tag) {
