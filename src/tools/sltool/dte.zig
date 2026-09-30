@@ -1,4 +1,4 @@
-//! `sltool dte ...`: read `.DTE` mission files.
+//! `sltool dte ...`: read `.DTE` mission files, and build them from their sources.
 
 const std = @import("std");
 const Io = std.Io;
@@ -23,6 +23,12 @@ pub const Command = union(enum) {
     script: struct { mission: []const u8 },
     /// Writes the mission and its script again, and checks they come back the same.
     check: struct { mission: []const u8 },
+    /// Writes the mission as its source (`dte.source`).
+    @"export": struct { mission: []const u8 },
+    /// Builds a mission from its source.
+    build: struct { source: []const u8, out: []const u8 },
+    /// Writes what a mission's source can name: ship types, commands, conditions, variables.
+    catalogue: struct {},
 
     pub const usage =
         \\  dte info <mission>              summarise a mission
@@ -32,8 +38,11 @@ pub const Command = union(enum) {
         \\  dte strings <mission>           dump the string pool
         \\  dte parts <mission>             list the script's named routines
         \\  dte script <mission>            disassemble the script bytecode
-        \\  dte check <mission>             write the mission and its script again, and check that
-        \\                                  they come back the same
+        \\  dte check <mission>             write the mission, its script and its source again, and
+        \\                                  check that they come back the same
+        \\  dte export <mission>            write the mission as its source, in JSON
+        \\  dte build <source> <out>        build a mission from its source
+        \\  dte catalogue                   list what a source can name, in JSON
         \\
     ;
 
@@ -46,6 +55,8 @@ pub const Command = union(enum) {
 
     pub fn run(command: Command, ctx: Context) !void {
         const path = switch (command) {
+            .build => |operands| return build(ctx, operands.source, operands.out),
+            .catalogue => return dte.source.writeCatalogue(ctx.stdout),
             inline else => |operands| operands.mission,
         };
         const image = try ctx.readInput(path);
@@ -64,6 +75,8 @@ pub const Command = union(enum) {
             .parts => try parts(ctx, mission),
             .script => try script(ctx, mission, models),
             .check => try check(ctx, mission),
+            .@"export" => try dte.source.writeSource(ctx.arena, (try dte.source.fromFile(ctx.arena, mission)).mission, ctx.stdout),
+            .build, .catalogue => unreachable,
         }
     }
 };
@@ -496,6 +509,36 @@ fn check(ctx: Context, mission: dte.Mission) !void {
         assembled += 1;
     }
     try out.print("script: {d} routines assembled again the same, {d} with bytes nothing reaches\n", .{ assembled, skipped });
+
+    // Written as its source and built again from it.
+    const source = try dte.source.fromFile(gpa, mission);
+    var text: Io.Writer.Allocating = .init(gpa);
+    try dte.source.writeSource(gpa, source.mission, &text.writer);
+    var diagnostic: dte.source.Diagnostic = .{};
+    const parsed = dte.source.parse(gpa, text.written(), &diagnostic) catch |err| {
+        try out.print("source: {s}\n", .{diagnostic.message});
+        return err;
+    };
+    const rebuilt = try dte.build.build(gpa, parsed);
+    if (!dte.write.sameRecords(read, try dte.write.records(try .parse(rebuilt)))) return fail(out, "built again from its source, the records differ");
+    try out.print("source: the same records, {d} bytes of JSON", .{text.written().len});
+    if (source.whole.len > 0) {
+        try out.writeAll(", given whole:");
+        for (source.whole) |section| try out.print(" {t}", .{section});
+    }
+    try out.writeByte('\n');
+}
+
+/// `sltool dte build`: the mission `source` gives, written to `out`, or what is wrong with it.
+fn build(ctx: Context, source: []const u8, out: []const u8) !void {
+    var diagnostic: dte.source.Diagnostic = .{};
+    const mission = dte.source.parse(ctx.arena, try ctx.readInput(source), &diagnostic) catch |err| switch (err) {
+        error.Invalid => return fail(ctx.stdout, diagnostic.message),
+        else => return err,
+    };
+    const bytes = try dte.build.build(ctx.arena, mission);
+    try Io.Dir.cwd().writeFile(ctx.io, .{ .sub_path = out, .data = bytes });
+    try ctx.stdout.print("{s}: {d} ships, {d} flight groups, {d} triggers, {d} routines\n", .{ out, mission.ships.len, mission.flight_groups.len, mission.triggers.len, mission.routines.len });
 }
 
 /// A routine assembled again from its disassembly, with its constant table as it was.

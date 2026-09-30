@@ -20,9 +20,11 @@ const opcodes = @import("../engine/vm/opcodes.zig");
 
 pub const section_count = 27;
 
-/// Writing mission files and their scripts.
+/// Writing mission files and their scripts, and building them from their records.
 pub const write = @import("dte/write.zig");
 pub const assemble = @import("dte/assemble.zig");
+pub const build = @import("dte/build.zig");
+pub const source = @import("dte/source.zig");
 
 /// What each directory slot holds. Sections the loader reads but this module does not interpret
 /// keep their index as a name.
@@ -1865,4 +1867,6 @@ test {
     _ = opcodes;
     _ = write;
     _ = assemble;
+    _ = build;
+    _ = source;
 }
