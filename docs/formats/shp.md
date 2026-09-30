@@ -79,7 +79,8 @@ In every shipped model each tag has one record size, and a tag's chunk stands wh
 asks for one or nowhere, with a count of 0 where there are no records. The older exporters wrote no
 point lists, trigger polygons or firing arcs at all. `Model.parse` keeps each tag's size, or that
 the file has none of it (`shp.RecordSizes`), and the writer cuts each record short to that size or
-fills it out with zeros. A model built from scratch gets the whole records the engine keeps.
+fills it out with zeros. A model built from scratch gets whole records, each its type's size
+(`shp.Record`).
 
 The attachment records of 136 and 168 bytes hold 12 and 44 bytes past the 124 the engine keeps,
 which the loader never copies (`model_take_chunk`, `0x004A2EB0`). **Unknown:** what they are; they
