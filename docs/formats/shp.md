@@ -104,10 +104,10 @@ size, other than an attachment's, where they are not zero
 ([#473](https://github.com/vdmkenny/openreliant/issues/473)).
 
 The writer fails rather than write a file the loader would misread: records of a tag the model's
-sizes leave out, a chunk of more records than its header counts (65535), or a part whose nodes do
-not each have their face list. It also fails for a part whose attachments have tails, but not one
-each, and for a chunk kept whole whose tag the table names, or is the terminator's, or whose bytes
-are not its records'.
+sizes leave out, a chunk of more records than its header can count (65535), or a part whose nodes
+do not each have their face list. It also fails for a part whose attachments have tails, but not
+one each, and for a chunk kept whole whose tag the table names, or is the terminator's, or whose
+bytes are not its records'.
 
 A model edited after parsing keeps its file's record sizes, so a field past its tag's size is lost
 without a word. In a shipped model whose attachments are 100 bytes, a gun muzzle added loses its gun

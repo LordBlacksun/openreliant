@@ -1596,7 +1596,7 @@ test "a tag the record sizes leave out holds no records" {
     try std.testing.expectError(error.LeftOut, model.write(&written.writer));
 }
 
-test "a chunk holds no more records than its header counts" {
+test "a chunk holds no more records than its header can count" {
     const gpa = std.testing.allocator;
     const faces = try gpa.alloc(u32, std.math.maxInt(u16) + 1);
     defer gpa.free(faces);
