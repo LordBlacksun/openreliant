@@ -529,26 +529,28 @@ block.
 
 ## Writing
 
-[`dte/write.zig`](../../src/formats/dte/write.zig) writes a mission file laid out as 36 of the
-shipped missions are, `mission1` among them: a directory of 128 slots, `0x400` bytes, each section
-at the same offset with the same room up to the next, and 850,919 bytes in all. The directory's 28th
-slot holds the file's size, and the rest are unused, as in those missions; every entry carries the
-flags 15. Section 21 has no room there, starting where section 22 does, so OpenReliant's name goes
-after the template's end, which a loose file's buffer of `0xFA000` bytes still holds.
+[`dte/write.zig`](../../src/formats/dte/write.zig) writes a mission file with the layout that 36 of
+the shipped missions use, `mission1` among them. The file starts with a directory of 128 slots
+(`0x400` bytes). Each section starts at the same offset as in those missions and has the same room
+up to the next section, and the file is 850,919 bytes long. As in those missions, the directory's
+28th slot holds the file's size, the other slots are unused, and every entry has the flags 15.
+Section 21 has no room in this layout, since it starts where section 22 does, so OpenReliant's name
+goes after the end of the template. A loose file's buffer of `0xFA000` bytes still holds it.
 
-A section's records are its count times its stride: bytes for the string pool, the script flags and
-OpenReliant's name, halfwords for the scripts, and the records' sizes for the rest. The strides of
-sections 9, 11 and 23, 4, 4 and 2 bytes, are **Unverified**: the engine reads nothing of 9 and 23,
-and 11 holds one record in every mission. Section 20's is not known, and no mission uses it.
+A section's size is its count times its stride. The stride is one byte for the string pool, the
+script flags and OpenReliant's name, a halfword for the scripts, and the record size for the other
+sections. The strides of sections 9, 11 and 23 (4, 4 and 2 bytes) are **Unverified**: the engine
+reads nothing of sections 9 and 23, and section 11 holds one record in every mission. The stride of
+section 20 is not known, and no mission uses it.
 
-`sltool dte check <mission>` writes a mission again and checks what comes back. The 36 missions of
-the template, written again from their sections' whole rooms, stale bytes and all, come back byte for
-byte. Every mission, written again from its records alone, reads back the same records.
+`sltool dte check <mission>` writes a mission again and checks the result. Written from the whole
+room of each section, stale bytes included, the 36 missions with the template's layout come back
+byte for byte. Written from its records alone, every mission reads back with the same records.
 
-A mission of OpenReliant's making holds what the template's missions hold: its section 24 is theirs
-(`write.template.command_flags`), and its records carry the values most of theirs carry where their
-fields are not known. Mission 0, the sandbox, is written so by the build
-([`mission0.zig`](../../src/openreliant/mission0.zig)).
+A mission that OpenReliant makes follows the template's missions: section 24 holds their command
+flags (`write.template.command_flags`), and fields whose meaning is unknown hold the values most
+shipped missions use. Mission 0, the sandbox, is made this way at build time by the mission builder
+([Building](#building)) from [`mission0.zig`](../../src/openreliant/mission0.zig).
 
 ### Writing the script
 
@@ -563,6 +565,75 @@ counts itself and the NUL after the text.
 Assembled again from its disassembly, every routine of the 44 missions comes back the same, but for
 the padding after its last instruction, which in the shipped missions holds stale bytes, and the
 three routines that hold unused arm slots of a `random_branch`.
+
+## Building
+
+[`dte/build.zig`](../../src/formats/dte/build.zig) makes a mission file from its records: the
+ships, flight groups, global variables, the script's routines, its parts and its triggers. The
+caller gives each record with its name, and the builder fills in the fields that depend on the rest
+of the mission:
+
+- The string pool. Each name goes in once, in this order: the parts' names, the ships', the flight
+  groups', then the globals'. A record's `name` is the offset of its name in the pool.
+- The script. The routines that only triggers run go first, then the others, each in the order
+  given, as most shipped missions place them: `dte.Mission.routines` finds a trigger's routine only
+  before the first part's. A part's `offset` and `length`, and a trigger's `link`, point at the
+  routine it runs. A part or trigger can also have no routine, as 7 of the 1630 shipped parts and 69
+  of the 2446 shipped triggers have: its `offset` or `link` is then `0xFFFF` (`Part.no_block`),
+  which the game reads as empty, and an empty part's `length` is 0.
+- Each flight group's `ship_count`, and its `first_ship`: where its first ship is in a list of
+  every group's ships, group by group, or `no_ship` for a group with none. Binding the mission
+  counts the ships again and writes over both fields (`mission_list_group_ships`), so only tools
+  that read the file see these values.
+- The object table: one entry for each object ID from 0 to the highest one that a ship, flight
+  group or squad has, with the kind of the record that has it and the run of triggers that watch
+  it. An object with no triggers has `first` `0xFFFF`, as in every shipped mission. An ID that no
+  record has gets the entry of a ship with no triggers, like the unused IDs in the shipped
+  missions.
+- The script flags, all clear, and section 24 from the writer's template.
+
+The builder always sets these fields itself: a value the caller leaves in them is replaced. It
+writes every other field as given. References to a ship by its index in the list of ships, in
+trigger operands, curves and the script, are written as given too, so a caller that inserts a ship
+updates them.
+
+Sections that the builder does not make, such as the curves and the squads, can be given as raw
+bytes with their count. The builder writes them as given after checking that each one has the
+bytes its count needs: the count times the section's record size (`Section.stride`). Bytes after
+the records are allowed. The squads of a raw squads section go into the object table. The builder
+does not check what raw sections refer to, such as the squads' members, the curves' ships or the
+second script's parts: that stays the caller's responsibility, like the references by index.
+
+The builder returns an error, and makes no file, if the records contradict each other or do not
+fit the file:
+
+| Error | Cause |
+|---|---|
+| `NulInName` | A name has a NUL byte in it. The pool ends a name at its first NUL, so the game would read a shorter one. OpenReliant's name for the mission is checked too. |
+| `NoSuchFlightGroup` | A ship's `flight_group` is neither one of the mission's flight groups nor `no_flight_group`. |
+| `NoSuchRoutine` | A part or trigger runs a routine that the mission does not have. |
+| `UnusedRoutine` | No part or trigger runs a routine, so nothing can reach it. |
+| `EmptyRoutine`, `OddRoutine` | A routine has no bytes, or an odd number of them. |
+| `NoSuchObject` | A trigger watches an object ID that no ship, flight group or squad has. No shipped trigger watches an unused ID. |
+| `SharedObjectId` | Two ships, flight groups or squads have the same object ID. |
+| `TriggersApart` | The triggers that watch one object are not next to each other in the list. |
+| `SectionBuilt` | A raw section is one that the builder makes itself. |
+| `CountPastBytes` | A raw section's count needs more bytes than it has. |
+| `UnknownStride` | A raw section has a count but its records have no known size. |
+| `SectionTooLarge` | A section is larger than the writer's template has room for: 512 ships, 256 flight groups, 256 globals, 1024 triggers, 896 object IDs, or a script of more than 65532 bytes (the room for its flags). |
+| `ScriptTooLarge` | The script has more than 65535 bytes, more than a 16-bit count can hold. |
+| `TooMany`, `PoolTooLarge`, `NameTooLong` | A count, offset or length does not fit its field: more than 256 parts, 255 ships in a flight group, 255 triggers on one object, 65535 object IDs or 65535 records in a section, or a pool or name past a 16-bit size. |
+
+The builder is stricter than the reader. Mission 8 gives a flight group and a squad the same object
+ID twice, which the game accepts, but the builder refuses (`SharedObjectId`). In the shipped
+missions, ships, flight groups and squads take their object IDs from one range, with the kinds
+mixed. Mission 0 gives its ships the first IDs, then its flight groups.
+
+`build.defaults` has records with the values that most shipped missions use, for a caller to start
+from: a ship in no flight group, with no pilot, not launching from another ship and fitted with the
+campaign's loadout tier; a flight group that ends with `0xFF19FFFF`; and a trigger that is armed,
+watches its whole subject, fires once and checks none of its operands, with `FF 00` at `0x17` and
+`0x88` at `0x1B`. **Unknown:** what those two trigger fields mean.
 
 ## Prior art
 

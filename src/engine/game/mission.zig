@@ -329,6 +329,138 @@ test syncShips {
     try std.testing.expectEqual(0, ships[across].runtime_pitch);
 }
 
+test "a mission made by the builder loads and runs to its end" {
+    const gpa = std.testing.allocator;
+    const Routine = dte.assemble.Routine;
+    const alpha = 0;
+    const raiders = 1;
+    const clock_part = 1;
+
+    // The start part creates both flight groups, and a timer that runs the clock part once, after
+    // two seconds.
+    var start: Routine = .init(gpa);
+    defer start.deinit();
+    for ([_]u8{ alpha, raiders }) |group| {
+        try start.op(.push_flight_group, &.{group});
+        try start.command("CreateFlightGroup");
+    }
+    for ([_]u8{ 1, clock_part, 2, 1 }) |argument| try start.op(.push_byte, &.{argument});
+    try start.command("CreateTimer");
+    try start.op(.push_byte, &.{1});
+    try start.op(.@"return", &.{});
+    const start_code = try start.finish();
+    defer gpa.free(start_code);
+
+    // The clock part sets the game variable `landing_cleared`.
+    var clock: Routine = .init(gpa);
+    defer clock.deinit();
+    try clock.op(.select_array, &.{vm.Variables.number("landing_cleared")});
+    try clock.pushConstant(1);
+    try clock.op(.assign, &.{});
+    try clock.op(.push_byte, &.{1});
+    try clock.op(.@"return", &.{});
+    const clock_code = try clock.finish();
+    defer gpa.free(clock_code);
+
+    // The trigger's routine sets `objectives_met` and ends the mission.
+    var won: Routine = .init(gpa);
+    defer won.deinit();
+    try won.op(.select_array, &.{vm.Variables.number("objectives_met")});
+    try won.pushConstant(1);
+    try won.op(.assign, &.{});
+    try won.command("TerminateMission");
+    try won.op(.push_byte, &.{1});
+    try won.op(.@"return", &.{});
+    const won_code = try won.finish();
+    defer gpa.free(won_code);
+
+    // The player in flight group Alpha, and a raider 5000 units ahead in flight group Raiders,
+    // whose destruction the trigger watches.
+    var player = dte.build.defaults.ship;
+    player.object_id = 0;
+    player.flight_group = alpha;
+    player.kind = @intCast(gameobj.Type.predator.number());
+    var raider = dte.build.defaults.ship;
+    raider.object_id = 1;
+    raider.flight_group = raiders;
+    raider.kind = @intCast(gameobj.Type.sabre.number());
+    raider.position = .{ 0, 0, 5000 };
+    raider.runtime_position = raider.position;
+    var alpha_group = dte.build.defaults.flight_group;
+    alpha_group.object_id = 2;
+    alpha_group.wing = .player;
+    var raiders_group = dte.build.defaults.flight_group;
+    raiders_group.object_id = 3;
+    var start_record = dte.build.defaults.part;
+    start_record.flags.start = true;
+    var destroyed = dte.build.defaults.trigger;
+    destroyed.condition = .destroyed;
+    const image = try dte.build.build(gpa, .{
+        .name = "Built",
+        .ships = &.{ .{ .name = "Player", .record = player }, .{ .name = "Raider", .record = raider } },
+        .flight_groups = &.{
+            .{ .name = "(FG)Alpha", .record = alpha_group },
+            .{ .name = "(FG)Raiders", .record = raiders_group },
+        },
+        .routines = &.{ start_code, clock_code, won_code },
+        .parts = &.{
+            .{ .name = "(F)Start", .record = start_record, .routine = 0 },
+            .{ .name = "(F)Clock", .record = dte.build.defaults.part, .routine = 1 },
+        },
+        .triggers = &.{.{ .record = destroyed, .routine = 2, .subject = raiders_group.object_id }},
+    });
+
+    // The mission loads and starts as the game starts one.
+    var fixture: gameobj.testing.Mission = undefined;
+    try fixture.init(gpa);
+    defer fixture.deinit();
+    var game = fixture.orders();
+    game.world.spawn = fixture.spawn(create.testing.no_models);
+    const loaded = try Loaded.create(gpa, image, &fixture.random);
+    defer loaded.destroy();
+    game.world.mission = &loaded.bound;
+    game.world.events = &loaded.events;
+    try loaded.start(game);
+    const variables = &loaded.script.variables;
+
+    // Binding resolves each object ID to its record, by the kinds in the object table.
+    const records = [_]?bind.Mission.Record{ .{ .ship = 0 }, .{ .ship = 1 }, .{ .flight_group = alpha }, .{ .flight_group = raiders } };
+    for (records, 0..) |record, id| try std.testing.expectEqual(record, loaded.bound.recordOf(id));
+
+    // The start part created both ships, each in the slot of its record, and the timer.
+    const raider_slot: u16 = 1;
+    for ([_]u16{ 0, raider_slot }, [_]gameobj.Type{ .predator, .sabre }) |slot, kind| {
+        try std.testing.expectEqual(kind, fixture.objects.slots[slot].object.type);
+    }
+    try std.testing.expectEqual(1, loaded.script.timer_count);
+
+    // One frame a second, as the game's frames call the mission. The timer is due at two
+    // seconds, so its part has not run after one, and has set the variable by three.
+    const frame = struct {
+        fn run(on: *gameobj.testing.Mission, mission: *Loaded, context: aigeneric.Context) void {
+            on.clock.game_ticks += ticks_per_second;
+            mission.tickClock(on.clock.game_ticks);
+            mission.flush(context);
+            mission.process(context);
+        }
+    }.run;
+    frame(&fixture, loaded, game);
+    try std.testing.expectEqual(0, variables.landing_cleared);
+    frame(&fixture, loaded, game);
+    frame(&fixture, loaded, game);
+    try std.testing.expectEqual(1, variables.landing_cleared);
+    try std.testing.expectEqual(0, loaded.script.timer_count);
+
+    // Nothing has ended the mission yet. Once the raider is destroyed, the trigger on its flight
+    // group sets `objectives_met` and ends the mission (`TerminateMission`).
+    try std.testing.expectEqual(0, variables.objectives_met);
+    try std.testing.expectEqual(0, fixture.player.terminated);
+    events.destroyed(game.world, raider_slot, null);
+    frame(&fixture, loaded, game);
+    try std.testing.expectEqual(1, variables.objectives_met);
+    try std.testing.expectEqual(1, fixture.player.terminated);
+}
+
 test {
     std.testing.refAllDecls(@This());
 }
