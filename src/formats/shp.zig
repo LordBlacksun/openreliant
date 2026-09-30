@@ -817,8 +817,9 @@ pub const RecordSizes = struct {
     }
 
     /// Takes in a chunk of `tag` with records of `size`. A file that gives a tag two sizes, as no
-    /// shipped model does, is written again at the larger. A tag the format does not name has no
-    /// size: the model keeps its chunks whole (`Model.unnamed_chunks`).
+    /// shipped model does, is written again at the larger
+    /// ([#477](https://github.com/vdmkenny/openreliant/issues/477)). A tag the format does not name
+    /// has no size: the model keeps its chunks whole (`Model.unnamed_chunks`).
     fn note(sizes: *RecordSizes, tag: Tag, size: u16) void {
         switch (tag) {
             .end, _ => {},
@@ -1149,9 +1150,13 @@ pub const Model = struct {
     /// unless the file holds what `parse` does not keep: a chunk of a named tag the loader never
     /// asks for ([#470](https://github.com/vdmkenny/openreliant/issues/470)), header records after
     /// the first ([#471](https://github.com/vdmkenny/openreliant/issues/471)), bytes after the
-    /// terminator ([#472](https://github.com/vdmkenny/openreliant/issues/472)), or bytes of a
-    /// record past its type's size, other than an attachment's, where they are not zero
-    /// ([#473](https://github.com/vdmkenny/openreliant/issues/473)).
+    /// terminator ([#472](https://github.com/vdmkenny/openreliant/issues/472)), bytes of a record
+    /// past its type's size, other than an attachment's, where they are not zero
+    /// ([#473](https://github.com/vdmkenny/openreliant/issues/473)), chunks of one tag with two
+    /// record sizes, which come back at the larger
+    /// ([#477](https://github.com/vdmkenny/openreliant/issues/477)), or a terminator whose record
+    /// size or count is not 0, which comes back with both 0
+    /// ([#478](https://github.com/vdmkenny/openreliant/issues/478)).
     pub fn write(model: Model, out: *std.Io.Writer) WriteError!void {
         var chunks: ChunkWriter = .{ .out = out, .sizes = model.record_sizes, .unnamed = model.unnamed_chunks };
         try chunks.put(.header, @as(*const [1]Header, &model.header), null);

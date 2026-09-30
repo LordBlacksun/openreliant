@@ -99,9 +99,12 @@ A file does not come back byte for byte where it holds what the reader does not 
 shipped model does: a chunk of a named tag the loader never asks for
 ([#470](https://github.com/vdmkenny/openreliant/issues/470)), header records after the first
 ([#471](https://github.com/vdmkenny/openreliant/issues/471)), bytes after the terminator
-([#472](https://github.com/vdmkenny/openreliant/issues/472)), or bytes of a record past its type's
+([#472](https://github.com/vdmkenny/openreliant/issues/472)), bytes of a record past its type's
 size, other than an attachment's, where they are not zero
-([#473](https://github.com/vdmkenny/openreliant/issues/473)).
+([#473](https://github.com/vdmkenny/openreliant/issues/473)), chunks of one tag with two record
+sizes, which come back at the larger ([#477](https://github.com/vdmkenny/openreliant/issues/477)),
+or a terminator whose record size or count is not 0, which comes back with both 0
+([#478](https://github.com/vdmkenny/openreliant/issues/478)).
 
 The writer fails rather than write a file the loader would misread: records of a tag the model's
 sizes leave out, a chunk of more records than its header can count (65535), or a part whose nodes
