@@ -96,6 +96,13 @@ A mission file named `mission<number>.dte`, stored expanded, in the `missions` f
 
 It lists every mission, where each comes from (`loose` or `archive`), and what its file holds, including the ship type and name of the player's own record, and says which fail to load. A mission can carry a name for OpenReliant to show, in a section of the file the original game ignores: see [OpenReliant's mission name](../formats/dte.md#openreliants-mission-name).
 
+`sltool` builds a mission from its source, a JSON file of its ships, flight groups, triggers and script, and writes any mission as its source to start from ([Building](../formats/dte.md#building)):
+
+```bash
+./sltool dte export StarLancer/missions/mission18.dte > mission100.json
+./sltool dte build mission100.json StarLancer/missions/mission100.dte
+```
+
 ## In-flight keys
 
 The flight keys are the game's own, as `starlancer.ini` binds them. Among them:

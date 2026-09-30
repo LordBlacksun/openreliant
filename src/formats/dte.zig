@@ -20,9 +20,11 @@ const opcodes = @import("../engine/vm/opcodes.zig");
 
 pub const section_count = 27;
 
-/// Writing mission files and their scripts.
+/// Writing mission files and their scripts, and building them from their records.
 pub const write = @import("dte/write.zig");
 pub const assemble = @import("dte/assemble.zig");
+pub const build = @import("dte/build.zig");
+pub const source = @import("dte/source.zig");
 
 /// What each directory slot holds. Sections the loader reads but this module does not interpret
 /// keep their index as a name.
@@ -258,6 +260,9 @@ pub const Ship = extern struct {
 
     /// The `intact_components` of a ship whose components are all intact.
     pub const all_intact: u32 = std.math.maxInt(u32);
+
+    /// The `tier` most records hold, which asks for the campaign's (`create.settledTier`).
+    pub const campaign_tier: u8 = 0xFF;
 
     /// Whether its component `component` is intact: bit `component & 31` of `intact_components`.
     pub fn componentIntact(ship: Ship, component: u8) bool {
@@ -1621,12 +1626,9 @@ pub const testing = struct {
         made.kind = kind;
         made.pilot = Ship.no_pilot;
         made.launch_gate = Ship.no_launch;
-        made.tier = campaign_tier;
+        made.tier = Ship.campaign_tier;
         return made;
     }
-
-    /// The `tier` of a record fitted by the campaign's loadout tier (`Ship.tier`).
-    const campaign_tier = 0xFF;
 
     /// `count` ship records of `kind`, each in no flight group, its object ID its index.
     pub fn ships(comptime count: usize, kind: u16) [count]Ship {
@@ -2066,4 +2068,6 @@ test {
     _ = opcodes;
     _ = write;
     _ = assemble;
+    _ = build;
+    _ = source;
 }

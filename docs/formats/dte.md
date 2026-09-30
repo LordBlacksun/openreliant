@@ -11,6 +11,10 @@ sltool dte triggers <mission>    # triggers, with the object whose slice holds e
 sltool dte strings <mission>     # the string pool
 sltool dte parts <mission>       # the script's named routines
 sltool dte script <mission>      # every trigger block and part, disassembled
+sltool dte check <mission>       # write it, its script and its source again, and compare
+sltool dte export <mission>      # the mission as its source, in JSON
+sltool dte build <source> <out>  # a mission built from its source
+sltool dte catalogue             # what a source can name
 make check-missions              # parse all 44
 ```
 
@@ -547,8 +551,8 @@ byte. Every mission, written again from its records alone, reads back the same r
 
 A mission of OpenReliant's making holds what the template's missions hold: its section 24 is theirs
 (`write.template.command_flags`), and its records carry the values most of theirs carry where their
-fields are not known. Mission 0, the sandbox, is written so by the build
-([`mission0.zig`](../../src/openreliant/mission0.zig)).
+fields are not known. Mission 0, the sandbox, is built so by the build
+([`mission0.zig`](../../src/openreliant/mission0.zig)), through the builder ([Building](#building)).
 
 ### Writing the script
 
@@ -563,6 +567,121 @@ counts itself and the NUL after the text.
 Assembled again from its disassembly, every routine of the 44 missions comes back the same, but for
 the padding after its last instruction, which in the shipped missions holds stale bytes, and the
 three routines that hold unused arm slots of a `random_branch`.
+
+## Building
+
+[`dte/build.zig`](../../src/formats/dte/build.zig) builds a mission from its records. It puts the
+names in the string pool, lays the script's routines out in turn, links each part and trigger to
+its routine, and works out what the shipped missions' files and the template's missions hold:
+
+- The pool: the strings given, in order, then each name not among them, once: the parts', the
+  ships', the flight groups', then the globals'.
+- A flight group's ship count, and the place of its first ship in the list of the groups' ships,
+  for a group with none the place its first would take. Binding works them out again
+  (`mission_list_group_ships`), and gives a group with none `no_ship`.
+- The object table: an entry for each object ID the ships, flight groups and squads take, of its
+  record's kind, holding the run of the triggers whose subject it is. An object with no triggers
+  has `first` `0xFFFF`, as every such entry of the shipped missions has.
+- A part's offset and length, and a trigger's link, from its routine's place.
+- The script's flags, none set, and section 24 as the template's missions hold it.
+
+A section given as it is stands in for the one the records make, and a count or a table given keeps
+its own values. `build.defaults` holds the records as most of the shipped missions hold them: a
+ship in no flight group, flown by no pilot, launching from nothing and fitted by the campaign's
+tier; a flight group ending in `0xFF19FFFF`; a trigger armed, on its subject itself, firing once,
+with no operand checked, `FF 00` at `0x17` and `0x88` at `0x1B`. **Unknown:** what those two
+trigger fields mean.
+
+In the shipped missions the object IDs of the ships, flight groups and squads run in one sequence
+in which the three kinds interleave. The builder numbers a new mission's ships first, then its
+flight groups, as mission 0 does.
+
+### The source
+
+[`dte/source.zig`](../../src/formats/dte/source.zig) reads and writes a mission as its source, in
+JSON: `sltool dte export` writes one, `sltool dte build` builds its file, and `sltool dte
+catalogue` lists what a source can name: the ship types, the Executor's commands with their
+parameters, the conditions with the values their events carry, and the game's variables. The
+source is a tool's input: what it builds is a standard mission file.
+
+```json
+{
+  "version": 1,
+  "name": "Patrol",
+  "flight_groups": [{ "name": "(FG)Alpha", "wing": 0 }, { "name": "(FG)Raiders" }],
+  "ships": [
+    { "name": "Player", "kind": "sabre", "group": "(FG)Alpha" },
+    { "name": "Raider", "kind": "predator", "group": "(FG)Raiders", "position": [0, 0, 150000] }
+  ],
+  "parts": [{ "name": "(F)Start", "routine": "start", "start": true }],
+  "triggers": [{ "condition": "destroyed", "subject": { "group": "(FG)Raiders" }, "routine": "won" }],
+  "routines": [
+    { "id": "won", "code": [{ "set": "objectives_met", "to": 1 }, { "return": 1 }] },
+    { "id": "start", "code": [
+      { "command": "CreateFlightGroup", "args": [{ "group": "(FG)Alpha" }] },
+      { "command": "CreateFlightGroup", "args": [{ "group": "(FG)Raiders" }] },
+      { "return": 1 }
+    ] }
+  ]
+}
+```
+
+A record gives only the fields that differ from what the builder gives it, by the names of the Zig
+records in this document, `_unknown` fields among them. A number may be written in hex as a
+string, and a float that has no decimal form as its bits.
+
+- `name` is the record's name as text, or `{"at": offset}` for an offset into the pool.
+- A ship's `kind` and `launch_from` name a ship type where the type has a name, and its `group`
+  names its flight group. Its run-time place and angles are its placed ones unless given.
+- A part's and a trigger's `routine` names the routine it runs by the routine's `id`. A part's
+  `start` sets its flag to run at the mission's start.
+- A trigger's `subject` is `{"ship": ...}`, `{"group": ...}` or `{"object": id}`. Its `operands`
+  are `null` for one not checked, a number, or `{"ship": ...}` or `{"group": ...}` for a reference
+  as the matcher reads one.
+- A ship or a flight group is named by its name, which finds the first so named, or by its index.
+- `objects` gives the entries of the object table that differ from those the records imply, by
+  `id`, and `object_table` the whole table. `sections` gives sections as they are, by the names of
+  `Section`, each as its count and its bytes in hex. `strings` gives the strings the pool starts
+  with.
+
+A routine is `code`, a list of statements, or `bytes`, its bytes in hex:
+
+| Statement | What it writes |
+|---|---|
+| `{"label": "a"}` | Places label `a` at the next instruction |
+| `{"op": "push_ship", "operands": [3]}` | The opcode and its operand bytes |
+| `{"op": "jump", "to": "a"}` | A branch to a label, which only goes forward |
+| `{"op": "push_string", "text": "x.wav"}` | Inline data: the text and a NUL, or `data` in hex |
+| `{"op": "random_branch", "default": "a", "arms": [...]}` | A weighted branch: each arm's `to`, `threshold` and `extra` |
+| `{"op": "command", "command": "SetAI"}` | `command` of a command by its name |
+| `{"command": "SetHostile", "args": [{"group": "(FG)Raiders"}, true]}` | Each argument pushed in the order of the command's parameters, then the command |
+| `{"set": "objectives_met", "to": 1}` | A game's variable set, by its name in `vm.Variables` or its number |
+| `{"call": "(F)Won"}` | `call_part` of a part, by its name or its index |
+| `{"return": 1}` | `push_byte` of the value, then `return` |
+
+A command's arguments are checked against its parameters: as many as it takes, a ship or a flight
+group only where the parameter takes one, and text only where it takes a file name or text. A ship
+is `{"ship": ...}`, with `component` for one of its components; a flight group `{"group": ...}`;
+a part `{"part": ...}`, pushed as its index, as the shipped scripts give `CreateTimer` one; a curve,
+a squad or a game's variable `{"curve": n}`, `{"squad": n}` or `{"variable": ...}`. A
+number, `true` or `false` is pushed as a constant, a string as inline text, and `null` as
+`push_null`. A routine's `padding` gives the bytes after its last instruction, and its `tail` the
+bytes after its block, its constants among them, in place of the constants its statements push.
+
+A source that is wrong fails to build, and `sltool dte build` says what is wrong: where, for a
+source that does not read, such as `ships[0].group: no flight group named "(FG)None"`, and the
+builder's error for records it refuses, such as `the mission does not build: TooMany`.
+
+### Reading a mission as its source
+
+`sltool dte export` cuts the script where a part or a trigger's block starts, and writes each
+routine as its instructions, with a label before each that a branch goes to, or as its bytes where
+its instructions would not build back into the same. A string pool that is not a run of
+NUL-terminated UTF-8 strings is given as it is, and every name by its offset. The sections the
+builder does not model, such as the curves, the squads and the operand tables, come as they are,
+in hex, so a shipped mission's source is long. `sltool dte check` writes each mission as its
+source and builds it again: every shipped mission reads back the same records. A mission whose
+records would not build back the same does not export (`NotTheSame`).
 
 ## Prior art
 

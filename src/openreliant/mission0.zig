@@ -173,119 +173,59 @@ const rock_names = names: {
     break :names all;
 };
 
-/// Mission 0's file, made in `gpa`.
+/// Mission 0's file, made in `gpa` by the mission builder (`dte.build`), which lays the names,
+/// the counts and the object table out as the game's missions have them.
 pub fn write(gpa: Allocator) ![]u8 {
     var arena_state: std.heap.ArenaAllocator = .init(gpa);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const placed = ships ++ rocks();
 
-    var strings: std.ArrayList(u8) = .empty;
-    const part_name = try addString(arena, &strings, "(F)Start");
+    const records = try arena.alloc(dte.build.Ship, placed.len);
+    for (records, placed, 0..) |*record, ship, index| record.* = .{ .name = .{ .text = ship.name }, .record = shipRecord(ship, @intCast(index)) };
 
-    const records = try arena.alloc(dte.Ship, placed.len);
-    for (records, placed, 0..) |*record, ship, index| record.* = shipRecord(ship, @intCast(index), try addString(arena, &strings, ship.name));
-
+    // The flight groups' object IDs follow the ships'.
     const groups = std.enums.values(Group);
-    const group_records = try arena.alloc(dte.FlightGroup, groups.len);
-    var listed: u32 = 0;
+    const group_records = try arena.alloc(dte.build.FlightGroup, groups.len);
     for (group_records, groups) |*record, group| {
-        var count: u8 = 0;
-        for (placed) |ship| {
-            if (ship.group == group) count += 1;
-        }
-        record.* = .{
-            .object_id = @intCast(placed.len + @intFromEnum(group)),
-            ._unknown_02 = 0,
-            .name = try addString(arena, &strings, group.label()),
-            ._unknown_06 = 0,
-            .wing = group.wing(),
-            .ship_count = count,
-            ._unknown_0a = 0,
-            .first_ship = listed,
-            ._unknown_10 = group_tail,
-        };
-        listed += count;
+        var group_record = dte.build.defaults.flight_group;
+        group_record.object_id = @intCast(placed.len + @intFromEnum(group));
+        group_record.wing = group.wing();
+        record.* = .{ .name = .{ .text = group.label() }, .record = group_record };
     }
 
-    // The object table: the ships' IDs, then the flight groups', none with triggers.
-    const objects = try arena.alloc(dte.Object, placed.len + groups.len);
-    for (objects, 0..) |*object, id| object.* = .{
-        .kind = if (id < placed.len) .ship else .flight_group,
-        .count = 0,
-        .first = no_triggers,
-        ._unknown_04 = 0,
-    };
-
-    const code = try script(arena);
-    var part = std.mem.zeroes(dte.Part);
-    part.name = part_name;
-    part.offset = 0;
+    var part = dte.build.defaults.part;
     part.flags.start = true;
-    part.length = @intCast(code.len / @sizeOf(u16));
-
-    var sections: dte.write.Sections = @splat(.{});
-    const section = dte.write.set;
-    section(&sections, .strings, strings.items.len, strings.items);
-    section(&sections, .ships, records.len, std.mem.sliceAsBytes(records));
-    section(&sections, .flight_groups, group_records.len, std.mem.sliceAsBytes(group_records));
-    section(&sections, .script, code.len / @sizeOf(u16), code);
-    section(&sections, .objects, objects.len, std.mem.sliceAsBytes(objects));
-    section(&sections, .parts, 1, std.mem.asBytes(&part));
-    section(&sections, .script_flags, code.len, try arena.alloc(u8, code.len));
-    @memset(@constCast(sections[@intFromEnum(dte.Section.script_flags)].bytes), 0);
-    const flags = dte.write.template.command_flags;
-    section(&sections, .command_flags, flags.len, std.mem.sliceAsBytes(&flags));
-    return dte.write.write(gpa, &sections, .{ .name = name });
+    return dte.build.build(gpa, .{
+        .name = name,
+        .ships = records,
+        .flight_groups = group_records,
+        .routines = &.{try script(arena)},
+        .parts = &.{.{ .name = .{ .text = "(F)Start" }, .record = part, .routine = 0 }},
+    });
 }
 
-/// The object table's `first` for an object with no triggers, as the game's missions give it.
-const no_triggers = 0xFFFF;
-
-/// A flight group's last word, as every flight group of the game's missions has it.
-/// **Unknown:** what it means.
-const group_tail = 0xFF19FFFF;
-
-/// The bytes after a ship's pitch (`_unknown_3c`, `tier`, `_unknown_3e`, the marker's curve and its
-/// place on it), as most of the ships of the game's missions have them: tier 255, which asks for
-/// the campaign's, and no curve.
-const ship_tail = [_]u8{ 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00 };
-
-/// Ship `ship`'s record, as the game's missions have their ships': object ID `id`, named at
-/// `name_at`, launching through its tube of the first Reliant, or from none, in no formation, every
-/// component intact, standing where it is placed.
-fn shipRecord(ship: Placed, id: u32, name_at: u16) dte.Ship {
-    var record = std.mem.zeroes(dte.Ship);
+/// Ship `ship`'s record, as the game's missions have their ships': object ID `id`, launching
+/// through its tube of the first Reliant, or from none, standing where it is placed.
+fn shipRecord(ship: Placed, id: u32) dte.Ship {
+    var record = dte.build.defaults.ship;
     record.object_id = id;
-    record.name = name_at;
     record.runtime_position = ship.at;
     record.position = ship.at;
     record.flight_group = @intFromEnum(ship.group);
     record.pilot = ship.pilot;
     record.kind = @intCast(ship.kind.number());
-    record.launch_from = if (ship.gate != null) @intCast(Type.reliant.number()) else std.math.maxInt(u16);
-    record._unknown_2a = 0xFF;
-    record.launch_gate = ship.gate orelse dte.Ship.no_launch;
+    if (ship.gate) |gate| {
+        record.launch_from = @intCast(Type.reliant.number());
+        record.launch_gate = gate;
+    }
     record.runtime_yaw = ship.yaw;
     record.yaw = ship.yaw;
-    record.intact_components = dte.Ship.all_intact;
-    record.formation_point = dte.Ship.no_formation_point;
-    record._unknown_36 = 0xFFFF;
     record.runtime_pitch = ship.pitch;
     record.pitch = ship.pitch;
-    const tail = std.mem.asBytes(&record)[@offsetOf(dte.Ship, "_unknown_3c")..][0..ship_tail.len];
-    tail.* = ship_tail;
     record.runtime_roll = ship.roll;
     record.roll = ship.roll;
     return record;
-}
-
-/// Adds `text` to the string pool, NUL-terminated, and gives the byte offset it starts at.
-fn addString(gpa: Allocator, strings: *std.ArrayList(u8), text: []const u8) !u16 {
-    const at: u16 = @intCast(strings.items.len);
-    try strings.appendSlice(gpa, text);
-    try strings.append(gpa, 0);
-    return at;
 }
 
 /// The order the start part makes the flight groups in: the Reliant's first, which the wing

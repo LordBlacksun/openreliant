@@ -1,4 +1,4 @@
-//! `sltool dte ...`: read `.DTE` mission files.
+//! `sltool dte ...`: read `.DTE` mission files, and build them from their sources.
 
 const std = @import("std");
 const Io = std.Io;
@@ -23,6 +23,12 @@ pub const Command = union(enum) {
     script: struct { mission: []const u8 },
     /// Writes the mission and its script again, and checks they come back the same.
     check: struct { mission: []const u8 },
+    /// Writes the mission as its source (`dte.source`).
+    @"export": struct { mission: []const u8 },
+    /// Builds a mission from its source.
+    build: struct { source: []const u8, out: []const u8 },
+    /// Writes what a mission's source can name: ship types, commands, conditions, variables.
+    catalogue: struct {},
 
     pub const usage =
         \\  dte info <mission>              summarise a mission
@@ -32,8 +38,11 @@ pub const Command = union(enum) {
         \\  dte strings <mission>           dump the string pool
         \\  dte parts <mission>             list the script's named routines
         \\  dte script <mission>            disassemble the script bytecode
-        \\  dte check <mission>             write the mission and its script again, and check that
-        \\                                  they come back the same
+        \\  dte check <mission>             write the mission, its script and its source again, and
+        \\                                  check that they come back the same
+        \\  dte export <mission>            write the mission as its source, in JSON
+        \\  dte build <source> <out>        build a mission from its source
+        \\  dte catalogue                   list what a source can name, in JSON
         \\
     ;
 
@@ -45,25 +54,30 @@ pub const Command = union(enum) {
     }
 
     pub fn run(command: Command, ctx: Context) !void {
-        const path = switch (command) {
-            inline else => |operands| operands.mission,
-        };
-        const image = try ctx.readInput(path);
-        const mission: dte.Mission = try .parse(image);
-        // Models, for naming components, are looked for beside the mission.
-        var library: ?Library = Library.beside(ctx, path) catch null;
-        defer if (library) |*found| found.deinit();
-        const models: ?*Library = if (library) |*found| found else null;
-
         switch (command) {
-            .info => try info(ctx, mission),
-            .sections => try sections(ctx, mission),
-            .ships => try ships(ctx, mission),
-            .triggers => try triggers(ctx, mission, models),
-            .strings => try strings(ctx, mission),
-            .parts => try parts(ctx, mission),
-            .script => try script(ctx, mission, models),
-            .check => try check(ctx, mission),
+            .build => |operands| try build(ctx, operands.source, operands.out),
+            .catalogue => try dte.source.writeCatalogue(ctx.stdout),
+            inline else => |operands, verb| {
+                const image = try ctx.readInput(operands.mission);
+                const mission: dte.Mission = try .parse(image);
+                // Models, for naming components, are looked for beside the mission.
+                var library: ?Library = Library.beside(ctx, operands.mission) catch null;
+                defer if (library) |*found| found.deinit();
+                const models: ?*Library = if (library) |*found| found else null;
+
+                switch (verb) {
+                    .info => try info(ctx, mission),
+                    .sections => try sections(ctx, mission),
+                    .ships => try ships(ctx, mission),
+                    .triggers => try triggers(ctx, mission, models),
+                    .strings => try strings(ctx, mission),
+                    .parts => try parts(ctx, mission),
+                    .script => try script(ctx, mission, models),
+                    .check => try check(ctx, mission),
+                    .@"export" => try dte.source.writeSource(ctx.arena, try dte.source.fromFile(ctx.arena, mission), ctx.stdout),
+                    .build, .catalogue => comptime unreachable,
+                }
+            },
         }
     }
 };
@@ -497,6 +511,45 @@ fn check(ctx: Context, mission: dte.Mission) !void {
         assembled += 1;
     }
     try out.print("script: {d} routines assembled again the same, {d} with bytes nothing reaches\n", .{ assembled, skipped });
+
+    // Written as its source and built again from it.
+    const source = try dte.source.fromFile(gpa, mission);
+    var text: Io.Writer.Allocating = .init(gpa);
+    try dte.source.writeSource(gpa, source, &text.writer);
+    var diagnostic: dte.source.Diagnostic = .{};
+    const parsed = dte.source.parse(gpa, text.written(), &diagnostic) catch |err| switch (err) {
+        error.Invalid => return invalidSource(out, "source: ", diagnostic.message),
+        else => return err,
+    };
+    const rebuilt = try dte.build.build(gpa, parsed);
+    if (!dte.write.sameRecords(read, try dte.write.records(try .parse(rebuilt)))) {
+        try out.writeAll("built again from its source, the records differ\n");
+        try out.flush(); // the error path skips the flush in main
+        return error.Differs;
+    }
+    try out.print("source: the same records, {d} bytes of JSON\n", .{text.written().len});
+}
+
+/// `sltool dte build`: the mission `source` gives, written to `out`, or what is wrong with it.
+fn build(ctx: Context, source: []const u8, out: []const u8) !void {
+    var diagnostic: dte.source.Diagnostic = .{};
+    const mission = dte.source.parse(ctx.arena, try ctx.readInput(source), &diagnostic) catch |err| switch (err) {
+        error.Invalid => return invalidSource(ctx.stdout, "", diagnostic.message),
+        else => return err,
+    };
+    const bytes = dte.build.build(ctx.arena, mission) catch |err| switch (err) {
+        error.OutOfMemory => return err,
+        else => return invalidSource(ctx.stdout, "the mission does not build: ", @errorName(err)),
+    };
+    try Io.Dir.cwd().writeFile(ctx.io, .{ .sub_path = out, .data = bytes });
+    try ctx.stdout.print("{s}: {d} ships, {d} flight groups, {d} triggers, {d} routines\n", .{ out, mission.ships.len, mission.flight_groups.len, mission.triggers.len, mission.routines.len });
+}
+
+/// Says what is wrong with a source, at once, since the error path skips the flush in main.
+fn invalidSource(out: *Io.Writer, prefix: []const u8, message: []const u8) error{ InvalidSource, WriteFailed } {
+    try out.print("{s}{s}\n", .{ prefix, message });
+    try out.flush();
+    return error.InvalidSource;
 }
 
 /// A routine assembled again from its disassembly, with its constant table as it was.
