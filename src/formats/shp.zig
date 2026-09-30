@@ -1010,7 +1010,11 @@ pub const Model = struct {
     firing_arcs: []FiringArc = &.{},
     /// Bytes after the terminator, which should be zero.
     trailing_bytes: usize,
-    /// The size of each tag's records in its file, which `write` writes them at.
+    /// The size of each tag's records in its file, which `write` writes them at. A model edited
+    /// after `parse` keeps them, so a field past its tag's size is lost without a word: in a
+    /// shipped model whose attachments are 100 bytes, a gun muzzle added loses its gun type
+    /// (`0x64`), and a light its range and brightness (`0x74`, `0x78`). `.{}` gives whole records,
+    /// each its type's size, and a chunk for every tag, as a model built from scratch has.
     record_sizes: RecordSizes = .{},
     /// Its file's chunks of tags the format does not name, in the order the file holds them.
     unnamed_chunks: []const UnnamedChunk = &.{},

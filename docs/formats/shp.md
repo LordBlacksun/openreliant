@@ -109,6 +109,12 @@ not each have their face list. It also fails for a part whose attachments have t
 each, and for a chunk kept whole whose tag the table names, or is the terminator's, or whose bytes
 are not its records'.
 
+A model edited after parsing keeps its file's record sizes, so a field past its tag's size is lost
+without a word. In a shipped model whose attachments are 100 bytes, a gun muzzle added loses its gun
+type (`0x64`), and a light its range and brightness (`0x74`, `0x78`). `record_sizes = .{}` gives
+the model whole records and a chunk for every tag, as one built from scratch has, without its
+attachments' tails.
+
 ## Records
 
 Offsets below are within a record. Only the fields this project reads are listed; the rest are
