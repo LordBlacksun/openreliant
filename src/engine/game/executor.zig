@@ -95,6 +95,7 @@ const implementations = table: {
         .{ "SetActionCentre", setActionCentre },
         .{ "DisableGuns", flagCommand("guns_disabled") },
         .{ "DisableEject", flagCommand("eject_disabled") },
+        .{ "SetHostile", setHostile },
         .{ "SetEscortPoint", setEscortPoint },
         .{ "SetPrimaryTarget", setPrimaryTarget },
         .{ "SnapToPoint", snapToPoint },
@@ -846,6 +847,21 @@ fn flagCommand(comptime flag: []const u8) vm.Implementation {
     }.run;
 }
 
+/// `cmd_SetHostile` (`0x004594F0`, command `0x36`): each ship the first argument names goes over to
+/// the enemy's side while the second argument is set, and to the player's while it is not
+/// (`setHostileShip`).
+fn setHostile(call: Call) u32 {
+    vm.Machine.forEachShip(call, setHostileShip);
+    return 1;
+}
+
+/// `cmd_SetHostile_ship` (`0x00459510`): the ship's object takes side 1, hostile, while the
+/// command's second argument is set, and side 0, friendly, while it is not. Nothing else about the
+/// object changes.
+fn setHostileShip(call: Call, ship: u16) void {
+    call.machine.game.?.world.objects.slots[ship].object.side = if (call.args[0] != 0) .hostile else .friendly;
+}
+
 /// `cmd_DestroySubObject` (`0x00459750`, command `0x42`): the component the first argument names
 /// (`push_component`) goes at once, with its assembly and nothing to show for it: each part of the
 /// assembly that is shown is taken out (`objects.destroyPart`), an engine taking its share off the
@@ -1239,6 +1255,55 @@ fn testGroup(id: u16, wing: u8) dte.FlightGroup {
     group.object_id = id;
     group.wing = wing;
     return group;
+}
+
+test "SetHostile puts each ship it names on the enemy's side or the player's" {
+    const gpa = std.testing.allocator;
+    const Routine = vm.machine.testing.Routine;
+    var routine: Routine = .init(gpa);
+    defer routine.deinit();
+    for (0..2) |group| {
+        try routine.op(.push_flight_group, &.{@intCast(group)});
+        try routine.command("CreateFlightGroup");
+    }
+    // The player's own Sabre, then its flight group, whose walk passes over the player's ship
+    // where the mission leaves the command flags clear, on the player's side; the Predators on the
+    // enemy's.
+    for ([_]struct { dte.Opcode, u8, u32 }{ .{ .push_ship, 0, 0 }, .{ .push_flight_group, 0, 0 }, .{ .push_flight_group, 1, 1 } }) |call| {
+        try routine.op(call[0], &.{call[1]});
+        try routine.pushConstant(call[2]);
+        try routine.command("SetHostile");
+    }
+    try routine.op(.push_byte, &.{1});
+    try routine.op(.@"return", &.{});
+    const code = try routine.finish();
+    defer gpa.free(code);
+
+    var fixture: vm.machine.testing.Fixture = undefined;
+    try fixture.init(gpa, &.{.{ .code = code, .start = true }}, .{
+        .ships = &.{
+            testShip(0, 0, @intFromEnum(gameobj.Type.sabre), dte.Ship.no_pilot),
+            testShip(1, 0, @intFromEnum(gameobj.Type.sabre), 42),
+            testShip(2, 1, @intFromEnum(gameobj.Type.predator), 42),
+            testShip(3, 1, @intFromEnum(gameobj.Type.predator), 42),
+        },
+        .flight_groups = &.{ testGroup(4, 0), testGroup(5, dte.FlightGroup.no_wing) },
+    });
+    defer fixture.deinit();
+    var world: gameobj.testing.Mission = undefined;
+    try world.init(gpa);
+    defer world.deinit();
+    // The Coalition's Sabre starts hostile and the Alliance's Predator friendly, as in the game.
+    world.tables.combat[@intFromEnum(gameobj.Type.sabre)].side = .hostile;
+    world.tables.combat[@intFromEnum(gameobj.Type.predator)].side = .friendly;
+    var game = world.orders();
+    game.world.spawn = .{ .tables = &world.tables, .types = create.testing.no_models };
+    fixture.machine.game = game;
+    try fixture.machine.start();
+
+    const all = world.objects;
+    for (all.slots[0..2]) |slot| try std.testing.expectEqual(.friendly, slot.object.side);
+    for (all.slots[2..4]) |slot| try std.testing.expectEqual(.hostile, slot.object.side);
 }
 
 test "a mission's start part makes its ships and gives them their orders" {

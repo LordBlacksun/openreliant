@@ -240,7 +240,7 @@ from the catalogue.
 | `0x33` | `DisableMissiles` | Each ship the first argument names launches no missiles while the second is set | No |
 | `0x34` | `DisableEngines` | Each ship the first argument names has its engines off while the second is set | No |
 | `0x35` | `DisableEject` | The pilot of each ship the first argument names cannot eject while the second is set | Yes |
-| `0x36` | `SetHostile` | Each ship the first argument names turns hostile while the second is set, or friendly | No |
+| `0x36` | `SetHostile` | Each ship the first argument names turns hostile while the second is set, or friendly: its object's side, and nothing else | Yes |
 | `0x37` | `ResetToSpawnPositions` | In a deathmatch, puts the player at a spawn place at random | No |
 | `0x38` | `UpdateEnvironmentFXState` | Applies what the script asks of its space at once rather than at the next jump (`environment_update`), and aims the sun, the lights and the nebula again from the markers (`backdrop_place`) ([Backdrop](backdrop.md)) | Yes |
 | `0x39` | `SetPrimaryTarget` | The ship the argument names, or its component, becomes the mission's primary target, which PRIMARY TARGET makes the player's ([Display](hud.md#picking-a-target)) | Yes |
