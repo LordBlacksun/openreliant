@@ -1015,7 +1015,8 @@ pub const Model = struct {
     /// after `parse` keeps them, so a field past its tag's size is lost without a word: in a
     /// shipped model whose attachments are 100 bytes, a gun muzzle added loses its gun type
     /// (`0x64`), and a light its range and brightness (`0x74`, `0x78`). `.{}` gives whole records,
-    /// each its type's size, and a chunk for every tag, as a model built from scratch has.
+    /// each its type's size, and a chunk for every tag, as a model built from scratch has, without
+    /// its attachments' tails.
     record_sizes: RecordSizes = .{},
     /// Its file's chunks of tags the format does not name, in the order the file holds them.
     unnamed_chunks: []const UnnamedChunk = &.{},
@@ -1195,7 +1196,8 @@ pub const WriteError = std.Io.Writer.Error || error{
     LeftOut,
     /// A part's node face lists are not one for each of its nodes.
     UnevenNodeFaces,
-    /// A part's attachment tails are neither none nor one for each of its attachments.
+    /// A part's attachment tails are neither none nor one for each of its attachments, at a
+    /// record size with room for them.
     UnevenTails,
     /// A chunk kept whole has a tag the format names: one the loader would read, or the
     /// terminator's.
@@ -1220,7 +1222,8 @@ const ChunkWriter = struct {
     }
 
     /// `put`, each record followed by its tail in `item_tails` (one for each item, or none), the
-    /// two cut short or filled out with zeros to the record's size.
+    /// two cut short or filled out with zeros to the record's size. A size with no room past the
+    /// record writes no tails, and then takes `item_tails` as none.
     fn putWithTails(
         chunks: *ChunkWriter,
         comptime tag: Tag,
@@ -1228,11 +1231,12 @@ const ChunkWriter = struct {
         comptime field: ?[]const u8,
         item_tails: []const []const u8,
     ) WriteError!void {
-        if (item_tails.len != 0 and item_tails.len != items.len) return error.UnevenTails;
         const size = chunks.sizes.of(tag) orelse {
             if (items.len > 0) return error.LeftOut;
             return;
         };
+        const written_tails: []const []const u8 = if (size > @sizeOf(Record(tag))) item_tails else &.{};
+        if (written_tails.len != 0 and written_tails.len != items.len) return error.UnevenTails;
         const count = std.math.cast(u16, items.len) orelse return error.TooManyRecords;
         try chunks.putUnnamed(false);
         chunks.written += 1;
@@ -1242,7 +1246,7 @@ const ChunkWriter = struct {
             const bytes = std.mem.asBytes(record);
             const kept = @min(bytes.len, size);
             try chunks.out.writeAll(bytes[0..kept]);
-            const tail: []const u8 = if (item_tails.len == 0) &.{} else item_tails[i];
+            const tail: []const u8 = if (written_tails.len == 0) &.{} else written_tails[i];
             const past = @min(tail.len, size - kept);
             try chunks.out.writeAll(tail[0..past]);
             try chunks.out.splatByteAll(0, size - kept - past);
@@ -1506,6 +1510,33 @@ test "the bytes of an attachment's record past those the engine keeps come back 
     try std.testing.expectEqualSlices(u8, data, written.written());
 }
 
+test "a parsed model's attachments with tails take one more at whole records" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    // A file whose muzzle runs to 168 bytes, so that the parsed model holds its tail.
+    var attachments = [_]Attachment{testAttachment(.gun_muzzle, 0)};
+    var parts = [_]PartData{testPart("Hull", false, &attachments)};
+    var model = testModel(&parts, true);
+    model.record_sizes.attachment = 168;
+    var file: std.Io.Writer.Allocating = .init(arena);
+    try model.write(&file.writer);
+    var edited = try Model.parse(arena, file.written());
+    try std.testing.expectEqual(1, edited.parts[0].attachment_tails.len);
+
+    // A light added, and written at whole records: 124 bytes leave no room for a tail, so the
+    // muzzle's is not written, and the light needs none.
+    var added = [_]Attachment{ edited.parts[0].attachments[0], testAttachment(.light, 1) };
+    edited.parts[0].attachments = &added;
+    edited.record_sizes = .{};
+    var written: std.Io.Writer.Allocating = .init(arena);
+    try edited.write(&written.writer);
+    const read = (try Model.parse(arena, written.written())).parts[0];
+    try std.testing.expectEqualSlices(Attachment, &added, read.attachments);
+    try std.testing.expectEqual(0, read.attachment_tails.len);
+}
+
 test "chunks of a tag the format does not name come back where they were" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
@@ -1630,16 +1661,18 @@ test "each node of a part has its face list" {
     try std.testing.expectError(error.UnevenNodeFaces, testModel(&parts, true).write(&written.writer));
 }
 
-test "a part's attachments have a tail each, or none" {
+test "a part's attachments have a tail each, or none, where their records leave room for one" {
     var attachments = [_]Attachment{ testAttachment(.light, 0), testAttachment(.light, 1) };
     const tail = [_]u8{0};
     const one = [_][]const u8{&tail};
     var parts = [_]PartData{testPart("Hull", false, &attachments)};
     parts[0].attachment_tails = &one;
+    var model = testModel(&parts, true);
+    model.record_sizes.attachment = 136;
 
     var written: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer written.deinit();
-    try std.testing.expectError(error.UnevenTails, testModel(&parts, true).write(&written.writer));
+    try std.testing.expectError(error.UnevenTails, model.write(&written.writer));
 }
 
 test "a chunk kept whole is of a tag the format does not name, and holds its records" {
