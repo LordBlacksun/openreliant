@@ -36,6 +36,11 @@ terminator is reached. A miss leaves the cursor where it was, so a chunk the exp
 simply skipped and the next request still finds what follows. Chunks must therefore appear in the
 order the loader asks for them, because a miss never rewinds.
 
+The loader reads only the terminator's tag: `model_take_chunk` (`0x004A2EB0`) stops at `0xFFFF`
+(`0x004A2ECC`) without reading the terminator's record size or count. A file loads the same
+whatever the two hold, even where they count more bytes than follow, and where the file ends after
+the tag. The reader stops at the tag too.
+
 ### Tags
 
 | Tag | Record | Record sizes seen | Belongs to |
@@ -103,7 +108,7 @@ shipped model does: a chunk of a named tag the loader never asks for
 size, other than an attachment's, where they are not zero
 ([#473](https://github.com/vdmkenny/openreliant/issues/473)), chunks of one tag with two record
 sizes, which come back at the larger ([#477](https://github.com/vdmkenny/openreliant/issues/477)),
-or a terminator whose record size or count is not 0, which comes back with both 0
+or a terminator whose record size or count is missing or not 0, which comes back with both 0
 ([#478](https://github.com/vdmkenny/openreliant/issues/478)).
 
 The writer fails rather than write a file the loader would misread: records of a tag the model's
