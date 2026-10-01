@@ -10,7 +10,8 @@ Every integer in the container is **big-endian**.
 sltool hog info <archive>              # size, member count, how much is compressed
 sltool hog ls <archive>                # offset, stored size, real size, name
 sltool hog extract <archive> <dir>     # decompressing by default; --raw to keep members as stored
-sltool hog pack <dir> <archive>        # pack a folder's files; --store: compress only what must be
+sltool hog pack <dir> <archive>        # pack a folder's files; --store: compress only what must be;
+                                       # --checksum: write <archive>.sha256 beside it
 make assets                            # extract resource.hog and pilots.hog into game/assets
 ```
 
@@ -69,6 +70,10 @@ The game opens the discs' archives one at a time, as it needs them (`cd_hog_open
 [Movies](../engine/movies.md#the-discs-archives)), and Bink reads a movie from one as it is
 stored (`hog_locate`).
 
+OpenReliant's mods, archives of this format and folders of files, stand in for the members of
+every one of these archives, and for the game's loose files, by their names
+([Modding](../guide/modding.md)).
+
 `resource.hog`'s members by extension: `.shp` models, `.spr` sprites, `.tga` images, `.dte`
 missions, `.fat` [sound banks](fat.md), `.fnt` [fonts](fnt.md), `.ccb` colour tables, and five `.bin` files:
 the four stat tables and `profile.bin`.
@@ -99,6 +104,10 @@ name order. It stores each member as `hog.packMember` finds best:
   path that expands a packed member.
 
 The `~N` suffix `extract` gives a repeated name stays in the member's name.
+
+With `--checksum`, `pack` writes a checksum file beside the archive, its name with `.sha256` added,
+as `sha256sum` writes one, which OpenReliant checks a mod's archive against as it loads
+([Modding](../guide/modding.md#checksums)).
 
 ## RefPack compression
 
