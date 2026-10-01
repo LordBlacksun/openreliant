@@ -128,7 +128,7 @@ check-missions: | $(GAME_DIR)/.stamp-hog-resource $(GAME_DIR)/.stamp-install $(S
 	@$(OPENRELIANT) missions $(INSTALL_DIR) | tail -1
 
 .PHONY: check-models
-check-models: | $(GAME_DIR)/.stamp-hog-resource $(SLTOOL) ## Validate every .SHP model for internal consistency
+check-models: | $(GAME_DIR)/.stamp-hog-resource $(SLTOOL) ## Validate every .SHP model, and write each again
 	@bad=0; for f in $(ASSETS_DIR)/resource/*.[sS][hH][pP]; do \
 	    $(SLTOOL) shp check "$$f" > /dev/null || { echo "FAILED: $$f"; bad=$$((bad + 1)); }; \
 	done; echo "$$(ls $(ASSETS_DIR)/resource/*.[sS][hH][pP] | wc -l | tr -d ' ') models checked, $$bad with problems"

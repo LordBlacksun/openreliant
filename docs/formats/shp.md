@@ -6,10 +6,10 @@ Every ship, station, weapon, asteroid and piece of debris in the game is a `.SHP
 ```bash
 sltool shp info <model>                 # header flags, bounds, arcs, parts, levels, turrets
 sltool shp chunks <model>               # the raw chunk stream
-sltool shp check <model>                # validate indices, parents and bounds
+sltool shp check <model>                # validate indices, parents and bounds, and write it again
 sltool shp obj <model> <out.obj> [--lod n]
 make models                             # export every model to game/models
-make check-models                       # validate every model
+make check-models                       # validate every model, and write each again
 ```
 
 ## Chunk stream
@@ -71,6 +71,53 @@ firing arcs
 
 Every model follows this order and ends with the terminator at the last byte of the file.
 
+### Writing
+
+`shp.Model.write` writes a model as the loader reads it: its chunks in the order above, each record
+at the size its tag has in the model's file, and the terminator with a record size and count of 0.
+In every shipped model each tag has one record size, and a tag's chunk stands wherever the loader
+asks for one or nowhere, with a count of 0 where there are no records. The older exporters wrote no
+point lists, trigger polygons or firing arcs at all. `Model.parse` keeps each tag's size, or that
+the file has none of it (`shp.RecordSizes`), and the writer cuts each record short to that size or
+fills it out with zeros. A model built from scratch gets whole records, each its type's size
+(`shp.Record`).
+
+The attachment records of 136 and 168 bytes hold 12 and 44 bytes past the 124 the engine keeps,
+which the loader never copies (`model_take_chunk`, `0x004A2EB0`). **Unknown:** what they are; they
+are zero in every shipped model. The reader keeps them with each attachment
+(`shp.PartData.attachment_tails`), and the writer writes them back after it, at a record size with
+room for them. Trigger polygons are written back as the file holds them. So every shipped model,
+written again, comes back byte for byte: `sltool shp check` checks it model by model, and
+`make check-models` for the whole installation.
+
+`model_load` (`0x004A44D0`) asks for no tag outside the table above, so its search passes over a
+chunk of any other tag wherever it stands. No shipped model has one. The reader keeps such chunks
+whole (`shp.Model.unnamed_chunks`), each with how many chunks of named tags come before it, and the
+writer writes each after as many of its own, or before the terminator where it writes fewer.
+
+A file does not come back byte for byte where it holds what the reader does not keep, which no
+shipped model does: a chunk of a named tag the loader never asks for
+([#470](https://github.com/vdmkenny/openreliant/issues/470)), header records after the first
+([#471](https://github.com/vdmkenny/openreliant/issues/471)), bytes after the terminator
+([#472](https://github.com/vdmkenny/openreliant/issues/472)), bytes of a record past its type's
+size, other than an attachment's, where they are not zero
+([#473](https://github.com/vdmkenny/openreliant/issues/473)), chunks of one tag with two record
+sizes, which come back at the larger ([#477](https://github.com/vdmkenny/openreliant/issues/477)),
+or a terminator whose record size or count is not 0, which comes back with both 0
+([#478](https://github.com/vdmkenny/openreliant/issues/478)).
+
+The writer fails rather than write a file the loader would misread: records of a tag the model's
+sizes leave out, a chunk of more records than its header can count (65535), or a part whose nodes
+do not each have their face list. It also fails for a chunk kept whole whose tag the table names,
+or is the terminator's, or whose bytes are not its records'. At a record size with room for tails,
+it fails for a part whose attachments have tails, but not one each.
+
+A model edited after parsing keeps its file's record sizes, so a field past its tag's size is lost
+without a word. In a shipped model whose attachments are 100 bytes, a gun muzzle added loses its gun
+type (`0x64`), and a light its range and brightness (`0x74`, `0x78`). `record_sizes = .{}` gives
+the model whole records and a chunk for every tag, as one built from scratch has, without its
+attachments' tails.
+
 ## Records
 
 Offsets below are within a record. Only the fields this project reads are listed; the rest are
@@ -129,7 +176,8 @@ Part flags at `0xF0`:
 ### Attachment point (tag `0x09`)
 
 A point on a part where the engine mounts something. Exporters wrote records of 100 to 168 bytes;
-the engine keeps 124 bytes of each.
+the engine keeps 124 bytes of each. **Unknown:** what longer records hold past them, which are zero
+in every shipped model and which the reader keeps ([Writing](#writing)).
 
 | Off | Type | Field |
 |---|---|---|
@@ -359,9 +407,10 @@ moved from each part's origin to the object's. **Unverified:** that they are int
 part's volume; the engine uses them as such
 ([Live objects](../engine/objects.md#the-model-hierarchy)).
 
-**Unknown:** the interpretation of trigger polygons (`0x0F`). They are parsed and counted, and their
-records are available, but their fields are not decoded here. One model carries two of them; the
-engine tests the player's ship against them before it descends the collision tree.
+**Unknown:** the interpretation of trigger polygons (`0x0F`). The reader keeps their records as the
+file holds them (`shp.TriggerPolygon`), and the writer writes them back, but their fields are not
+decoded here ([#11](https://github.com/vdmkenny/openreliant/issues/11)). One model carries two of
+them; the engine tests the player's ship against them before it descends the collision tree.
 
 ## Prior art
 

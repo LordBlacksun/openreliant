@@ -12,7 +12,8 @@ const Library = @import("library.zig").Library;
 
 pub const Command = union(enum) {
     info: struct { model: []const u8 },
-    /// Cross-checks the parsed model against itself.
+    /// Cross-checks the parsed model against itself, and writes it again to check that it comes
+    /// back the same.
     check: struct { model: []const u8 },
     /// Lists the chunk stream as it appears in the file.
     chunks: struct { model: []const u8 },
@@ -23,7 +24,8 @@ pub const Command = union(enum) {
 
     pub const usage =
         \\  shp info <model>                parts, meshes, materials and bounds
-        \\  shp check <model>               validate indices, bounds and normals
+        \\  shp check <model>               validate indices, bounds and normals, and write the
+        \\                                  model again to check that it comes back the same
         \\  shp chunks <model>              list the raw chunk stream
         \\  shp components <model>          list the components objects of the model name by index,
         \\                                  finding mounted models beside it
@@ -64,7 +66,7 @@ pub const Command = union(enum) {
             .chunks => try chunks(ctx, data),
             .components => try listComponents(ctx, path),
             .info => try info(ctx, try shp.Model.parse(ctx.arena, data)),
-            .check => try check(ctx, try shp.Model.parse(ctx.arena, data)),
+            .check => try check(ctx, data),
             .obj => |operands| try writeObj(
                 ctx,
                 try shp.Model.parse(ctx.arena, data),
@@ -168,10 +170,10 @@ fn info(ctx: Context, model: shp.Model) !void {
             try ctx.stdout.writeByte('\n');
         }
 
-        if (entry.attachments.len + entry.nodes.len + entry.tracks.len + entry.point_lists.len + entry.trigger_count > 0) {
+        if (entry.attachments.len + entry.nodes.len + entry.tracks.len + entry.point_lists.len + entry.triggers.len > 0) {
             try ctx.stdout.print("        {d} nodes, {d} attachments, {d} clips, {d} point lists, {d} triggers\n", .{
                 entry.nodes.len,       entry.attachments.len, entry.tracks.len,
-                entry.point_lists.len, entry.trigger_count,
+                entry.point_lists.len, entry.triggers.len,
             });
         }
         for (entry.point_lists) |list| {
@@ -241,8 +243,6 @@ fn info(ctx: Context, model: shp.Model) !void {
     }
 }
 
-/// Cross-checks a parsed model for internal consistency. Every one of these holds for all 440
-/// shipped models, so a failure means either a damaged file or a misread structure.
 /// How a part's stored bounding box relates to the extent of its finest mesh.
 const BoundsFrame = enum {
     /// Zero-sized: the exporter left it unfilled.
@@ -289,7 +289,11 @@ fn classifyBounds(entry: shp.PartData) BoundsFrame {
     return .permuted;
 }
 
-fn check(ctx: Context, model: shp.Model) !void {
+/// Cross-checks the model in `data` for internal consistency, then writes it again and checks that
+/// it gives back `data` byte for byte. Every shipped model passes both, so a failure means either a
+/// damaged file or a misread structure.
+fn check(ctx: Context, data: []const u8) !void {
+    const model: shp.Model = try .parse(ctx.arena, data);
     var problems: usize = 0;
     var bounds_frames: [std.meta.fields(BoundsFrame).len]usize = @splat(0);
     const report = struct {
@@ -390,6 +394,15 @@ fn check(ctx: Context, model: shp.Model) !void {
         try ctx.stdout.flush(); // the error path skips the flush in main
         return error.ModelInconsistent;
     }
+
+    var written: Io.Writer.Allocating = .init(ctx.arena);
+    try model.write(&written.writer);
+    if (std.mem.indexOfDiff(u8, data, written.written())) |offset| {
+        try ctx.stdout.print("written again, it differs from offset {x:0>8}\n", .{offset});
+        try ctx.stdout.flush();
+        return error.Differs;
+    }
+    try ctx.stdout.writeAll("written again: the same bytes\n");
 }
 
 /// Writes a level's faces as OBJ faces, all wound alike, and returns how many. Odd strip members

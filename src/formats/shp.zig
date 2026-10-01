@@ -73,6 +73,14 @@ pub const Tag = enum(u16) {
     end = 0xFFFF,
     _,
 
+    /// Whether the format names the tag: the loader asks for it, or it ends the stream.
+    pub fn isNamed(tag: Tag) bool {
+        return switch (tag) {
+            _ => false,
+            else => true,
+        };
+    }
+
     pub fn format(tag: Tag, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         return layout.formatTag(Tag, tag, writer);
     }
@@ -93,6 +101,9 @@ pub const ChunkHeader = extern struct {
     record_size: u16,
     count: u16,
 
+    /// The chunk that ends the stream, with no records, as every shipped model ends.
+    pub const terminator: ChunkHeader = .{ .tag = .end, .record_size = 0, .count = 0 };
+
     comptime {
         assert(@sizeOf(ChunkHeader) == 6);
     }
@@ -104,6 +115,15 @@ pub const Chunk = struct {
     count: u16,
     /// `count * record_size` bytes.
     data: []const u8,
+};
+
+/// A chunk of a tag the format does not name, kept whole. `model_load` (`0x004A44D0`) asks for no
+/// such tag, so its search passes over the chunk wherever it stands.
+pub const UnnamedChunk = struct {
+    /// How many chunks of named tags come before it in the file. `Model.write` writes it after as
+    /// many of its own, or before the terminator where it writes fewer.
+    after: usize,
+    chunk: Chunk,
 };
 
 // --- records ----------------------------------------------------------------------------------
@@ -426,8 +446,8 @@ pub fn PlayMode(comptime Int: type) type {
 }
 
 /// Tag `0x09`. A point on a part where the engine mounts something: a gun or turret, a missile
-/// pod, a light, a cargo pod. The engine keeps 124 bytes of each record, and exporters that write
-/// longer ones add nothing it reads.
+/// pod, a light, a cargo pod. The engine keeps 124 bytes of each record (`model_take_chunk`,
+/// `0x004A2EB0`); what longer records hold past them, the part keeps as its `attachment_tails`.
 pub const Attachment = extern struct {
     kind: Kind,
     /// Relative to the part.
@@ -726,6 +746,100 @@ pub const Material = extern struct {
     }
 };
 
+/// Tag `0x0F`. A trigger polygon, kept as the file holds it: its fields are not decoded yet
+/// ([#11](https://github.com/vdmkenny/openreliant/issues/11)).
+pub const TriggerPolygon = extern struct {
+    _unknown_00: [16]u8,
+
+    comptime {
+        assert(@sizeOf(TriggerPolygon) == 16);
+    }
+};
+
+/// The type of `tag`'s records, as `parse` keeps them: the longest record of the tag the shipped
+/// models hold, but for an attachment the 124 bytes the engine keeps, its tail apart
+/// (`attachment_tails`). The engine's records of some tags differ in size: `model_load`
+/// (`0x004A44D0`) takes a trigger polygon at 84 bytes and a point list at 12.
+pub fn Record(comptime tag: Tag) type {
+    return switch (tag) {
+        .header => Header,
+        .part => Part,
+        .lod => Lod,
+        .face => Face,
+        .vertex => Vertex,
+        .material => Material,
+        .tree_node => TreeNode,
+        .node_face_list => u32,
+        .attachment => Attachment,
+        .animation_clip => Clip,
+        .keyframe => Keyframe,
+        .clip_event => ClipEvent,
+        .point_list => PointList.Kind,
+        .point => Point,
+        .trigger_polygon => TriggerPolygon,
+        .firing_arc => FiringArc,
+        else => @compileError("no records of tag " ++ @tagName(tag)),
+    };
+}
+
+/// The size of each tag's records in a model's file, or null for a tag the file holds no chunk
+/// of. Older exporters wrote shorter records, which the loader reads as far as they go
+/// (`records`), and left point lists, trigger polygons and firing arcs out altogether. The
+/// defaults are the sizes of `Record`'s types.
+pub const RecordSizes = struct {
+    header: ?u16 = @sizeOf(Record(.header)),
+    part: ?u16 = @sizeOf(Record(.part)),
+    lod: ?u16 = @sizeOf(Record(.lod)),
+    face: ?u16 = @sizeOf(Record(.face)),
+    vertex: ?u16 = @sizeOf(Record(.vertex)),
+    material: ?u16 = @sizeOf(Record(.material)),
+    tree_node: ?u16 = @sizeOf(Record(.tree_node)),
+    node_face_list: ?u16 = @sizeOf(Record(.node_face_list)),
+    attachment: ?u16 = @sizeOf(Record(.attachment)),
+    animation_clip: ?u16 = @sizeOf(Record(.animation_clip)),
+    keyframe: ?u16 = @sizeOf(Record(.keyframe)),
+    clip_event: ?u16 = @sizeOf(Record(.clip_event)),
+    point_list: ?u16 = @sizeOf(Record(.point_list)),
+    point: ?u16 = @sizeOf(Record(.point)),
+    trigger_polygon: ?u16 = @sizeOf(Record(.trigger_polygon)),
+    firing_arc: ?u16 = @sizeOf(Record(.firing_arc)),
+
+    /// No chunk of any tag, which `Model.parse` fills in from the file's chunks.
+    pub const none: RecordSizes = sizes: {
+        var sizes: RecordSizes = .{};
+        for (@typeInfo(RecordSizes).@"struct".fields) |field| @field(sizes, field.name) = null;
+        break :sizes sizes;
+    };
+
+    /// The size of `tag`'s records, or null for a tag the file holds no chunk of.
+    pub fn of(sizes: RecordSizes, comptime tag: Tag) ?u16 {
+        return @field(sizes, @tagName(tag));
+    }
+
+    /// Takes in a chunk of `tag` with records of `size`. A file that gives a tag two sizes, as no
+    /// shipped model does, is written again at the larger
+    /// ([#477](https://github.com/vdmkenny/openreliant/issues/477)). A tag the format does not name
+    /// has no size: the model keeps its chunks whole (`Model.unnamed_chunks`).
+    fn note(sizes: *RecordSizes, tag: Tag, size: u16) void {
+        switch (tag) {
+            .end, _ => {},
+            inline else => |named| {
+                const field = &@field(sizes, @tagName(named));
+                field.* = @max(field.* orelse 0, size);
+            },
+        }
+    }
+
+    comptime {
+        // A field for each tag but the terminator, named after it, whose default is the size of
+        // its record.
+        const fields = @typeInfo(RecordSizes).@"struct".fields;
+        assert(fields.len == std.enums.values(Tag).len - 1);
+        const whole: RecordSizes = .{};
+        for (fields) |field| assert(@field(whole, field.name) == @sizeOf(Record(@field(Tag, field.name))));
+    }
+};
+
 // --- reading ----------------------------------------------------------------------------------
 
 pub const Error = error{
@@ -785,10 +899,16 @@ pub const Reader = struct {
         }
     }
 
-    /// `take`, decoded into records of `T`.
-    pub fn takeRecords(reader: *Reader, comptime T: type, gpa: Allocator, tag: Tag) ![]T {
-        const chunk = try reader.take(tag) orelse return gpa.alloc(T, 0);
-        return records(T, gpa, chunk);
+    /// `take`, decoded into `tag`'s records.
+    pub fn takeRecords(reader: *Reader, gpa: Allocator, comptime tag: Tag) ![]Record(tag) {
+        const chunk = try reader.take(tag) orelse return gpa.alloc(Record(tag), 0);
+        return records(Record(tag), gpa, chunk);
+    }
+
+    /// `takeRecords`, with what each record holds past those bytes (`tails`).
+    pub fn takeRecordsAndTails(reader: *Reader, gpa: Allocator, comptime tag: Tag) !struct { []Record(tag), []const []const u8 } {
+        const chunk = try reader.take(tag) orelse return .{ try gpa.alloc(Record(tag), 0), &.{} };
+        return .{ try records(Record(tag), gpa, chunk), try tails(gpa, chunk, @sizeOf(Record(tag))) };
     }
 };
 
@@ -801,6 +921,21 @@ pub fn records(comptime T: type, gpa: Allocator, chunk: Chunk) Allocator.Error![
     const copy = @min(@as(usize, chunk.record_size), @sizeOf(T));
     for (out, 0..) |*record, i| {
         @memcpy(std.mem.asBytes(record)[0..copy], chunk.data[i * chunk.record_size ..][0..copy]);
+    }
+    return out;
+}
+
+/// What each of a chunk's records holds past its first `kept` bytes, which `records` leaves out:
+/// one for each record, or none where the records hold no more.
+fn tails(gpa: Allocator, chunk: Chunk, kept: usize) Allocator.Error![]const []const u8 {
+    if (chunk.record_size <= kept) return &.{};
+    const size = chunk.record_size - kept;
+    const bytes = try gpa.alloc(u8, @as(usize, chunk.count) * size);
+    const out = try gpa.alloc([]const u8, chunk.count);
+    for (out, 0..) |*tail, i| {
+        const into = bytes[i * size ..][0..size];
+        @memcpy(into, chunk.data[i * chunk.record_size + kept ..][0..size]);
+        tail.* = into;
     }
     return out;
 }
@@ -841,6 +976,11 @@ pub const PartData = struct {
     part: Part,
     meshes: []Mesh,
     attachments: []Attachment,
+    /// What each attachment's record holds in the file past the 124 bytes the engine keeps, as the
+    /// records of 136 and 168 bytes do: one for each attachment, or none where the records hold no
+    /// more. **Unknown:** what the bytes are. The loader never copies them, and they are zero in
+    /// every shipped model; they are kept so that a model comes back as its file holds it.
+    attachment_tails: []const []const u8 = &.{},
     /// Its animation tracks, in the order the file lists them.
     tracks: []Track,
     /// Its collision tree, the root first; empty for a part that has none.
@@ -850,8 +990,8 @@ pub const PartData = struct {
     node_faces: [][]u32,
     /// Its point lists, in the order the file lists them.
     point_lists: []PointList = &.{},
-    /// Trigger polygons, which are read but not yet interpreted, kept as a count.
-    trigger_count: usize,
+    /// Its trigger polygons, kept as the file holds them.
+    triggers: []TriggerPolygon = &.{},
 
     /// Its list of points of `kind`, or null for none (`node_point_group`).
     pub fn pointList(data: PartData, kind: PointList.Kind) ?PointList {
@@ -871,53 +1011,64 @@ pub const Model = struct {
     firing_arcs: []FiringArc = &.{},
     /// Bytes after the terminator, which should be zero.
     trailing_bytes: usize,
+    /// The size of each tag's records in its file, which `write` writes them at. A model edited
+    /// after `parse` keeps them, so a field past its tag's size is lost without a word: in a
+    /// shipped model whose attachments are 100 bytes, a gun muzzle added loses its gun type
+    /// (`0x64`), and a light its range and brightness (`0x74`, `0x78`). `.{}` gives whole records,
+    /// each its type's size, and a chunk for every tag, as a model built from scratch has, without
+    /// its attachments' tails.
+    record_sizes: RecordSizes = .{},
+    /// Its file's chunks of tags the format does not name, in the order the file holds them.
+    unnamed_chunks: []const UnnamedChunk = &.{},
 
     /// Reads a model, following the loader's request order:
     ///
     ///     header, parts, then per part: levels, nodes, attachments, clips, groups, triggers,
     ///     then per level: vertices, faces, materials, then per node, clip and group their own
     ///     lists, and finally the firing arcs.
+    ///
+    /// The chunks of tags the format does not name, which the loader passes over, it keeps whole.
     pub fn parse(gpa: Allocator, data: []const u8) !Model {
         var reader: Reader = .init(data);
 
-        const headers = try reader.takeRecords(Header, gpa, .header);
+        const headers = try reader.takeRecords(gpa, .header);
         if (headers.len == 0) return error.NotAModel;
 
-        const parts = try reader.takeRecords(Part, gpa, .part);
+        const parts = try reader.takeRecords(gpa, .part);
         const out = try gpa.alloc(PartData, parts.len);
 
         for (parts, out) |part, *entry| {
-            const lods = try reader.takeRecords(Lod, gpa, .lod);
-            const nodes = try reader.takeRecords(TreeNode, gpa, .tree_node);
-            const attachments = try reader.takeRecords(Attachment, gpa, .attachment);
-            const clips = try reader.takeRecords(Clip, gpa, .animation_clip);
-            const kinds = try reader.takeRecords(u32, gpa, .point_list);
-            const triggers = try reader.take(.trigger_polygon);
+            const lods = try reader.takeRecords(gpa, .lod);
+            const nodes = try reader.takeRecords(gpa, .tree_node);
+            const attachments, const attachment_tails = try reader.takeRecordsAndTails(gpa, .attachment);
+            const clips = try reader.takeRecords(gpa, .animation_clip);
+            const kinds = try reader.takeRecords(gpa, .point_list);
+            const triggers = try reader.takeRecords(gpa, .trigger_polygon);
 
             const meshes = try gpa.alloc(Mesh, lods.len);
             for (lods, meshes) |lod, *mesh| {
                 mesh.* = .{
                     .lod = lod,
-                    .vertices = try reader.takeRecords(Vertex, gpa, .vertex),
-                    .faces = try reader.takeRecords(Face, gpa, .face),
-                    .materials = try reader.takeRecords(Material, gpa, .material),
+                    .vertices = try reader.takeRecords(gpa, .vertex),
+                    .faces = try reader.takeRecords(gpa, .face),
+                    .materials = try reader.takeRecords(gpa, .material),
                 };
             }
 
             // Per-node, per-clip and per-group lists follow the level geometry.
             const node_faces = try gpa.alloc([]u32, nodes.len);
-            for (node_faces) |*faces| faces.* = try reader.takeRecords(u32, gpa, .node_face_list);
+            for (node_faces) |*faces| faces.* = try reader.takeRecords(gpa, .node_face_list);
             const tracks = try gpa.alloc(Track, clips.len);
             for (clips, tracks) |clip, *track| {
                 track.* = .{
                     .clip = clip,
-                    .keyframes = try reader.takeRecords(Keyframe, gpa, .keyframe),
-                    .events = try reader.takeRecords(ClipEvent, gpa, .clip_event),
+                    .keyframes = try reader.takeRecords(gpa, .keyframe),
+                    .events = try reader.takeRecords(gpa, .clip_event),
                 };
             }
             const point_lists = try gpa.alloc(PointList, kinds.len);
             for (kinds, point_lists) |kind, *list| {
-                list.* = .{ .kind = @enumFromInt(kind), .points = try reader.takeRecords(Point, gpa, .point) };
+                list.* = .{ .kind = kind, .points = try reader.takeRecords(gpa, .point) };
             }
 
             entry.* = .{
@@ -926,17 +1077,31 @@ pub const Model = struct {
                 .nodes = nodes,
                 .node_faces = node_faces,
                 .attachments = attachments,
+                .attachment_tails = attachment_tails,
                 .tracks = tracks,
                 .point_lists = point_lists,
-                .trigger_count = if (triggers) |chunk| chunk.count else 0,
+                .triggers = triggers,
             };
         }
 
-        const firing_arcs = try reader.takeRecords(FiringArc, gpa, .firing_arc);
+        const firing_arcs = try reader.takeRecords(gpa, .firing_arc);
 
-        // The terminator should be the last thing in the file.
+        // The size of each tag's records, the chunks of tags the format does not name, and the
+        // terminator, which should be the last thing in the file.
+        var record_sizes: RecordSizes = .none;
+        var unnamed: std.ArrayList(UnnamedChunk) = .empty;
+        var named: usize = 0;
         var scan: Reader = .init(data);
-        while (try scan.next()) |_| {}
+        while (try scan.next()) |chunk| {
+            if (chunk.tag.isNamed()) {
+                record_sizes.note(chunk.tag, chunk.record_size);
+                named += 1;
+            } else {
+                var kept = chunk;
+                kept.data = try gpa.dupe(u8, chunk.data);
+                try unnamed.append(gpa, .{ .after = named, .chunk = kept });
+            }
+        }
         const end = scan.pos + @sizeOf(ChunkHeader);
 
         return .{
@@ -944,6 +1109,8 @@ pub const Model = struct {
             .parts = out,
             .firing_arcs = firing_arcs,
             .trailing_bytes = data.len - @min(end, data.len),
+            .record_sizes = record_sizes,
+            .unnamed_chunks = try unnamed.toOwnedSlice(gpa),
         };
     }
 
@@ -974,6 +1141,135 @@ pub const Model = struct {
             for (part.meshes) |mesh| total += mesh.faces.len;
         }
         return total;
+    }
+
+    /// Writes the model as the loader reads it (`parse`): its chunks in the order the loader asks
+    /// for them, each record cut short or filled out with zeros to the size `record_sizes` gives
+    /// its tag, an attachment's with its tail after it, its unnamed chunks where they stood among
+    /// the others, and the terminator. A tag the sizes leave out gets no chunk, and must have no
+    /// records. A model parsed from a file comes back byte for byte, as every shipped model does,
+    /// unless the file holds what `parse` does not keep: a chunk of a named tag the loader never
+    /// asks for ([#470](https://github.com/vdmkenny/openreliant/issues/470)), header records after
+    /// the first ([#471](https://github.com/vdmkenny/openreliant/issues/471)), bytes after the
+    /// terminator ([#472](https://github.com/vdmkenny/openreliant/issues/472)), bytes of a record
+    /// past its type's size, other than an attachment's, where they are not zero
+    /// ([#473](https://github.com/vdmkenny/openreliant/issues/473)), chunks of one tag with two
+    /// record sizes, which come back at the larger
+    /// ([#477](https://github.com/vdmkenny/openreliant/issues/477)), or a terminator whose record
+    /// size or count is not 0, which comes back with both 0
+    /// ([#478](https://github.com/vdmkenny/openreliant/issues/478)).
+    pub fn write(model: Model, out: *std.Io.Writer) WriteError!void {
+        var chunks: ChunkWriter = .{ .out = out, .sizes = model.record_sizes, .unnamed = model.unnamed_chunks };
+        try chunks.put(.header, @as(*const [1]Header, &model.header), null);
+        try chunks.put(.part, model.parts, "part");
+        for (model.parts) |entry| {
+            if (entry.node_faces.len != entry.nodes.len) return error.UnevenNodeFaces;
+            try chunks.put(.lod, entry.meshes, "lod");
+            try chunks.put(.tree_node, entry.nodes, null);
+            try chunks.putWithTails(.attachment, entry.attachments, null, entry.attachment_tails);
+            try chunks.put(.animation_clip, entry.tracks, "clip");
+            try chunks.put(.point_list, entry.point_lists, "kind");
+            try chunks.put(.trigger_polygon, entry.triggers, null);
+            for (entry.meshes) |mesh| {
+                try chunks.put(.vertex, mesh.vertices, null);
+                try chunks.put(.face, mesh.faces, null);
+                try chunks.put(.material, mesh.materials, null);
+            }
+            for (entry.node_faces) |faces| try chunks.put(.node_face_list, faces, null);
+            for (entry.tracks) |track| {
+                try chunks.put(.keyframe, track.keyframes, null);
+                try chunks.put(.clip_event, track.events, null);
+            }
+            for (entry.point_lists) |list| try chunks.put(.point, list.points, null);
+        }
+        try chunks.put(.firing_arc, model.firing_arcs, null);
+        try chunks.end();
+    }
+};
+
+// --- writing ----------------------------------------------------------------------------------
+
+pub const WriteError = std.Io.Writer.Error || error{
+    /// A chunk holds more records than its header can count.
+    TooManyRecords,
+    /// The model holds records of a tag its record sizes leave out.
+    LeftOut,
+    /// A part's node face lists are not one for each of its nodes.
+    UnevenNodeFaces,
+    /// A part's attachment tails are neither none nor one for each of its attachments, at a
+    /// record size with room for them.
+    UnevenTails,
+    /// A chunk kept whole has a tag the format names: one the loader would read, or the
+    /// terminator's.
+    NamedTag,
+    /// A chunk kept whole holds other than its count of records of its size.
+    UnevenChunk,
+};
+
+/// Writes a model's chunks at its record sizes, with its unnamed chunks among them.
+const ChunkWriter = struct {
+    out: *std.Io.Writer,
+    sizes: RecordSizes,
+    /// The model's chunks of tags the format does not name, yet to be written.
+    unnamed: []const UnnamedChunk,
+    /// How many chunks of named tags it has written.
+    written: usize = 0,
+
+    /// A chunk of `tag` holding `items`, or the `field` of each where an item holds its record
+    /// among other things; nothing for a tag the sizes leave out, which then must have none.
+    fn put(chunks: *ChunkWriter, comptime tag: Tag, items: anytype, comptime field: ?[]const u8) WriteError!void {
+        return chunks.putWithTails(tag, items, field, &.{});
+    }
+
+    /// `put`, each record followed by its tail in `item_tails` (one for each item, or none), the
+    /// two cut short or filled out with zeros to the record's size. A size with no room past the
+    /// record writes no tails, and then takes `item_tails` as none.
+    fn putWithTails(
+        chunks: *ChunkWriter,
+        comptime tag: Tag,
+        items: anytype,
+        comptime field: ?[]const u8,
+        item_tails: []const []const u8,
+    ) WriteError!void {
+        const size = chunks.sizes.of(tag) orelse {
+            if (items.len > 0) return error.LeftOut;
+            return;
+        };
+        const written_tails: []const []const u8 = if (size > @sizeOf(Record(tag))) item_tails else &.{};
+        if (written_tails.len != 0 and written_tails.len != items.len) return error.UnevenTails;
+        const count = std.math.cast(u16, items.len) orelse return error.TooManyRecords;
+        try chunks.putUnnamed(false);
+        chunks.written += 1;
+        try chunks.out.writeAll(std.mem.asBytes(&ChunkHeader{ .tag = tag, .record_size = size, .count = count }));
+        for (items, 0..) |*item, i| {
+            const record: *const Record(tag) = if (field) |name| &@field(item, name) else item;
+            const bytes = std.mem.asBytes(record);
+            const kept = @min(bytes.len, size);
+            try chunks.out.writeAll(bytes[0..kept]);
+            const tail: []const u8 = if (written_tails.len == 0) &.{} else written_tails[i];
+            const past = @min(tail.len, size - kept);
+            try chunks.out.writeAll(tail[0..past]);
+            try chunks.out.splatByteAll(0, size - kept - past);
+        }
+    }
+
+    /// The unnamed chunks whose turn has come, those after no more named chunks than it has
+    /// written, or with `all`, every one left.
+    fn putUnnamed(chunks: *ChunkWriter, all: bool) WriteError!void {
+        while (chunks.unnamed.len > 0 and (all or chunks.unnamed[0].after <= chunks.written)) {
+            const chunk = chunks.unnamed[0].chunk;
+            if (chunk.tag.isNamed()) return error.NamedTag;
+            if (chunk.data.len != @as(usize, chunk.record_size) * chunk.count) return error.UnevenChunk;
+            try chunks.out.writeAll(std.mem.asBytes(&ChunkHeader{ .tag = chunk.tag, .record_size = chunk.record_size, .count = chunk.count }));
+            try chunks.out.writeAll(chunk.data);
+            chunks.unnamed = chunks.unnamed[1..];
+        }
+    }
+
+    /// The unnamed chunks left, then the terminator.
+    fn end(chunks: *ChunkWriter) WriteError!void {
+        try chunks.putUnnamed(true);
+        try chunks.out.writeAll(std.mem.asBytes(&ChunkHeader.terminator));
     }
 };
 
@@ -1114,6 +1410,288 @@ test "parses a model" {
     try std.testing.expect(!model.firing_arcs[0].open(4, 5));
 }
 
+test "a model written again comes back byte for byte" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var buffer: [1024]u8 = undefined;
+    const data = buildTestModel(&buffer);
+
+    var written: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer written.deinit();
+    try (try Model.parse(arena, data)).write(&written.writer);
+    try std.testing.expectEqualSlices(u8, data, written.written());
+}
+
+test "a model built by hand reads back as it was written" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    // One level of one triangle, which the one node of the collision tree holds.
+    var vertices: [3]Vertex = @splat(std.mem.zeroes(Vertex));
+    for (&vertices, 0..) |*vertex, i| {
+        vertex.position = .{ .x = @floatFromInt(i), .y = 1, .z = 2 };
+        vertex.next_lod_vertex = no_index;
+    }
+    var faces: [1]Face = @splat(std.mem.zeroes(Face));
+    faces[0].vertices = .{ 0, 1, 2 };
+    faces[0].shading.mode = .lit;
+    var materials: [1]Material = @splat(std.mem.zeroes(Material));
+    @memcpy(materials[0].name_bytes[0..6], "Yank_1");
+    var meshes = [_]Mesh{.{ .lod = .{ .switch_distance = 0 }, .vertices = &vertices, .faces = &faces, .materials = &materials }};
+    var nodes: [1]TreeNode = @splat(std.mem.zeroes(TreeNode));
+    nodes[0].children = .{ no_index, no_index };
+    var leaf = [_]u32{0};
+    var node_faces = [_][]u32{&leaf};
+
+    // A muzzle, a track that fires it halfway through, a light's point and a trigger polygon.
+    var attachments = [_]Attachment{testAttachment(.gun_muzzle, 0)};
+    attachments[0].gun_type = 12;
+    var fire = std.mem.zeroes(Clip);
+    fire.length = 100;
+    fire.mode = .once;
+    @memcpy(fire.name_bytes[0..4], "fire");
+    var keyframes = [_]Keyframe{
+        .{ .time = 0, .angles = .zero, .offset = .zero },
+        .{ .time = 100, .angles = .{ .x = 0, .y = 1.5, .z = 0 }, .offset = .zero },
+    };
+    var events = [_]ClipEvent{.{ .time = 50, .kind = .muzzles, ._unknown_08 = 0 }};
+    var tracks = [_]Track{.{ .clip = fire, .keyframes = &keyframes, .events = &events }};
+    var points = [_]Point{.{ ._unknown_00 = 0, .vertex = 1, .position = vertices[1].position }};
+    var point_lists = [_]PointList{.{ .kind = .light, .points = &points }};
+    var triggers = [_]TriggerPolygon{.{ ._unknown_00 = .{ 1, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF } }};
+
+    var parts = [_]PartData{
+        testPart("Hull", false, &attachments),
+        testPart("Turret", true, &.{}),
+    };
+    parts[0].meshes = &meshes;
+    parts[0].nodes = &nodes;
+    parts[0].node_faces = &node_faces;
+    parts[0].tracks = &tracks;
+    parts[0].point_lists = &point_lists;
+    parts[0].triggers = &triggers;
+    parts[1].part.parent = 0;
+    var arcs: [1]FiringArc = @splat(std.mem.zeroes(FiringArc));
+    arcs[0].rows[3] = 1 << 5;
+    var model = testModel(&parts, true);
+    model.header.version = 107;
+    model.firing_arcs = &arcs;
+
+    var written: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer written.deinit();
+    try model.write(&written.writer);
+    try std.testing.expectEqualDeep(model, try Model.parse(arena, written.written()));
+}
+
+test "the bytes of an attachment's record past those the engine keeps come back as they were" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    // A muzzle whose record runs to 168 bytes, as most shipped ones do, holding something past the
+    // 124 the engine keeps.
+    var attachments = [_]Attachment{testAttachment(.gun_muzzle, 0)};
+    var parts = [_]PartData{testPart("Hull", false, &attachments)};
+    var model = testModel(&parts, true);
+    model.record_sizes.attachment = 168;
+    var file: std.Io.Writer.Allocating = .init(arena);
+    try model.write(&file.writer);
+    const data = file.written();
+    var reader: Reader = .init(data);
+    const chunk = (try reader.take(.attachment)).?;
+    const record = @intFromPtr(chunk.data.ptr) - @intFromPtr(data.ptr);
+    for (data[record + @sizeOf(Attachment) ..][0 .. 168 - @sizeOf(Attachment)], 0..) |*byte, i| byte.* = @intCast(i + 1);
+
+    var written: std.Io.Writer.Allocating = .init(arena);
+    try (try Model.parse(arena, data)).write(&written.writer);
+    try std.testing.expectEqualSlices(u8, data, written.written());
+}
+
+test "a parsed model's attachments with tails take one more at whole records" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    // A file whose muzzle runs to 168 bytes, so that the parsed model holds its tail.
+    var attachments = [_]Attachment{testAttachment(.gun_muzzle, 0)};
+    var parts = [_]PartData{testPart("Hull", false, &attachments)};
+    var model = testModel(&parts, true);
+    model.record_sizes.attachment = 168;
+    var file: std.Io.Writer.Allocating = .init(arena);
+    try model.write(&file.writer);
+    var edited = try Model.parse(arena, file.written());
+    try std.testing.expectEqual(1, edited.parts[0].attachment_tails.len);
+
+    // A light added, and written at whole records: 124 bytes leave no room for a tail, so the
+    // muzzle's is not written, and the light needs none.
+    var added = [_]Attachment{ edited.parts[0].attachments[0], testAttachment(.light, 1) };
+    edited.parts[0].attachments = &added;
+    edited.record_sizes = .{};
+    var written: std.Io.Writer.Allocating = .init(arena);
+    try edited.write(&written.writer);
+    const read = (try Model.parse(arena, written.written())).parts[0];
+    try std.testing.expectEqualSlices(Attachment, &added, read.attachments);
+    try std.testing.expectEqual(0, read.attachment_tails.len);
+}
+
+test "chunks of a tag the format does not name come back where they were" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var parts = [_]PartData{testPart("Hull", false, &.{})};
+    var file: std.Io.Writer.Allocating = .init(arena);
+    try testModel(&parts, true).write(&file.writer);
+    const data = file.written();
+
+    // One such chunk after the part's record, which the loader passes over, and one before the
+    // terminator.
+    var reader: Reader = .init(data);
+    _ = try reader.take(.part);
+    const after_part = reader.pos;
+    const before_end = data.len - @sizeOf(ChunkHeader);
+    const first = [_]u8{ 0x05, 0x00, 0x04, 0x00, 0x02, 0x00, 1, 2, 3, 4, 5, 6, 7, 8 };
+    const last = [_]u8{ 0x11, 0x00, 0x03, 0x00, 0x01, 0x00, 9, 10, 11 };
+    const spliced = try std.mem.concat(arena, u8, &.{
+        data[0..after_part], &first, data[after_part..before_end], &last, data[before_end..],
+    });
+
+    var written: std.Io.Writer.Allocating = .init(arena);
+    try (try Model.parse(arena, spliced)).write(&written.writer);
+    try std.testing.expectEqualSlices(u8, spliced, written.written());
+}
+
+test "a chunk kept whole stands before the terminator where the writer writes fewer chunks" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    // One before the header, which the loader's search passes over as it looks for the header, and
+    // one that stood after more chunks than the model writes.
+    const kept = [_]UnnamedChunk{
+        .{ .after = 0, .chunk = .{ .tag = @enumFromInt(0x05), .record_size = 2, .count = 2, .data = &.{ 1, 2, 3, 4 } } },
+        .{ .after = 1000, .chunk = .{ .tag = @enumFromInt(0x11), .record_size = 1, .count = 2, .data = &.{ 5, 6 } } },
+    };
+    var parts = [_]PartData{testPart("Hull", false, &.{})};
+    var model = testModel(&parts, true);
+    model.unnamed_chunks = &kept;
+
+    var written: std.Io.Writer.Allocating = .init(arena);
+    try model.write(&written.writer);
+    const data = written.written();
+    try std.testing.expectEqualSlices(u8, &.{ 0x05, 0, 2, 0, 2, 0, 1, 2, 3, 4 }, data[0..10]);
+    const end = data.len - @sizeOf(ChunkHeader);
+    try std.testing.expectEqualSlices(u8, &.{ 0x11, 0, 1, 0, 2, 0, 5, 6 }, data[end - 8 .. end]);
+
+    // Read again, the second stands after all nine chunks written: the header, the part, the
+    // part's six and the firing arcs. It then comes back where it is.
+    const read = try Model.parse(arena, data);
+    try std.testing.expectEqual(1, read.parts.len);
+    try std.testing.expectEqual(0, read.unnamed_chunks[0].after);
+    try std.testing.expectEqual(9, read.unnamed_chunks[1].after);
+    var again: std.Io.Writer.Allocating = .init(arena);
+    try read.write(&again.writer);
+    try std.testing.expectEqualSlices(u8, data, again.written());
+}
+
+test "an attachment's tail is cut short or filled out to its record's size" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    // Records of 136 bytes leave room for 12 past the engine's 124: a longer tail loses its end,
+    // and a shorter one is filled out with zeros.
+    var attachments = [_]Attachment{ testAttachment(.light, 0), testAttachment(.light, 1) };
+    const long: [20]u8 = @splat(0xAB);
+    const short = [_]u8{ 1, 2, 3, 4 };
+    const given = [_][]const u8{ &long, &short };
+    var parts = [_]PartData{testPart("Hull", false, &attachments)};
+    parts[0].attachment_tails = &given;
+    var model = testModel(&parts, true);
+    model.record_sizes.attachment = 136;
+
+    var written: std.Io.Writer.Allocating = .init(arena);
+    try model.write(&written.writer);
+    const read = (try Model.parse(arena, written.written())).parts[0].attachment_tails;
+    try std.testing.expectEqualSlices(u8, long[0..12], read[0]);
+    try std.testing.expectEqualSlices(u8, &.{ 1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0 }, read[1]);
+}
+
+test "a tag the record sizes leave out holds no records" {
+    var parts = [_]PartData{testPart("Hull", false, &.{})};
+    var arcs: [1]FiringArc = @splat(std.mem.zeroes(FiringArc));
+    var model = testModel(&parts, true);
+    model.firing_arcs = &arcs;
+    model.record_sizes.firing_arc = null;
+
+    var written: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer written.deinit();
+    try std.testing.expectError(error.LeftOut, model.write(&written.writer));
+}
+
+test "a chunk holds no more records than its header can count" {
+    const gpa = std.testing.allocator;
+    const faces = try gpa.alloc(u32, std.math.maxInt(u16) + 1);
+    defer gpa.free(faces);
+    @memset(faces, 0);
+    var nodes: [1]TreeNode = @splat(std.mem.zeroes(TreeNode));
+    var node_faces = [_][]u32{faces};
+    var parts = [_]PartData{testPart("Hull", false, &.{})};
+    parts[0].nodes = &nodes;
+    parts[0].node_faces = &node_faces;
+
+    var written: std.Io.Writer.Allocating = .init(gpa);
+    defer written.deinit();
+    try std.testing.expectError(error.TooManyRecords, testModel(&parts, true).write(&written.writer));
+}
+
+test "each node of a part has its face list" {
+    var nodes: [2]TreeNode = @splat(std.mem.zeroes(TreeNode));
+    var leaf = [_]u32{0};
+    var node_faces = [_][]u32{&leaf};
+    var parts = [_]PartData{testPart("Hull", false, &.{})};
+    parts[0].nodes = &nodes;
+    parts[0].node_faces = &node_faces;
+
+    var written: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer written.deinit();
+    try std.testing.expectError(error.UnevenNodeFaces, testModel(&parts, true).write(&written.writer));
+}
+
+test "a part's attachments have a tail each, or none, where their records leave room for one" {
+    var attachments = [_]Attachment{ testAttachment(.light, 0), testAttachment(.light, 1) };
+    const tail = [_]u8{0};
+    const one = [_][]const u8{&tail};
+    var parts = [_]PartData{testPart("Hull", false, &attachments)};
+    parts[0].attachment_tails = &one;
+    var model = testModel(&parts, true);
+    model.record_sizes.attachment = 136;
+
+    var written: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer written.deinit();
+    try std.testing.expectError(error.UnevenTails, model.write(&written.writer));
+}
+
+test "a chunk kept whole is of a tag the format does not name, and holds its records" {
+    var parts = [_]PartData{testPart("Hull", false, &.{})};
+    var model = testModel(&parts, true);
+    var kept = [_]UnnamedChunk{.{ .after = 0, .chunk = .{ .tag = .part, .record_size = 0, .count = 0, .data = &.{} } }};
+    model.unnamed_chunks = &kept;
+
+    var written: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer written.deinit();
+    // A tag the loader reads could change what it reads, and the terminator's would end the model.
+    try std.testing.expectError(error.NamedTag, model.write(&written.writer));
+    kept[0].chunk.tag = .end;
+    try std.testing.expectError(error.NamedTag, model.write(&written.writer));
+    // A header counting other bytes than follow it would send the loader astray.
+    kept[0].chunk = .{ .tag = @enumFromInt(0x05), .record_size = 4, .count = 2, .data = &.{ 1, 2, 3, 4 } };
+    try std.testing.expectError(error.UnevenChunk, model.write(&written.writer));
+}
+
 test "a missing chunk does not move the cursor" {
     var buffer: [1024]u8 = undefined;
     const data = buildTestModel(&buffer);
@@ -1178,6 +1756,10 @@ test Tag {
     try std.testing.expectEqualStrings("tree_node", try std.fmt.bufPrint(&buffer, "{f}", .{Tag.tree_node}));
     // A tag the format does not name prints as its number.
     try std.testing.expectEqualStrings("17", try std.fmt.bufPrint(&buffer, "{f}", .{@as(Tag, @enumFromInt(0x11))}));
+
+    try std.testing.expect(Tag.firing_arc.isNamed());
+    try std.testing.expect(Tag.end.isNamed());
+    try std.testing.expect(!@as(Tag, @enumFromInt(0x05)).isNamed());
 }
 
 test "record sizes and field offsets match the format" {
@@ -1267,7 +1849,6 @@ fn testPart(name: []const u8, component: bool, attachments: []Attachment) PartDa
         .tracks = &.{},
         .nodes = &.{},
         .node_faces = &.{},
-        .trigger_count = 0,
     };
 }
 
