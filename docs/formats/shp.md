@@ -85,10 +85,10 @@ fills it out with zeros. A model built from scratch gets whole records, each its
 The attachment records of 136 and 168 bytes hold 12 and 44 bytes past the 124 the engine keeps,
 which the loader never copies (`model_take_chunk`, `0x004A2EB0`). **Unknown:** what they are; they
 are zero in every shipped model. The reader keeps them with each attachment
-(`shp.PartData.attachment_tails`), and the writer writes them back after it. Trigger polygons are
-written back as the file holds them. So every shipped model, written again, comes back byte for
-byte: `sltool shp check` checks it model by model, and `make check-models` for the whole
-installation.
+(`shp.PartData.attachment_tails`), and the writer writes them back after it, at a record size with
+room for them. Trigger polygons are written back as the file holds them. So every shipped model,
+written again, comes back byte for byte: `sltool shp check` checks it model by model, and
+`make check-models` for the whole installation.
 
 `model_load` (`0x004A44D0`) asks for no tag outside the table above, so its search passes over a
 chunk of any other tag wherever it stands. No shipped model has one. The reader keeps such chunks
@@ -108,9 +108,9 @@ or a terminator whose record size or count is not 0, which comes back with both 
 
 The writer fails rather than write a file the loader would misread: records of a tag the model's
 sizes leave out, a chunk of more records than its header can count (65535), or a part whose nodes
-do not each have their face list. It also fails for a part whose attachments have tails, but not
-one each, at a record size with room for them, and for a chunk kept whole whose tag the table
-names, or is the terminator's, or whose bytes are not its records'.
+do not each have their face list. It also fails for a chunk kept whole whose tag the table names,
+or is the terminator's, or whose bytes are not its records'. At a record size with room for tails,
+it fails for a part whose attachments have tails, but not one each.
 
 A model edited after parsing keeps its file's record sizes, so a field past its tag's size is lost
 without a word. In a shipped model whose attachments are 100 bytes, a gun muzzle added loses its gun
