@@ -36,7 +36,9 @@ zig build -Dtarget=aarch64-macos               # Apple silicon, from any Zig
 
 `openreliant [<game-directory>] [<option>...]` runs in the game's installed directory, or the one given, and reads `resource.hog` and `tcachehw.dat` from it as the original does ([`bigfile.zig`](../../src/engine/game/bigfile.zig)). It has no data of its own: without those files it reports what it needs and exits.
 
-`openreliant --help` lists the options in the groups below, the keys OpenReliant adds, and the commands; each command's `--help` shows its own. An invalid option or value is named in one line, and `openreliant` exits with status 2. The page comes from one table in [`main.zig`](../../src/openreliant/main.zig), which the compiler holds to having help for every option, and [`help.zig`](../../src/openreliant/help.zig) wraps it to 80 columns at compile time.
+`openreliant --help` lists the options in the groups below, the keys OpenReliant adds, and the commands; each command's `--help` shows its own. An invalid option or value is named in one line, and `openreliant` exits with status 2. The page comes from one table in [`options.zig`](../../src/openreliant/options.zig), which the compiler holds to having help for every option, and [`help.zig`](../../src/openreliant/help.zig) wraps it to 80 columns at compile time.
+
+OpenReliant's own options can also be kept in the game's `starlancer.ini`, in its `[OpenReliant]` section, which the original never reads ([`settings.zig`](../../src/openreliant/settings.zig)); the guide lists the keys ([OpenReliant's settings](../guide/configuration.md#openreliants-settings)). `Original` is read first, as `--original` comes first on a command line, and the other keys change what it set. The command line's options change them for the run, and `--screenshot` leaves them out, so that a screenshot comes out the same for everyone.
 
 **The original.** OpenReliant improves on the original's look and sound; `--original` turns the improvements off, and an option after it turns one back on.
 
@@ -92,7 +94,7 @@ zig build -Dtarget=aarch64-macos               # Apple silicon, from any Zig
 | Option | Does |
 |---|---|
 | `--no-intro` | Starts without the three movies the game plays as it starts, as `--mission` and `--screenshot` do |
-| `--screenshot <file.png>` | Draws one frame, with the camera settled, to a PNG and quits |
+| `--screenshot <file.png>` | Draws one frame, with the camera settled, to a PNG and quits; the controls and `[OpenReliant]` are not read, so that it comes out the same each time |
 | `--version` | Shows the version |
 | `-h`, `--help` | Shows the options |
 
