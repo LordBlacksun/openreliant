@@ -861,9 +861,14 @@ pub const Reader = struct {
         return .{ .data = data };
     }
 
-    /// Reads the chunk at `offset` without moving the cursor.
-    fn at(reader: Reader, offset: usize) Error!Chunk {
+    /// Reads the chunk at `offset` without moving the cursor, or null at the terminator. As
+    /// `model_take_chunk` (`0x004A2EB0`) does, it reads the tag first and stops at the
+    /// terminator's (`0x004A2ECC`) without reading its record size and count, so the file need
+    /// not hold them, nor the bytes they count.
+    fn at(reader: Reader, offset: usize) Error!?Chunk {
         if (offset > reader.data.len) return error.Truncated;
+        const tag = try layout.view(Tag, reader.data[offset..]);
+        if (tag.* == .end) return null;
         const header = try layout.view(ChunkHeader, reader.data[offset..]);
         const body = offset + @sizeOf(ChunkHeader);
         const len = @as(usize, header.record_size) * header.count;
@@ -878,8 +883,7 @@ pub const Reader = struct {
 
     /// Advances to the next chunk, or null at the terminator.
     pub fn next(reader: *Reader) Error!?Chunk {
-        const chunk = try reader.at(reader.pos);
-        if (chunk.tag == .end) return null;
+        const chunk = try reader.at(reader.pos) orelse return null;
         reader.pos += @sizeOf(ChunkHeader) + chunk.data.len;
         return chunk;
     }
@@ -888,15 +892,14 @@ pub const Reader = struct {
     /// terminator the cursor is left untouched and null is returned.
     pub fn take(reader: *Reader, tag: Tag) Error!?Chunk {
         var scan = reader.pos;
-        while (true) {
-            const chunk = try reader.at(scan);
-            if (chunk.tag == .end) return null;
+        while (try reader.at(scan)) |chunk| {
             scan += @sizeOf(ChunkHeader) + chunk.data.len;
             if (chunk.tag == tag) {
                 reader.pos = scan;
                 return chunk;
             }
         }
+        return null;
     }
 
     /// `take`, decoded into `tag`'s records.
@@ -1156,7 +1159,7 @@ pub const Model = struct {
     /// ([#473](https://github.com/vdmkenny/openreliant/issues/473)), chunks of one tag with two
     /// record sizes, which come back at the larger
     /// ([#477](https://github.com/vdmkenny/openreliant/issues/477)), or a terminator whose record
-    /// size or count is not 0, which comes back with both 0
+    /// size or count is missing or not 0, which comes back with both 0
     /// ([#478](https://github.com/vdmkenny/openreliant/issues/478)).
     pub fn write(model: Model, out: *std.Io.Writer) WriteError!void {
         var chunks: ChunkWriter = .{ .out = out, .sizes = model.record_sizes, .unnamed = model.unnamed_chunks };
@@ -1716,6 +1719,55 @@ test "truncated streams are rejected" {
 
     var empty: Reader = .init(&.{});
     try std.testing.expectError(error.Truncated, empty.next());
+
+    // The terminator needs its tag's two bytes.
+    var half: Reader = .init(data[0 .. data.len - @sizeOf(ChunkHeader) + 1]);
+    try std.testing.expectError(error.Truncated, half.take(.end));
+}
+
+test "the terminator ends a model at its tag, whatever it counts" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var buffer: [1024]u8 = undefined;
+    const data = buildTestModel(&buffer);
+    const model = try Model.parse(arena, data);
+    const terminator = try layout.viewMut(ChunkHeader, data[data.len - @sizeOf(ChunkHeader) ..]);
+
+    // The loader stops at the terminator's tag (`model_take_chunk`, `0x004A2ECC`): a record size
+    // and count that claim more bytes than follow it change nothing.
+    terminator.* = .{ .tag = .end, .record_size = 4, .count = 100 };
+    try std.testing.expectEqualDeep(model, try Model.parse(arena, data));
+    // Nor does a file that ends with the tag.
+    const tag_only = data[0 .. data.len - @sizeOf(ChunkHeader) + @sizeOf(Tag)];
+    try std.testing.expectEqualDeep(model, try Model.parse(arena, tag_only));
+
+    // Records it counts that do follow it are bytes after the terminator.
+    terminator.* = .{ .tag = .end, .record_size = 1, .count = 3 };
+    @memset(buffer[data.len..][0..3], 0);
+    var after = model;
+    after.trailing_bytes = 3;
+    try std.testing.expectEqualDeep(after, try Model.parse(arena, buffer[0 .. data.len + 3]));
+}
+
+test "a file that ends after the terminator's tag comes back with the terminator whole" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var buffer: [1024]u8 = undefined;
+    const data = buildTestModel(&buffer);
+    const tag_only = data[0 .. data.len - @sizeOf(ChunkHeader) + @sizeOf(Tag)];
+
+    // The writer ends every model with a record size and count of 0
+    // ([#478](https://github.com/vdmkenny/openreliant/issues/478)), which follow the file's bytes.
+    var written: std.Io.Writer.Allocating = .init(arena);
+    try (try Model.parse(arena, tag_only)).write(&written.writer);
+    const back = written.written();
+    try std.testing.expectEqual(tag_only.len + @sizeOf(ChunkHeader) - @sizeOf(Tag), back.len);
+    try std.testing.expectEqualSlices(u8, tag_only, back[0..tag_only.len]);
+    try std.testing.expectEqualSlices(u8, std.mem.asBytes(&ChunkHeader.terminator)[@sizeOf(Tag)..], back[tag_only.len..]);
 }
 
 test "righting a model is a half turn, not a mirror" {
