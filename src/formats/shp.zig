@@ -1751,6 +1751,25 @@ test "the terminator ends a model at its tag, whatever it counts" {
     try std.testing.expectEqualDeep(after, try Model.parse(arena, buffer[0 .. data.len + 3]));
 }
 
+test "a file that ends after the terminator's tag comes back with the terminator whole" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var buffer: [1024]u8 = undefined;
+    const data = buildTestModel(&buffer);
+    const tag_only = data[0 .. data.len - @sizeOf(ChunkHeader) + @sizeOf(Tag)];
+
+    // The writer ends every model with a record size and count of 0
+    // ([#478](https://github.com/vdmkenny/openreliant/issues/478)), which follow the file's bytes.
+    var written: std.Io.Writer.Allocating = .init(arena);
+    try (try Model.parse(arena, tag_only)).write(&written.writer);
+    const back = written.written();
+    try std.testing.expectEqual(tag_only.len + @sizeOf(ChunkHeader) - @sizeOf(Tag), back.len);
+    try std.testing.expectEqualSlices(u8, tag_only, back[0..tag_only.len]);
+    try std.testing.expectEqualSlices(u8, std.mem.asBytes(&ChunkHeader.terminator)[@sizeOf(Tag)..], back[tag_only.len..]);
+}
+
 test "righting a model is a half turn, not a mirror" {
     const v: Vec3 = .{ .x = 1, .y = 2, .z = 3 };
     const up = v.toYUp();
