@@ -4,10 +4,11 @@
 //! drawing (`in_game_options_draw`, `0x004398B0`) is the render hook it puts in `sr + 0x88`.
 //!
 //! SAVE and LOAD open the saved games (`saved_games`) over the menu, after `igofade.bik`, which
-//! the driver runs (`afterSavedGames`).
+//! the driver runs (`afterSavedGames`); CONTROL DEVICES opens the settings screen on its controls
+//! (`settings`), after the same movie.
 //!
-//! Not ported: AUDIO, CONTROL DEVICES and VIDEO, the front end's settings screens
-//! ([#400](https://github.com/vdmkenny/openreliant/issues/400)). Each plays `igofade.bik` before
+//! Not ported: AUDIO and VIDEO, the settings screen's audio and video
+//! ([#206](https://github.com/vdmkenny/openreliant/issues/206)). Each plays `igofade.bik` before
 //! its screen; OpenReliant stays on the menu.
 
 const std = @import("std");
@@ -47,52 +48,33 @@ pub const rects = std.EnumArray(Item, Rect).init(.{
     .about = .{ .x = 329, .y = 422, .width = 100, .height = 15 },
 });
 
-/// A line of text of the drawing: its text, where it stands and how it lines up there.
-const Label = struct {
-    text: Text,
-    at: [2]i32,
-    alignment: hud.Align,
+const Label = canvas_module.Label;
+const Button = canvas_module.Button;
 
-    /// A string of the game's (`language_string`), or OpenReliant's words.
-    const Text = union(enum) {
-        string: u32,
-        words: []const u8,
-    };
+/// A panel's label, in the large font, centred under it, and its shape under the pointer, as GAME
+/// OPTIONS' icons have them too.
+pub const Panel = struct { label: Label, lit_shape: u8, lit_at: [2]i32 };
 
-    fn write(label: Label, canvas: Canvas, font: *hud.Opened, colour: [3]f32) canvas_module.Error!void {
-        switch (label.text) {
-            .string => |id| try canvas.string(font, label.at, id, colour, label.alignment),
-            .words => |words| try canvas.text(font, label.at, words, colour, label.alignment),
-        }
-    }
-};
-
-/// A panel's label, in the large font, centred under it, and its shape under the pointer.
-const Panel = struct { label: Label, lit_shape: u8, lit_at: [2]i32 };
-
-/// A button's label, in the small font beside it, its button's place, and its shape.
-const Button = struct { label: Label, at: [2]i32 };
-
-const button_shape = 0x1C;
-const lit_button_shape = 0x1D;
+/// The buttons' shapes, as they stand and lit.
+const button_shapes: Button.Pair = .{ .off = 0x1C, .lit = 0x1D };
 
 fn panel(item: Item) ?Panel {
     return switch (item) {
-        .save => .{ .label = .{ .text = .{ .string = 0x3B5 }, .at = .{ 0xD0, 0xE9 }, .alignment = .centre }, .lit_shape = 0x12, .lit_at = .{ 0x6B, 0x73 } },
-        .load => .{ .label = .{ .text = .{ .string = 0x149 }, .at = .{ 0x198, 0xE9 }, .alignment = .centre }, .lit_shape = 0x13, .lit_at = .{ 0x134, 0x72 } },
-        .audio => .{ .label = .{ .text = .{ .string = 0x109 }, .at = .{ 0x82, 0x181 }, .alignment = .centre }, .lit_shape = 0x14, .lit_at = .{ 0x23, 0xFA } },
-        .control_devices => .{ .label = .{ .text = .{ .string = 0x10A }, .at = .{ 0x142, 0x181 }, .alignment = .centre }, .lit_shape = 0x15, .lit_at = .{ 0xE6, 0xFF } },
-        .video => .{ .label = .{ .text = .{ .string = 0x10B }, .at = .{ 0x1FA, 0x181 }, .alignment = .centre }, .lit_shape = 0x16, .lit_at = .{ 0x196, 0xFC } },
+        .save => .{ .label = .of(0x3B5, .{ 0xD0, 0xE9 }, .centre), .lit_shape = 0x12, .lit_at = .{ 0x6B, 0x73 } },
+        .load => .{ .label = .of(0x149, .{ 0x198, 0xE9 }, .centre), .lit_shape = 0x13, .lit_at = .{ 0x134, 0x72 } },
+        .audio => .{ .label = .of(0x109, .{ 0x82, 0x181 }, .centre), .lit_shape = 0x14, .lit_at = .{ 0x23, 0xFA } },
+        .control_devices => .{ .label = .of(0x10A, .{ 0x142, 0x181 }, .centre), .lit_shape = 0x15, .lit_at = .{ 0xE6, 0xFF } },
+        .video => .{ .label = .of(0x10B, .{ 0x1FA, 0x181 }, .centre), .lit_shape = 0x16, .lit_at = .{ 0x196, 0xFC } },
         .back, .main_menu, .quit, .about => null,
     };
 }
 
 fn button(item: Item) ?Button {
     return switch (item) {
-        .back => .{ .label = .{ .text = .{ .string = 0xF7 }, .at = .{ 0x124, 0x1A7 }, .alignment = .right }, .at = .{ 0x12B, 0x1A6 } },
-        .main_menu => .{ .label = .{ .text = .{ .string = 0xBB }, .at = .{ 0x124, 0x1BC }, .alignment = .right }, .at = .{ 0x12B, 0x1BB } },
-        .quit => .{ .label = .{ .text = .{ .string = 0xBC }, .at = .{ 0x165, 0x1BC }, .alignment = .left }, .at = .{ 0x149, 0x1BB } },
-        .about => .{ .label = .{ .text = .{ .words = About.title }, .at = .{ 0x165, 0x1A7 }, .alignment = .left }, .at = .{ 0x149, 0x1A6 } },
+        .back => .{ .label = .of(0xF7, .{ 0x124, 0x1A7 }, .right), .at = .{ 0x12B, 0x1A6 } },
+        .main_menu => .{ .label = .of(0xBB, .{ 0x124, 0x1BC }, .right), .at = .{ 0x12B, 0x1BB } },
+        .quit => .{ .label = .of(0xBC, .{ 0x165, 0x1BC }, .left), .at = .{ 0x149, 0x1BB } },
+        .about => .{ .label = .{ .text = .{ .words = About.title }, .at = .{ 0x165, 0x1A7 } }, .at = .{ 0x149, 0x1A6 } },
         .save, .load, .audio, .control_devices, .video => null,
     };
 }
@@ -131,11 +113,11 @@ pub const About = struct {
     /// Where the lines start, the product ID's line in the game, and how they are laid out.
     const text_at: [2]i32 = .{ 0x140, 0xC2 };
     const lines: Canvas.Lines = .{ .width = 400, .height = 14, .most = 10 };
-    const ok_label: Label = .{ .text = .{ .string = 0x316 }, .at = .{ 0x134, 0x149 }, .alignment = .right };
+    const ok_label: Label = .of(0x316, .{ 0x134, 0x149 }, .right);
 
     /// A pass of its loop: Escape closes it at once, a click on OK once the button comes up.
     /// Whether it has closed.
-    fn frame(about: *About, pointer: Pointer, escaped: bool) bool {
+    pub fn frame(about: *About, pointer: Pointer, escaped: bool) bool {
         if (about.closing) return !pointer.down;
         if (escaped) return true;
         about.under = ok.holds(pointer.at);
@@ -143,7 +125,7 @@ pub const About = struct {
         return false;
     }
 
-    fn draw(about: About, canvas: Canvas, art: *hud.Art) canvas_module.Error!void {
+    pub fn draw(about: About, canvas: Canvas, art: *hud.Art) canvas_module.Error!void {
         if (art.shape(box_shape)) |shape| {
             const edge = shape.header;
             canvas.wipe(.{ box_at[0] + edge.x1, box_at[1] + edge.y1 }, .{ box_at[0] + edge.x2, box_at[1] + edge.y2 }, canvas_module.black);
@@ -190,6 +172,8 @@ pub const Choice = enum {
     /// `0x004396E4`).
     save,
     load,
+    /// CONTROL DEVICES: the settings screen over the menu, on its controls (`0x00439770`).
+    control_devices,
 };
 
 /// How the in-game options end, with the saved games they open.
@@ -253,13 +237,14 @@ pub const InGameOptions = struct {
         switch (chosen) {
             .save => return .save,
             .load => return .load,
-            .audio, .control_devices, .video => if (!menu.told) {
+            .control_devices => return .control_devices,
+            .audio, .video => if (!menu.told) {
                 menu.told = true;
                 log.info("the in-game options' {s} is not ported yet", .{@tagName(chosen)});
             },
             .back => menu.leaving = true,
             .main_menu => return .main_menu,
-            .quit => menu.confirm = .{ .message = quit_question },
+            .quit => menu.confirm = .{ .message = .{ .string = quit_question } },
             .about => menu.about = .{},
         }
         return null;
@@ -269,22 +254,11 @@ pub const InGameOptions = struct {
     /// labels, the item under the pointer lit, the panels' labels, ABOUT OPENRELIANT's box or
     /// QUIT's question where either is up, OpenReliant's version, then the pointer.
     pub fn draw(menu: InGameOptions, canvas: Canvas, art: *hud.Art, dialog_art: *hud.Art, about_art: ?*hud.Art, pointer: Pointer) canvas_module.Error!void {
-        const small = canvas.fonts.small;
         for (std.enums.values(Item)) |item| {
             const shown = button(item) orelse continue;
-            try canvas.shape(art, button_shape, shown.at);
+            try shown.draw(canvas, art, button_shapes, menu.under == item);
         }
-        for (std.enums.values(Item)) |item| {
-            const shown = button(item) orelse continue;
-            try shown.label.write(canvas, small, canvas_module.blue);
-        }
-        if (menu.under) |under| {
-            if (panel(under)) |lit| try canvas.shape(art, lit.lit_shape, lit.lit_at);
-            if (button(under)) |lit| {
-                try lit.label.write(canvas, small, canvas_module.white);
-                try canvas.shape(art, lit_button_shape, lit.at);
-            }
-        }
+        if (menu.under) |under| if (panel(under)) |lit| try canvas.shape(art, lit.lit_shape, lit.lit_at);
         for (std.enums.values(Item)) |item| {
             const shown = panel(item) orelse continue;
             try shown.label.write(canvas, canvas.fonts.large, canvas_module.blue);
@@ -337,9 +311,11 @@ test InGameOptions {
     // MAIN MENU at once.
     menu = .{};
     try std.testing.expectEqual(.main_menu, menu.frame(.{ .at = .{ 250, 450 }, .down = true }, &keyboard).?);
-    // SAVE leads to the saved games; an item not ported stays on the menu.
+    // SAVE leads to the saved games, CONTROL DEVICES to the settings screen; an item not ported
+    // stays on the menu.
     menu = .{};
     try std.testing.expectEqual(.save, menu.frame(.{ .at = .{ 200, 180 }, .down = true }, &keyboard).?);
+    try std.testing.expectEqual(.control_devices, menu.frame(.{ .at = .{ 300, 300 }, .down = true }, &keyboard).?);
     try std.testing.expectEqual(null, menu.frame(.{ .at = .{ 500, 300 }, .down = true }, &keyboard));
     try std.testing.expect(menu.told);
     // QUIT asks first; YES quits.

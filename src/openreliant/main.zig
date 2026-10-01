@@ -561,6 +561,8 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options, directory: Io
             movies.controllers_changed = false;
             if (options.screenshot == null) connectController(arena, &devices, &controller, settings_file.profile);
         }
+        // The wheel's notches no screen took last pass are let go.
+        _ = devices.mouse.notches();
         while (window.poll()) |event| switch (event) {
             .quit => return,
             .key => |key| if (options.screenshot == null) {
@@ -578,6 +580,9 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options, directory: Io
             .button => |button| if (options.screenshot == null) switch (button.which) {
                 .left => devices.mouse.buttons.left = button.down,
                 .right => devices.mouse.buttons.right = button.down,
+            },
+            .wheel => |turned| if (options.screenshot == null) {
+                devices.mouse.wheel += turned;
             },
         };
         // While the window is inactive, the sound is paused, as the message pump pauses it, and a
@@ -618,6 +623,7 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options, directory: Io
                     .itac_strings = &itac_strings,
                     .saves = saving.folder,
                     .local_time = localDate,
+                    .settings_file = settings_file,
                 };
             }
             front_context.resources = &front_resources.?;
@@ -727,9 +733,9 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options, directory: Io
             devices.keyboard.numbers_taken = display.state.windows.status.get(.comms).phase == .open;
             while (clock.nextTick(&devices, world)) |_| {}
             clock.frameBegin();
-            // `mission_frame` looks for Escape before its work, and pausing into the menu leaves the
-            // work out.
-            if (!clock.paused and devices.keyboard.pressed(engine.input.scan.escape, .none, true)) try game.main.pause(pausing, true);
+            // `mission_frame` looks for Escape and F1 before its work, and pausing into the menu
+            // leaves the work out.
+            _ = try game.main.pauseKeys(pausing, &devices);
             if (clock.paused) {
                 game.main.pausedFrame(&devices, hearing, world);
             } else {
@@ -786,7 +792,7 @@ fn run(io: Io, gpa: Allocator, arena: Allocator, options: Options, directory: Io
             // The screen a transition's movie or a mission's end has just led to entered before
             // its first frame is drawn, as each of the game's screens enters before its loop.
             front.enterShown(front_context);
-            var shown: FrontEndDisplay = .{ .front = &front, .resources = &front_resources.?, .target = screen.interface(), .window = size, .strings = &strings };
+            var shown: FrontEndDisplay = .{ .front = &front, .resources = &front_resources.?, .target = screen.interface(), .window = size, .strings = &strings, .devices = &devices };
             scene.clear();
             try srcore.render(frame_arena.allocator(), &context, &scene, driver.interface(), shown.overlay());
         } else {
@@ -1182,6 +1188,8 @@ const FrontEndDisplay = struct {
     target: srd3d.device.Device,
     window: [2]u32,
     strings: *const game.language.Language,
+    /// The devices whose settings and bindings the settings screen shows.
+    devices: *const engine.input.Devices,
 
     fn overlay(shown: *FrontEndDisplay) srcore.Overlay {
         return .{ .context = shown, .draw = draw };
@@ -1189,7 +1197,7 @@ const FrontEndDisplay = struct {
 
     fn draw(context: *anyopaque) Allocator.Error!void {
         const shown: *FrontEndDisplay = @ptrCast(@alignCast(context));
-        return drawn(shown.front.draw(shown.resources, shown.target, shown.window, shown.strings, version.string));
+        return drawn(shown.front.draw(shown.resources, shown.target, shown.window, shown.strings, shown.devices, version.string));
     }
 };
 
@@ -1413,6 +1421,7 @@ const Display = struct {
             .devices = display.devices,
             .settings = display.settings,
             .version = version.string,
+            .timer = platform.window.ticks(),
         });
         try game.hud.draw(&display.state, &display.resources, .{
             .gpa = display.gpa,

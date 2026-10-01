@@ -299,8 +299,89 @@ pub const Shapes = struct {
     }
 };
 
-/// A line of a screen's text: the game's string, and where it stands.
-pub const Label = struct { string: u32, at: [2]i32 };
+/// A line of a screen's text: a string of the game's (`language_string`), or OpenReliant's words,
+/// where it stands, and how it lines up there.
+pub const Label = struct {
+    text: Text,
+    at: [2]i32,
+    alignment: hud.Align = .left,
+
+    pub const Text = union(enum) {
+        string: u32,
+        words: []const u8,
+    };
+
+    /// The game's string `id`, at `at`, lined up by `alignment`.
+    pub fn of(id: u32, at: [2]i32, alignment: hud.Align) Label {
+        return .{ .text = .{ .string = id }, .at = at, .alignment = alignment };
+    }
+
+    /// Writes it in `font`, ramped through `colour`.
+    pub fn write(label: Label, canvas: Canvas, font: *hud.Opened, colour: [3]f32) Allocator.Error!void {
+        switch (label.text) {
+            .string => |id| try canvas.string(font, label.at, id, colour, label.alignment),
+            .words => |words| try canvas.text(font, label.at, words, colour, label.alignment),
+        }
+    }
+};
+
+/// A button of the front end's screens: its shape, with its corner at `at`, and its label beside it
+/// in the small font, blue, or white over the lit shape while it is under the pointer.
+pub const Button = struct {
+    at: [2]i32,
+    label: Label,
+
+    /// The shapes of a screen's set a button is drawn with: as it stands, and lit.
+    pub const Pair = struct { off: usize, lit: usize };
+
+    pub fn draw(button: Button, canvas: Canvas, art: *hud.Art, shapes: Pair, lit: bool) Error!void {
+        try canvas.shape(art, if (lit) shapes.lit else shapes.off, button.at);
+        try button.label.write(canvas, canvas.fonts.small, if (lit) white else blue);
+    }
+};
+
+/// A list's arrows, which scroll it a row up or down.
+pub const Arrow = enum { up, down };
+
+/// A list that shows `shown` of its `count` rows, from `first` on, which its arrows scroll; counted
+/// in `Int`, as the screen keeps it.
+pub fn Scrolled(comptime Int: type) type {
+    return struct {
+        first: Int = 0,
+        count: Int = 0,
+        shown: Int,
+
+        const List = @This();
+
+        /// The list a row on, or back, where it holds more than it shows and the last, or the
+        /// first, is not shown.
+        pub fn scroll(list: *List, way: Arrow) void {
+            if (list.count <= list.shown) return;
+            switch (way) {
+                .down => if (list.first + list.shown < list.count) {
+                    list.first += 1;
+                },
+                .up => list.first -|= 1,
+            }
+        }
+
+        /// Where the rows shown end: at the list's end, or past the last shown.
+        pub fn end(list: List) Int {
+            return @min(list.count, list.first + list.shown);
+        }
+
+        /// The list scrolled by the wheel's `notches`, `notch_rows` rows each, up for a notch up,
+        /// as far as it scrolls.
+        pub fn wheel(list: *List, notches: i32) void {
+            const way: Arrow = if (notches > 0) .up else .down;
+            for (0..@abs(notches) * notch_rows) |_| list.scroll(way);
+        }
+    };
+}
+
+/// The rows a notch of the mouse's wheel scrolls a list (`Scrolled.wheel`), as the system scrolls
+/// text by default.
+pub const notch_rows = 3;
 
 /// A rectangle of the front end's screen, as its tables keep one: its corner and its size.
 pub const Rect = extern struct {
@@ -352,6 +433,9 @@ pub const Pointer = struct {
     /// (`interface_pointer_right_down`).
     down: bool = false,
     right_down: bool = false,
+    /// The mouse wheel's whole notches turned since the last pass, positive to scroll up
+    /// (`input.Mouse.notches`).
+    wheel: i32 = 0,
     /// The ticks into its animation (`interface_pointer_ticks`), which runs through its shapes a
     /// shape every `ticks_per_shape` ticks.
     ticks: i32 = 0,
@@ -366,7 +450,10 @@ pub const Pointer = struct {
     ///
     /// **Improvement.** The pointer is where the system's is, over the window, as the pause menu's
     /// is. The game adds up DirectInput's movements from where its pointer last stood.
-    pub fn update(pointer: *Pointer, mouse: input.Mouse, window: [2]u32, elapsed: i32) void {
+    ///
+    /// **Improvement.** It takes the wheel's notches, which scroll the lists; the game reads no
+    /// wheel.
+    pub fn update(pointer: *Pointer, mouse: *input.Mouse, window: [2]u32, elapsed: i32) void {
         if (mouse.at) |share| {
             const s = scaleFor(window);
             const from = cornerFor(window);
@@ -377,6 +464,7 @@ pub const Pointer = struct {
         }
         pointer.down = mouse.buttons.left;
         pointer.right_down = mouse.buttons.right;
+        pointer.wheel = mouse.notches();
         pointer.ticks += elapsed;
         if (pointer.ticks >= shapes * ticks_per_shape) pointer.ticks = 0;
     }
@@ -468,24 +556,59 @@ test itemAt {
 
 test Pointer {
     var pointer: Pointer = .{};
+    var mouse: input.Mouse = .{};
     // With the system's pointer not yet over the window, it stays where it starts.
-    pointer.update(.{}, .{ 1920, 1080 }, 1);
+    pointer.update(&mouse, .{ 1920, 1080 }, 1);
     try std.testing.expectEqual([2]i32{ 320, 200 }, pointer.at);
     // The middle of a wide window is the middle of the front end's screen.
-    pointer.update(.{ .at = .{ 0.5, 0.5 } }, .{ 1920, 1080 }, 1);
+    mouse.at = .{ 0.5, 0.5 };
+    pointer.update(&mouse, .{ 1920, 1080 }, 1);
     try std.testing.expectEqual([2]i32{ 320, 240 }, pointer.at);
     // Beside it, it keeps to its edge.
-    pointer.update(.{ .at = .{ 0.9, 0 } }, .{ 1920, 1080 }, 1);
+    mouse.at = .{ 0.9, 0 };
+    pointer.update(&mouse, .{ 1920, 1080 }, 1);
     try std.testing.expectEqual([2]i32{ 639, 0 }, pointer.at);
     // Out beside the front end's screen, it keeps to its edge.
-    pointer.update(.{ .at = .{ 0.01, 0.5 } }, .{ 1920, 1080 }, 1);
+    mouse.at = .{ 0.01, 0.5 };
+    pointer.update(&mouse, .{ 1920, 1080 }, 1);
     try std.testing.expectEqual(0, pointer.at[0]);
     // The animation runs through the sixteen shapes, then from the first again.
     pointer.ticks = 0;
-    pointer.update(.{}, .{ 640, 480 }, 3);
+    pointer.update(&mouse, .{ 640, 480 }, 3);
     try std.testing.expectEqual(1, pointer.shape());
-    pointer.update(.{}, .{ 640, 480 }, 60);
+    pointer.update(&mouse, .{ 640, 480 }, 60);
     try std.testing.expectEqual(16, pointer.shape());
-    pointer.update(.{}, .{ 640, 480 }, 1);
+    pointer.update(&mouse, .{ 640, 480 }, 1);
     try std.testing.expectEqual(0, pointer.ticks);
+    // It takes the wheel's whole notches, once.
+    mouse.wheel = -1.5;
+    pointer.update(&mouse, .{ 640, 480 }, 1);
+    try std.testing.expectEqual(-1, pointer.wheel);
+    pointer.update(&mouse, .{ 640, 480 }, 1);
+    try std.testing.expectEqual(0, pointer.wheel);
+}
+
+test Scrolled {
+    var list: Scrolled(u8) = .{ .count = 13, .shown = 10 };
+    list.scroll(.up);
+    try std.testing.expectEqual(0, list.first);
+    for (0..5) |_| list.scroll(.down);
+    // No further than the last row shown.
+    try std.testing.expectEqual(3, list.first);
+    try std.testing.expectEqual(13, list.end());
+    list.scroll(.up);
+    try std.testing.expectEqual(2, list.first);
+    // A notch of the wheel down scrolls three rows, as far as the list goes.
+    list.first = 0;
+    list.wheel(-1);
+    try std.testing.expectEqual(3, list.first);
+    list.wheel(-1);
+    try std.testing.expectEqual(3, list.first);
+    list.wheel(1);
+    try std.testing.expectEqual(0, list.first);
+    // A list that holds no more than it shows does not scroll.
+    var short: Scrolled(usize) = .{ .count = 4, .shown = 10 };
+    short.scroll(.down);
+    try std.testing.expectEqual(0, short.first);
+    try std.testing.expectEqual(4, short.end());
 }

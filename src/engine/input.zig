@@ -279,8 +279,12 @@ pub const ControlBinding = extern struct {
     /// A DirectInput scan code (`DIK_*`), an index into `keyboard`.
     key: u16,
     modifier: Modifier,
-    /// The action's name.
-    name: [0x48]u8,
+    /// The action's name, which `starlancer.ini` keys its bindings by.
+    name: [0x28]u8,
+    /// The language string of the action's name as the controls screens show it.
+    string: u16,
+    /// The key's name, which the game copies in from `key_names` as it loads the bindings.
+    key_name: [0x1E]u8,
     /// A joystick button, or -1 for none.
     button: i16,
 
@@ -302,8 +306,21 @@ pub const ControlBinding = extern struct {
 
     comptime {
         assert(@offsetOf(ControlBinding, "name") == 0x4);
+        assert(@offsetOf(ControlBinding, "string") == 0x2C);
+        assert(@offsetOf(ControlBinding, "key_name") == 0x2E);
         assert(@offsetOf(ControlBinding, "button") == 0x4C);
         assert(@sizeOf(ControlBinding) == 0x4E);
+    }
+};
+
+/// A key an action can be bound to, an entry of `key_names` (`0x004E5CD0`): its DirectInput scan
+/// code and its name, which `WinMain` renames by the keyboard's own (`0x004BCF70`).
+pub const KeyName = extern struct {
+    code: u32,
+    name: [0x20]u8,
+
+    comptime {
+        assert(@sizeOf(KeyName) == 0x24);
     }
 };
 
@@ -649,6 +666,18 @@ pub const FreshPress = struct {
     }
 };
 
+test "Mouse.notches" {
+    var mouse: Mouse = .{};
+    // A trackpad turns the wheel by parts of a notch, which count once they make a whole one.
+    mouse.wheel += 0.6;
+    try std.testing.expectEqual(0, mouse.notches());
+    mouse.wheel += 0.6;
+    try std.testing.expectEqual(1, mouse.notches());
+    mouse.wheel -= 2.5;
+    try std.testing.expectEqual(-2, mouse.notches());
+    try std.testing.expectApproxEqAbs(-0.3, mouse.wheel, 1e-5);
+}
+
 test FreshPress {
     var press: FreshPress = .{};
     // Held over from before, the press counts only once the button has come up.
@@ -672,6 +701,9 @@ pub const Mouse = struct {
     state: State = .{},
     /// Whether the stick has gathered the movement of the last read (`player_controls`).
     gathered: bool = false,
+    /// The notches the wheel has turned that no screen has taken (`notches`), positive to scroll
+    /// up. Added by OpenReliant, as the game reads no wheel.
+    wheel: f32 = 0,
 
     /// What `read_mouse` reads, the parts of `MouseState` the game uses: the movement since the
     /// read before, in whole counts, and the buttons down.
@@ -688,6 +720,14 @@ pub const Mouse = struct {
         mouse.state = .{ .moved = moved, .buttons = mouse.buttons };
         mouse.motion = @as(@Vector(2, f32), mouse.motion) - whole;
         mouse.gathered = false;
+    }
+
+    /// The wheel's whole notches turned since they were last taken, positive to scroll up; the part
+    /// of a notch left over waits for the next.
+    pub fn notches(mouse: *Mouse) i32 {
+        const whole = @trunc(mouse.wheel);
+        mouse.wheel -= whole;
+        return @intFromFloat(whole);
     }
 
     pub const Buttons = packed struct(u2) {
@@ -832,7 +872,7 @@ const TestDevice = struct {
     unplugged: bool = false,
     motors: ?force.Motors = null,
 
-    fn device(test_device: *TestDevice) JoystickDevice {
+    pub fn device(test_device: *TestDevice) JoystickDevice {
         return .{ .context = test_device, .vtable = &.{
             .capabilities = capabilities_,
             .setRange = setRange,
@@ -867,6 +907,12 @@ const TestDevice = struct {
         if (test_device.unplugged) return error.Unplugged;
         state.* = test_device.state;
     }
+};
+
+/// What the tests elsewhere plug in: `testStick`'s device.
+pub const testing = struct {
+    pub const Device = TestDevice;
+    pub const stick = testStick;
 };
 
 /// A four-axis flight stick with twelve buttons and a hat, for the tests.
