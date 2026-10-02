@@ -25,6 +25,7 @@ pub const write = @import("dte/write.zig");
 pub const assemble = @import("dte/assemble.zig");
 pub const build = @import("dte/build.zig");
 pub const source = @import("dte/source.zig");
+pub const rules = @import("dte/rules.zig");
 
 /// What each directory slot holds. Sections the loader reads but this module does not interpret
 /// keep their index as a name.
@@ -1869,4 +1870,5 @@ test {
     _ = assemble;
     _ = build;
     _ = source;
+    _ = rules;
 }

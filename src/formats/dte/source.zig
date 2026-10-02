@@ -14,6 +14,7 @@ const dte = @import("../dte.zig");
 const build = @import("build.zig");
 const write = @import("write.zig");
 const assemble = @import("assemble.zig");
+const rules = @import("rules.zig");
 const commands = @import("../../engine/game/executor/commands.zig");
 const conditions = @import("../../engine/vm/conditions.zig");
 const opcodes = @import("../../engine/vm/opcodes.zig");
@@ -790,7 +791,7 @@ pub fn parse(arena: Allocator, text: []const u8, diagnostic: *Diagnostic) ParseE
         else => return p.fail("the source is not JSON ({s})", .{@errorName(err)}),
     };
     const top = try p.object(root, "the source");
-    try p.onlyKeys(top, "the source", &.{ "version", "name", "formats", "strings", "flight_groups", "ships", "globals", "parts", "triggers", "routines", "objects", "object_table", "sections" });
+    try p.onlyKeys(top, "the source", &.{ "version", "name", "formats", "strings", "flight_groups", "ships", "globals", "parts", "triggers", "routines", "script", "objects", "object_table", "sections" });
     if (top.get("version")) |given| {
         if (try p.integer(u32, given, "version") != version) return p.fail("version: only version {d} is read", .{version});
     }
@@ -807,12 +808,20 @@ pub fn parse(arena: Allocator, text: []const u8, diagnostic: *Diagnostic) ParseE
 
     const group_list = if (top.get("flight_groups")) |list| try p.array(list, "flight_groups") else &.{};
     const ship_list = if (top.get("ships")) |list| try p.array(list, "ships") else &.{};
-    const routine_list = if (top.get("routines")) |list| try p.array(list, "routines") else &.{};
-    const part_list = if (top.get("parts")) |list| try p.array(list, "parts") else &.{};
+    var routine_list = if (top.get("routines")) |list| try p.array(list, "routines") else &.{};
+    var part_list = if (top.get("parts")) |list| try p.array(list, "parts") else &.{};
+    var trigger_list = if (top.get("triggers")) |list| try p.array(list, "triggers") else &.{};
 
     // Names first, which references find records by.
     p.group_names = try p.names(group_list, "flight_groups");
     p.ship_names = try p.names(ship_list, "ships");
+    // The script's rules add their parts, triggers and routines after those given as records.
+    if (top.get("script")) |script_of| {
+        const expanded = try rules.expand(arena, try p.string(script_of, "script"), .{ .ships = p.ship_names, .groups = p.group_names }, diagnostic);
+        part_list = try std.mem.concat(arena, json.Value, &.{ part_list, expanded.parts });
+        trigger_list = try std.mem.concat(arena, json.Value, &.{ trigger_list, expanded.triggers });
+        routine_list = try std.mem.concat(arena, json.Value, &.{ routine_list, expanded.routines });
+    }
     p.part_names = try p.names(part_list, "parts");
     const ids = try arena.alloc([]const u8, routine_list.len);
     p.routine_ids = ids;
@@ -866,12 +875,9 @@ pub fn parse(arena: Allocator, text: []const u8, diagnostic: *Diagnostic) ParseE
     for (parts, part_list, 0..) |*part, item, index| part.* = try p.part(item, index);
     mission.parts = parts;
 
-    if (top.get("triggers")) |triggers_of| {
-        const list = try p.array(triggers_of, "triggers");
-        const records = try arena.alloc(build.Trigger, list.len);
-        for (records, list, 0..) |*trigger, item, index| trigger.* = try p.trigger(item, index);
-        mission.triggers = records;
-    }
+    const triggers = try arena.alloc(build.Trigger, trigger_list.len);
+    for (triggers, trigger_list, 0..) |*trigger, item, index| trigger.* = try p.trigger(item, index);
+    mission.triggers = triggers;
 
     if (top.get("sections")) |sections_of| {
         const fields = try p.object(sections_of, "sections");
@@ -1298,12 +1304,7 @@ const Parser = struct {
             .string => |text| text,
             else => return p.integer(u8, given, where),
         };
-        inline for (std.meta.fields(Variables)) |info| {
-            if (comptime isVariable(info)) {
-                if (std.mem.eql(u8, info.name, text)) return Variables.number(info.name);
-            }
-        }
-        return p.fail("{s}: no variable \"{s}\"", .{ where, text });
+        return variableNumber(text) orelse p.fail("{s}: no variable \"{s}\"", .{ where, text });
     }
 
     /// A call of command `name`: each argument pushed in the order of the command's parameters,
@@ -1366,6 +1367,16 @@ const Parser = struct {
         }
     }
 };
+
+/// The number of the game's variable `name` in `vm.Variables`, where a script names it so.
+pub fn variableNumber(name: []const u8) ?u8 {
+    inline for (std.meta.fields(Variables)) |info| {
+        if (comptime isVariable(info)) {
+            if (std.mem.eql(u8, info.name, name)) return Variables.number(info.name);
+        }
+    }
+    return null;
+}
 
 /// Whether a field of `vm.Variables` is a variable a script names.
 fn isVariable(comptime field: std.builtin.Type.StructField) bool {
