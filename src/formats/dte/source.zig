@@ -1056,15 +1056,8 @@ const Parser = struct {
 
     /// Each record's name, where it is given by its text.
     fn names(p: *Parser, list: []const json.Value, where: []const u8) ParseError![]const ?[]const u8 {
-        const all = try p.arena.alloc(?[]const u8, list.len);
-        for (all, list, 0..) |*text, item, index| {
-            const map = try p.object(item, try p.at(where, index));
-            text.* = if (map.get("name")) |given| switch (given) {
-                .string => |own| own,
-                else => null,
-            } else "";
-        }
-        return all;
+        for (list, 0..) |item, index| _ = try p.object(item, try p.at(where, index));
+        return recordNames(p.arena, list);
     }
 
     /// The record `given` names in `list`: by its name, the first so named, or its index.
@@ -1367,6 +1360,22 @@ const Parser = struct {
         }
     }
 };
+
+/// Each record's name, where it is given by its text: `""` for a record that gives none, null for
+/// one named by an offset into the pool.
+pub fn recordNames(arena: Allocator, list: []const json.Value) Allocator.Error![]const ?[]const u8 {
+    const all = try arena.alloc(?[]const u8, list.len);
+    for (all, list) |*text, item| {
+        text.* = switch (item) {
+            .object => |fields| if (fields.get("name")) |given| switch (given) {
+                .string => |own| own,
+                else => null,
+            } else "",
+            else => null,
+        };
+    }
+    return all;
+}
 
 /// The number of the game's variable `name` in `vm.Variables`, where a script names it so.
 pub fn variableNumber(name: []const u8) ?u8 {

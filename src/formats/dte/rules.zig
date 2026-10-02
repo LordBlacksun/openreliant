@@ -803,6 +803,33 @@ pub fn rewrite(arena: Allocator, text: []const u8, diagnostic: *source.Diagnosti
     return rewritten;
 }
 
+/// The source `text` with the rules of its `script` given as the parts, triggers and routines they
+/// expand into, after any it gives as records, in `arena`: the source a tool that edits records
+/// reads. On `error.Invalid`, `diagnostic` says what is wrong and where.
+pub fn expandSource(arena: Allocator, text: []const u8, diagnostic: *source.Diagnostic) (source.ParseError || std.Io.Writer.Error)![]const u8 {
+    // The source as a whole first, which checks the rules as it reads them.
+    _ = try source.parse(arena, text, diagnostic);
+    var root = json.parseFromSliceLeaky(json.Value, arena, text, .{ .parse_numbers = false }) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => {
+            diagnostic.message = "the source is not JSON";
+            return error.Invalid;
+        },
+    };
+    const top = &root.object;
+    const script = textOf(top.get("script")) orelse return text;
+    const names: Names = .{ .ships = try namesOf(arena, top.get("ships")), .groups = try namesOf(arena, top.get("flight_groups")) };
+    const expanded = try expand(arena, script, names, diagnostic);
+    inline for (.{ "parts", "triggers", "routines" }) |key| {
+        var list: json.Array = .init(arena);
+        try list.appendSlice(listOf(top.get(key)));
+        try list.appendSlice(@field(expanded, key));
+        try top.put(arena, key, .{ .array = list });
+    }
+    _ = top.orderedRemove("script");
+    return json.Stringify.valueAlloc(arena, root, .{ .whitespace = .indent_2 });
+}
+
 fn listOf(value: ?json.Value) []const json.Value {
     const given = value orelse return &.{};
     return switch (given) {
@@ -811,20 +838,9 @@ fn listOf(value: ?json.Value) []const json.Value {
     };
 }
 
-/// Each record's name, where it is given by its text, as the source's parser takes them.
+/// The names of the records `value` lists, as the source's parser takes them.
 fn namesOf(arena: Allocator, value: ?json.Value) Allocator.Error![]const ?[]const u8 {
-    const list = listOf(value);
-    const all = try arena.alloc(?[]const u8, list.len);
-    for (all, list) |*text, item| {
-        text.* = switch (item) {
-            .object => |fields| if (fields.get("name")) |given| switch (given) {
-                .string => |own| own,
-                else => null,
-            } else "",
-            else => null,
-        };
-    }
-    return all;
+    return source.recordNames(arena, listOf(value));
 }
 
 /// A rule written: a part's or a trigger's, by its place.
@@ -2022,4 +2038,37 @@ test "a source's script is written back as rules that build the same mission" {
         \\
     , root.object.get("script").?.string);
     try std.testing.expectEqualSlices(u8, try built(arena, records), try built(arena, written));
+}
+
+test expandSource {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const data =
+        \\{
+        \\  "flight_groups": [{ "name": "(FG)Alpha", "wing": 0 }],
+        \\  "ships": [{ "name": "Player", "kind": "sabre", "group": "(FG)Alpha" }]
+        \\}
+    ;
+    const with_script = try withScript(arena, data,
+        \\on start:
+        \\    CreateFlightGroup("(FG)Alpha")
+        \\on "Player".destroyed:
+        \\    flag[objectives_met] = 1
+    );
+    var diagnostic: source.Diagnostic = .{};
+    const expanded = expandSource(arena, with_script, &diagnostic) catch |err| {
+        std.debug.print("{s}\n", .{diagnostic.message});
+        return err;
+    };
+    // Records in place of the rules, which build the same mission.
+    const root = try json.parseFromSliceLeaky(json.Value, arena, expanded, .{});
+    try std.testing.expect(root.object.get("script") == null);
+    try std.testing.expectEqual(1, root.object.get("parts").?.array.items.len);
+    try std.testing.expectEqual(1, root.object.get("triggers").?.array.items.len);
+    try std.testing.expectEqual(2, root.object.get("routines").?.array.items.len);
+    try std.testing.expectEqualSlices(u8, try built(arena, with_script), try built(arena, expanded));
+    // Rules that are wrong say where.
+    try std.testing.expectError(error.Invalid, expandSource(arena, try withScript(arena, data, "on start:\n    Nothing()"), &diagnostic));
+    try std.testing.expectEqualStrings("script line 2: no command \"Nothing\"", diagnostic.message);
 }
