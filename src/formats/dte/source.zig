@@ -1378,6 +1378,16 @@ pub fn variableNumber(name: []const u8) ?u8 {
     return null;
 }
 
+/// The name of the game's variable numbered `number`, where a script names it.
+pub fn variableName(number: u8) ?[]const u8 {
+    inline for (std.meta.fields(Variables)) |info| {
+        if (comptime isVariable(info)) {
+            if (Variables.number(info.name) == number) return info.name;
+        }
+    }
+    return null;
+}
+
 /// Whether a field of `vm.Variables` is a variable a script names.
 fn isVariable(comptime field: std.builtin.Type.StructField) bool {
     if (field.name[0] == '_' or std.mem.eql(u8, field.name, "spare")) return false;

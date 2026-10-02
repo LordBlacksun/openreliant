@@ -27,6 +27,8 @@ pub const Command = union(enum) {
     @"export": struct { mission: []const u8 },
     /// Builds a mission from its source.
     build: struct { source: []const u8, out: []const u8 },
+    /// Writes a source again with its script as rules (`dte.rules`).
+    rules: struct { source: []const u8 },
     /// Writes what a mission's source can name: ship types, commands, conditions, variables.
     catalogue: struct {},
 
@@ -42,6 +44,7 @@ pub const Command = union(enum) {
         \\                                  check that they come back the same
         \\  dte export <mission>            write the mission as its source, in JSON
         \\  dte build <source> <out>        build a mission from its source
+        \\  dte rules <source>              write a source again with its script as rules
         \\  dte catalogue                   list what a source can name, in JSON
         \\
     ;
@@ -56,6 +59,7 @@ pub const Command = union(enum) {
     pub fn run(command: Command, ctx: Context) !void {
         const path = switch (command) {
             .build => |operands| return build(ctx, operands.source, operands.out),
+            .rules => |operands| return rules(ctx, operands.source),
             .catalogue => return dte.source.writeCatalogue(ctx.stdout),
             inline else => |operands| operands.mission,
         };
@@ -76,7 +80,7 @@ pub const Command = union(enum) {
             .script => try script(ctx, mission, models),
             .check => try check(ctx, mission),
             .@"export" => try dte.source.writeSource(ctx.arena, (try dte.source.fromFile(ctx.arena, mission)).mission, ctx.stdout),
-            .build, .catalogue => unreachable,
+            .build, .rules, .catalogue => unreachable,
         }
     }
 };
@@ -539,6 +543,16 @@ fn build(ctx: Context, source: []const u8, out: []const u8) !void {
     const bytes = try dte.build.build(ctx.arena, mission);
     try Io.Dir.cwd().writeFile(ctx.io, .{ .sub_path = out, .data = bytes });
     try ctx.stdout.print("{s}: {d} ships, {d} flight groups, {d} triggers, {d} routines\n", .{ out, mission.ships.len, mission.flight_groups.len, mission.triggers.len, mission.routines.len });
+}
+
+/// `sltool dte rules`: the source `source` with its script as rules, or why rules cannot say it.
+fn rules(ctx: Context, source: []const u8) !void {
+    var diagnostic: dte.source.Diagnostic = .{};
+    const written = dte.rules.rewrite(ctx.arena, try ctx.readInput(source), &diagnostic) catch |err| switch (err) {
+        error.Invalid, error.Unwritable => return fail(ctx.stdout, diagnostic.message),
+        else => return err,
+    };
+    try ctx.stdout.print("{s}\n", .{written});
 }
 
 /// A routine assembled again from its disassembly, with its constant table as it was.
