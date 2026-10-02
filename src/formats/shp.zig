@@ -783,9 +783,10 @@ pub fn Record(comptime tag: Tag) type {
 }
 
 /// The size of each tag's records in a model's file, or null for a tag the file holds no chunk
-/// of. Older exporters wrote shorter records, which the loader reads as far as they go
-/// (`records`), and left point lists, trigger polygons and firing arcs out altogether. The
-/// defaults are the sizes of `Record`'s types.
+/// of, and the chunks whose records have a size of their own. Older exporters wrote shorter
+/// records, which the loader reads as far as they go (`records`), and left point lists, trigger
+/// polygons and firing arcs out altogether. The defaults are the sizes of `Record`'s types, and no
+/// chunk of a size of its own.
 pub const RecordSizes = struct {
     header: ?u16 = @sizeOf(Record(.header)),
     part: ?u16 = @sizeOf(Record(.part)),
@@ -803,11 +804,15 @@ pub const RecordSizes = struct {
     point: ?u16 = @sizeOf(Record(.point)),
     trigger_polygon: ?u16 = @sizeOf(Record(.trigger_polygon)),
     firing_arc: ?u16 = @sizeOf(Record(.firing_arc)),
+    /// The chunks whose records have a size other than their tag's, as a file that gives a tag two
+    /// sizes has them, though no shipped model does: the tag's size is the larger, and each chunk
+    /// whose records are smaller is listed here with its own.
+    chunks: []const ChunkSize = &.{},
 
     /// No chunk of any tag, which `Model.parse` fills in from the file's chunks.
     pub const none: RecordSizes = sizes: {
         var sizes: RecordSizes = .{};
-        for (@typeInfo(RecordSizes).@"struct".fields) |field| @field(sizes, field.name) = null;
+        for (tag_fields) |field| @field(sizes, field.name) = null;
         break :sizes sizes;
     };
 
@@ -816,10 +821,28 @@ pub const RecordSizes = struct {
         return @field(sizes, @tagName(tag));
     }
 
+    /// The size of the records of `tag`'s chunk at `place` (`Places`): its own, where `chunks`
+    /// lists it, or else its tag's. Null for a tag the file holds no chunk of.
+    pub fn ofChunk(sizes: RecordSizes, comptime tag: Tag, place: u32) ?u16 {
+        const size = sizes.of(tag) orelse return null;
+        for (sizes.chunks) |chunk| {
+            if (chunk.tag == tag and chunk.place == place) return chunk.size;
+        }
+        return size;
+    }
+
+    /// `of`, for a tag known only as the file is read; null for a tag the format does not name.
+    fn ofAny(sizes: RecordSizes, tag: Tag) ?u16 {
+        return switch (tag) {
+            .end, _ => null,
+            inline else => |named| sizes.of(named),
+        };
+    }
+
     /// Takes in a chunk of `tag` with records of `size`. A file that gives a tag two sizes, as no
-    /// shipped model does, is written again at the larger
-    /// ([#477](https://github.com/vdmkenny/openreliant/issues/477)). A tag the format does not name
-    /// has no size: the model keeps its chunks whole (`Model.unnamed_chunks`).
+    /// shipped model does, gives it the larger, and `Model.parse` lists the chunks of the smaller
+    /// in `chunks`. A tag the format does not name has no size: the model keeps its chunks whole
+    /// (`Model.unnamed_chunks`).
     fn note(sizes: *RecordSizes, tag: Tag, size: u16) void {
         switch (tag) {
             .end, _ => {},
@@ -830,13 +853,49 @@ pub const RecordSizes = struct {
         }
     }
 
+    /// The fields that hold a tag's size: all but `chunks`.
+    const tag_fields = fields: {
+        const all = @typeInfo(RecordSizes).@"struct".fields;
+        assert(std.mem.eql(u8, all[all.len - 1].name, "chunks"));
+        break :fields all[0 .. all.len - 1];
+    };
+
     comptime {
         // A field for each tag but the terminator, named after it, whose default is the size of
         // its record.
-        const fields = @typeInfo(RecordSizes).@"struct".fields;
-        assert(fields.len == std.enums.values(Tag).len - 1);
+        assert(tag_fields.len == std.enums.values(Tag).len - 1);
         const whole: RecordSizes = .{};
-        for (fields) |field| assert(@field(whole, field.name) == @sizeOf(Record(@field(Tag, field.name))));
+        for (tag_fields) |field| assert(@field(whole, field.name) == @sizeOf(Record(@field(Tag, field.name))));
+    }
+};
+
+/// A chunk whose records have a size other than its tag's (`RecordSizes.chunks`).
+pub const ChunkSize = struct {
+    tag: Tag,
+    /// Its place among the tag's chunks (`Places`).
+    place: u32,
+    size: u16,
+};
+
+/// How many times the loader has asked for a chunk of each tag, in the order `Model.parse` lists.
+/// A chunk's place among its tag's is the count as it is asked for, from 0. The reader counts each
+/// chunk it asks for, found or not, and the writer each it writes or leaves out, so that a place
+/// names the same chunk in both, wherever the file holds it.
+const Places = struct {
+    counts: [tag_count]u32 = @splat(0),
+
+    /// A count for each tag up to the firing arcs', the last the loader asks for.
+    const tag_count = @intFromEnum(Tag.firing_arc) + 1;
+
+    /// The place of the next chunk of `tag`, which then counts as asked for.
+    fn next(places: *Places, comptime tag: Tag) u32 {
+        const count = &places.counts[@intFromEnum(tag)];
+        defer count.* += 1;
+        return count.*;
+    }
+
+    comptime {
+        for (std.enums.values(Tag)) |tag| assert(tag == .end or @intFromEnum(tag) < tag_count);
     }
 };
 
@@ -856,6 +915,10 @@ pub const Error = error{
 pub const Reader = struct {
     data: []const u8,
     pos: usize = 0,
+    /// The places of each tag `takeRecords` has asked for, and where it is given a list, the size
+    /// of each chunk it took, at its place (`Model.parse`).
+    places: Places = .{},
+    taken: ?*std.ArrayList(ChunkSize) = null,
 
     pub fn init(data: []const u8) Reader {
         return .{ .data = data };
@@ -904,14 +967,23 @@ pub const Reader = struct {
 
     /// `take`, decoded into `tag`'s records.
     pub fn takeRecords(reader: *Reader, gpa: Allocator, comptime tag: Tag) ![]Record(tag) {
-        const chunk = try reader.take(tag) orelse return gpa.alloc(Record(tag), 0);
+        const chunk = try reader.takeCounted(gpa, tag) orelse return gpa.alloc(Record(tag), 0);
         return records(Record(tag), gpa, chunk);
     }
 
     /// `takeRecords`, with what each record holds past those bytes (`tails`).
     pub fn takeRecordsAndTails(reader: *Reader, gpa: Allocator, comptime tag: Tag) !struct { []Record(tag), []const []const u8 } {
-        const chunk = try reader.take(tag) orelse return .{ try gpa.alloc(Record(tag), 0), &.{} };
+        const chunk = try reader.takeCounted(gpa, tag) orelse return .{ try gpa.alloc(Record(tag), 0), &.{} };
         return .{ try records(Record(tag), gpa, chunk), try tails(gpa, chunk, @sizeOf(Record(tag))) };
+    }
+
+    /// `take`, counting the place of `tag` it asks for, and noting the chunk's size there where
+    /// the reader is given a list (`taken`).
+    fn takeCounted(reader: *Reader, gpa: Allocator, comptime tag: Tag) !?Chunk {
+        const place = reader.places.next(tag);
+        const chunk = try reader.take(tag) orelse return null;
+        if (reader.taken) |taken| try taken.append(gpa, .{ .tag = tag, .place = place, .size = chunk.record_size });
+        return chunk;
     }
 };
 
@@ -1014,12 +1086,14 @@ pub const Model = struct {
     firing_arcs: []FiringArc = &.{},
     /// Bytes after the terminator, which should be zero.
     trailing_bytes: usize,
-    /// The size of each tag's records in its file, which `write` writes them at. A model edited
-    /// after `parse` keeps them, so a field past its tag's size is lost without a word: in a
-    /// shipped model whose attachments are 100 bytes, a gun muzzle added loses its gun type
-    /// (`0x64`), and a light its range and brightness (`0x74`, `0x78`). `.{}` gives whole records,
-    /// each its type's size, and a chunk for every tag, as a model built from scratch has, without
-    /// its attachments' tails.
+    /// The size of each tag's records in its file, and that of each chunk whose records have a
+    /// size of their own, which `write` writes them at. A model edited after `parse` keeps them,
+    /// so a field past its tag's size is lost without a word: in a shipped model whose
+    /// attachments are 100 bytes, a gun muzzle added loses its gun type (`0x64`), and a light its
+    /// range and brightness (`0x74`, `0x78`). A chunk's own size stays with its place among its
+    /// tag's (`Places`), so a chunk of the tag added or taken away before it moves the size onto
+    /// another. `.{}` gives whole records, each its type's size, and a chunk for every tag, as a
+    /// model built from scratch has, without its attachments' tails.
     record_sizes: RecordSizes = .{},
     /// Its file's chunks of tags the format does not name, in the order the file holds them.
     unnamed_chunks: []const UnnamedChunk = &.{},
@@ -1032,7 +1106,9 @@ pub const Model = struct {
     ///
     /// The chunks of tags the format does not name, which the loader passes over, it keeps whole.
     pub fn parse(gpa: Allocator, data: []const u8) !Model {
+        var taken: std.ArrayList(ChunkSize) = .empty;
         var reader: Reader = .init(data);
+        reader.taken = &taken;
 
         const headers = try reader.takeRecords(gpa, .header);
         if (headers.len == 0) return error.NotAModel;
@@ -1106,6 +1182,12 @@ pub const Model = struct {
             }
         }
         const end = scan.pos + @sizeOf(ChunkHeader);
+        // The chunks taken whose records are not their tag's size.
+        var own: std.ArrayList(ChunkSize) = .empty;
+        for (taken.items) |chunk| {
+            if (chunk.size != record_sizes.ofAny(chunk.tag)) try own.append(gpa, chunk);
+        }
+        record_sizes.chunks = try own.toOwnedSlice(gpa);
 
         return .{
             .header = headers[0],
@@ -1148,7 +1230,7 @@ pub const Model = struct {
 
     /// Writes the model as the loader reads it (`parse`): its chunks in the order the loader asks
     /// for them, each record cut short or filled out with zeros to the size `record_sizes` gives
-    /// its tag, an attachment's with its tail after it, its unnamed chunks where they stood among
+    /// its chunk, an attachment's with its tail after it, its unnamed chunks where they stood among
     /// the others, and the terminator. A tag the sizes leave out gets no chunk, and must have no
     /// records. A model parsed from a file comes back byte for byte, as every shipped model does,
     /// unless the file holds what `parse` does not keep: a chunk of a named tag the loader never
@@ -1156,9 +1238,7 @@ pub const Model = struct {
     /// the first ([#471](https://github.com/vdmkenny/openreliant/issues/471)), bytes after the
     /// terminator ([#472](https://github.com/vdmkenny/openreliant/issues/472)), bytes of a record
     /// past its type's size, other than an attachment's, where they are not zero
-    /// ([#473](https://github.com/vdmkenny/openreliant/issues/473)), chunks of one tag with two
-    /// record sizes, which come back at the larger
-    /// ([#477](https://github.com/vdmkenny/openreliant/issues/477)), or a terminator whose record
+    /// ([#473](https://github.com/vdmkenny/openreliant/issues/473)), or a terminator whose record
     /// size or count is missing or not 0, which comes back with both 0
     /// ([#478](https://github.com/vdmkenny/openreliant/issues/478)).
     pub fn write(model: Model, out: *std.Io.Writer) WriteError!void {
@@ -1217,6 +1297,9 @@ const ChunkWriter = struct {
     unnamed: []const UnnamedChunk,
     /// How many chunks of named tags it has written.
     written: usize = 0,
+    /// The places of each tag it has come to, which give each chunk its size
+    /// (`RecordSizes.ofChunk`).
+    places: Places = .{},
 
     /// A chunk of `tag` holding `items`, or the `field` of each where an item holds its record
     /// among other things; nothing for a tag the sizes leave out, which then must have none.
@@ -1234,7 +1317,7 @@ const ChunkWriter = struct {
         comptime field: ?[]const u8,
         item_tails: []const []const u8,
     ) WriteError!void {
-        const size = chunks.sizes.of(tag) orelse {
+        const size = chunks.sizes.ofChunk(tag, chunks.places.next(tag)) orelse {
             if (items.len > 0) return error.LeftOut;
             return;
         };
@@ -1425,6 +1508,68 @@ test "a model written again comes back byte for byte" {
     defer written.deinit();
     try (try Model.parse(arena, data)).write(&written.writer);
     try std.testing.expectEqualSlices(u8, data, written.written());
+}
+
+test "chunks of one tag with two record sizes come back each at its own" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    // One part of two levels, the first's vertices at the older exporters' 28 bytes and the
+    // second's at 32, as no shipped model has them.
+    const put = struct {
+        /// A chunk of `count` records of `size`, each the first bytes of `record`.
+        fn chunk(out: *std.Io.Writer, tag: Tag, size: u16, count: u16, record: []const u8) !void {
+            try out.writeAll(std.mem.asBytes(&ChunkHeader{ .tag = tag, .record_size = size, .count = count }));
+            for (0..count) |_| try out.writeAll(record[0..size]);
+        }
+    };
+    var header = std.mem.zeroes(Header);
+    header.version = 107;
+    var part = std.mem.zeroes(Part);
+    @memcpy(part.name_bytes[0..4], "Hull");
+    part.parent = no_index;
+    const lod: Lod = .{ .switch_distance = 0 };
+    var vertex = std.mem.zeroes(Vertex);
+    vertex.position = .{ .x = 1, .y = 2, .z = 3 };
+    vertex.next_lod_vertex = no_index;
+    var face = std.mem.zeroes(Face);
+    face.vertices = .{ 0, 1, 2 };
+    const material = std.mem.zeroes(Material);
+    // The older form of a vertex record, without the geomorph index.
+    const old_vertex_size = 28;
+    const vertex_sizes = [_]u16{ old_vertex_size, @sizeOf(Vertex) };
+
+    var file: std.Io.Writer.Allocating = .init(arena);
+    const out = &file.writer;
+    try put.chunk(out, .header, @sizeOf(Header), 1, std.mem.asBytes(&header));
+    try put.chunk(out, .part, @sizeOf(Part), 1, std.mem.asBytes(&part));
+    try put.chunk(out, .lod, @sizeOf(Lod), vertex_sizes.len, std.mem.asBytes(&lod));
+    for (vertex_sizes) |size| {
+        try put.chunk(out, .vertex, size, 3, std.mem.asBytes(&vertex));
+        try put.chunk(out, .face, @sizeOf(Face), 1, std.mem.asBytes(&face));
+        try put.chunk(out, .material, @sizeOf(Material), 1, std.mem.asBytes(&material));
+    }
+    try out.writeAll(std.mem.asBytes(&ChunkHeader.terminator));
+    const data = file.written();
+
+    // The tag's size is the larger, and the first level's vertex chunk, the first of the tag the
+    // loader asks for, keeps its own.
+    const model = try Model.parse(arena, data);
+    try std.testing.expectEqual(@sizeOf(Vertex), model.record_sizes.vertex.?);
+    const own: []const ChunkSize = &.{.{ .tag = .vertex, .place = 0, .size = old_vertex_size }};
+    try std.testing.expectEqualSlices(ChunkSize, own, model.record_sizes.chunks);
+    var written: std.Io.Writer.Allocating = .init(arena);
+    try model.write(&written.writer);
+    try std.testing.expectEqualSlices(u8, data, written.written());
+
+    // Whole records give both levels' vertices 32 bytes.
+    var whole = model;
+    whole.record_sizes = .{};
+    var rewritten: std.Io.Writer.Allocating = .init(arena);
+    try whole.write(&rewritten.writer);
+    var reader: Reader = .init(rewritten.written());
+    for (vertex_sizes) |_| try std.testing.expectEqual(@sizeOf(Vertex), (try reader.take(.vertex)).?.record_size);
 }
 
 test "a model built by hand reads back as it was written" {

@@ -79,13 +79,17 @@ Every model follows this order and ends with the terminator at the last byte of 
 ### Writing
 
 `shp.Model.write` writes a model as the loader reads it: its chunks in the order above, each record
-at the size its tag has in the model's file, and the terminator with a record size and count of 0.
-In every shipped model each tag has one record size, and a tag's chunk stands wherever the loader
-asks for one or nowhere, with a count of 0 where there are no records. The older exporters wrote no
-point lists, trigger polygons or firing arcs at all. `Model.parse` keeps each tag's size, or that
-the file has none of it (`shp.RecordSizes`), and the writer cuts each record short to that size or
-fills it out with zeros. A model built from scratch gets whole records, each its type's size
-(`shp.Record`).
+at the size its chunk has in the model's file, and the terminator with a record size and count of
+0. In every shipped model each tag has one record size, and a tag's chunk stands wherever the
+loader asks for one or nowhere, with a count of 0 where there are no records. The older exporters
+wrote no point lists, trigger polygons or firing arcs at all. `Model.parse` keeps each tag's size,
+or that the file has none of it (`shp.RecordSizes`), and the writer cuts each record short to that
+size or fills it out with zeros. The loader reads each chunk at its own size (`model_take_chunk`,
+`0x004A2EB0`), so a file may give a tag two sizes. The tag's size is then the larger, and each chunk
+whose records are smaller keeps its own (`RecordSizes.chunks`), named by its place among the tag's
+chunks: the first the loader asks for, the second, and so on, in the order above, which the writer
+follows too.
+A model built from scratch gets whole records, each its type's size (`shp.Record`).
 
 The attachment records of 136 and 168 bytes hold 12 and 44 bytes past the 124 the engine keeps,
 which the loader never copies (`model_take_chunk`, `0x004A2EB0`). **Unknown:** what they are; they
@@ -106,9 +110,8 @@ shipped model does: a chunk of a named tag the loader never asks for
 ([#471](https://github.com/vdmkenny/openreliant/issues/471)), bytes after the terminator
 ([#472](https://github.com/vdmkenny/openreliant/issues/472)), bytes of a record past its type's
 size, other than an attachment's, where they are not zero
-([#473](https://github.com/vdmkenny/openreliant/issues/473)), chunks of one tag with two record
-sizes, which come back at the larger ([#477](https://github.com/vdmkenny/openreliant/issues/477)),
-or a terminator whose record size or count is missing or not 0, which comes back with both 0
+([#473](https://github.com/vdmkenny/openreliant/issues/473)), or a terminator whose record size or
+count is missing or not 0, which comes back with both 0
 ([#478](https://github.com/vdmkenny/openreliant/issues/478)).
 
 The writer fails rather than write a file the loader would misread: records of a tag the model's
@@ -119,9 +122,10 @@ it fails for a part whose attachments have tails, but not one each.
 
 A model edited after parsing keeps its file's record sizes, so a field past its tag's size is lost
 without a word. In a shipped model whose attachments are 100 bytes, a gun muzzle added loses its gun
-type (`0x64`), and a light its range and brightness (`0x74`, `0x78`). `record_sizes = .{}` gives
-the model whole records and a chunk for every tag, as one built from scratch has, without its
-attachments' tails.
+type (`0x64`), and a light its range and brightness (`0x74`, `0x78`). A chunk's own size stays with
+its place, so a chunk of its tag added or taken away before it moves the size onto another.
+`record_sizes = .{}` gives the model whole records and a chunk for every tag, as one built from
+scratch has, without its attachments' tails.
 
 ## Records
 
