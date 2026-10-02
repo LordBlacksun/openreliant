@@ -1238,9 +1238,11 @@ pub const Model = struct {
     /// the first ([#471](https://github.com/vdmkenny/openreliant/issues/471)), bytes after the
     /// terminator ([#472](https://github.com/vdmkenny/openreliant/issues/472)), bytes of a record
     /// past its type's size, other than an attachment's, where they are not zero
-    /// ([#473](https://github.com/vdmkenny/openreliant/issues/473)), or a terminator whose record
+    /// ([#473](https://github.com/vdmkenny/openreliant/issues/473)), a terminator whose record
     /// size or count is missing or not 0, which comes back with both 0
-    /// ([#478](https://github.com/vdmkenny/openreliant/issues/478)).
+    /// ([#478](https://github.com/vdmkenny/openreliant/issues/478)), or a chunk the file leaves
+    /// out where the loader asks for one, which comes back empty
+    /// ([#536](https://github.com/vdmkenny/openreliant/issues/536)).
     pub fn write(model: Model, out: *std.Io.Writer) WriteError!void {
         var chunks: ChunkWriter = .{ .out = out, .sizes = model.record_sizes, .unnamed = model.unnamed_chunks };
         try chunks.put(.header, @as(*const [1]Header, &model.header), null);

@@ -110,9 +110,11 @@ shipped model does: a chunk of a named tag the loader never asks for
 ([#471](https://github.com/vdmkenny/openreliant/issues/471)), bytes after the terminator
 ([#472](https://github.com/vdmkenny/openreliant/issues/472)), bytes of a record past its type's
 size, other than an attachment's, where they are not zero
-([#473](https://github.com/vdmkenny/openreliant/issues/473)), or a terminator whose record size or
+([#473](https://github.com/vdmkenny/openreliant/issues/473)), a terminator whose record size or
 count is missing or not 0, which comes back with both 0
-([#478](https://github.com/vdmkenny/openreliant/issues/478)).
+([#478](https://github.com/vdmkenny/openreliant/issues/478)), or a chunk the file leaves out where
+the loader asks for one, which comes back empty
+([#536](https://github.com/vdmkenny/openreliant/issues/536)).
 
 The writer fails rather than write a file the loader would misread: records of a tag the model's
 sizes leave out, a chunk of more records than its header can count (65535), or a part whose nodes
