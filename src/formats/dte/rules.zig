@@ -1893,6 +1893,33 @@ test "a rule's body named with as is run by other rules wherever they stand" {
     , root.object.get("script").?.string);
 }
 
+test "rules that are wrong say on which line" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const data =
+        \\{
+        \\  "flight_groups": [{ "name": "Twin" }, { "name": "(FG)Raiders" }],
+        \\  "ships": [
+        \\    { "name": "Twin", "kind": "sabre", "group": "Twin" },
+        \\    { "name": "Raider", "kind": "predator", "group": "(FG)Raiders" }
+        \\  ]
+        \\}
+    ;
+    const cases = [_]struct { []const u8, []const u8 }{
+        .{ "on start:\n    SetHostile(\"(FG)Raiders\")", "script line 2: SetHostile takes 2 arguments, not 1" },
+        .{ "on \"Twin\".destroyed:", "script line 1: \"Twin\" names a ship and a flight group" },
+        .{ "on start:\n    PlayMusic(\"a.wav\", 0)\n    else:", "script line 3: an else with no if before it" },
+        .{ "on start:\n    if flag[50] == 0:\n    PlayMusic(\"a.wav\", 0)", "script line 2: a block with nothing in it" },
+        .{ "on \"Raider\".exploded:", "script line 1: no event \"exploded\"" },
+    };
+    for (cases) |case| {
+        var diagnostic: source.Diagnostic = .{};
+        try std.testing.expectError(error.Invalid, source.parse(arena, try withScript(arena, data, case[0]), &diagnostic));
+        try std.testing.expectEqualStrings(case[1], diagnostic.message);
+    }
+}
+
 test "a source's script is written back as rules that build the same mission" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();

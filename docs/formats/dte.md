@@ -668,6 +668,64 @@ bytes after its block, its constants among them, in place of the constants its s
 A source that is wrong fails to build, and `sltool dte build` says what is wrong and where, such
 as `ships[0].group: no flight group named "(FG)None"`.
 
+### The script as rules
+
+A source may give its script as rules, its `script`: text that
+[`dte/rules.zig`](../../src/formats/dte/rules.zig) turns into the parts, triggers and routines the
+source would otherwise give, after any it gives as records, so a script written either way builds
+into the same mission. The rules follow the `.sls` scripts of
+[StarLancerEditor](https://src.ug.gg/mini/starlancereditor). `sltool dte rules` writes a source
+again with its script as rules: all of it or none, and only where the rules build the same mission,
+which it checks.
+
+```
+on start:
+    CreateFlightGroup("(FG)Alpha")
+    SetHostile("(FG)Raiders", true)
+
+on "(FG)Raiders".destroyed (repeat 2):
+    flag[objectives_met] = 1
+    if flag[50] == 0:
+        call "(F)Won"
+    else:
+        flag[51] += 1
+```
+
+A rule is a line at the margin, ending in `:`, and its body, the lines indented under it. `#` starts
+a comment.
+
+| Rule | What it gives |
+|---|---|
+| `on start:` | The part named `(F)Start`, which runs at the mission's start |
+| `part "(F)Won":` | A part the script calls |
+| `on "Subject".event:` | A trigger: its subject a ship or flight group by its name, its condition by its name in `Condition` or in camel case (`shotAt`, and `readyToJump` for `player_ready_to_jump`) |
+| `on "Ship".component(2).destroyed:` | A trigger on one of a ship's components, its `qualifier` |
+| `on "Subject".event("Ship", 30):` | The trigger's operands in order, the rest unset |
+| `(once)`, `(repeat)`, `(repeat 2)` after the event | Its `repeat`: `once`, `always`, or `counted` with `repeat_count` and `repeat_counter` both 2 |
+| `as "pod":` at the end of the line | The body named, for other rules to run |
+| `runs "pod"` at the end of the line | No body: the rule runs the routine named |
+| `routine "pod":` | A body only other rules run |
+
+Each body becomes a routine, in the order the rules give them, which ends returning 1 unless its
+last statement returns.
+
+| Statement | What it writes |
+|---|---|
+| `SetHostile("(FG)Raiders", true)` | A command, its arguments checked against its parameters |
+| `flag[objectives_met] = 1` | `{"set": ...}`: a game's variable by its name or its number |
+| `flag[51] += 1` | `select_array`, `push_byte`, `add_assign` |
+| `if flag[50] == 0:` and `else:` | `push_array`, `push_byte`, the comparison (`==`, `!=`, `<`, `<=`, `>`, `>=`), `branch_if_zero` past the block, which ends with a jump past the `else` whether or not one follows |
+| `either:` then `or:` | One block at random, each as likely: a `random_branch` with an arm for each block but the last at even steps of its roll below 100, the last the default, each block jumping past the rest |
+| `call "(F)Won"` | `call_part` |
+| `return 0` | `{"return": 0}` |
+| `yield` | `InterruptTriggerCode`: the routine stops until its trigger fires again |
+
+A quoted name in a command's arguments is a ship or flight group where the parameter takes one of
+that name, else a part where it takes a part, else text. `"Ship".component(2)` is one of a ship's
+components, and `flag[...]` a game's variable. A name both a ship and a flight group bear, where
+either would do, is an error, and every error gives its line, such as `script line 3: SetHostile
+takes 2 arguments, not 1`.
+
 ### Reading a mission as its source
 
 `sltool dte export` cuts the script where a part or a trigger's block starts, and writes each
@@ -689,4 +747,5 @@ ID, `0x02` tests equality and `0x03` inequality, `0x28` pushes a constant, and `
 The byte-offset string pool, the object table and everything about the script beyond the dispatch
 loop are additions. [StarLancerEditor](https://src.ug.gg/mini/starlancereditor), which reads and
 writes missions through YAML, names sections 14 and 15 the ships' formations and their points, which
-the engine's formation code bears out, and its writer lays missions out on the same template.
+the engine's formation code bears out, and its writer lays missions out on the same template. Its
+`.sls` scripts are the model for [the script as rules](#the-script-as-rules).
