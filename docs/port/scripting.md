@@ -450,11 +450,16 @@ context closes, its timers go.
 
 ## Files
 
-[`vfs.zig`](../../src/scripting/vfs.zig) reads files for scripts. `vfs.read` reads through the
-same `bigfile.Hog` as the game's resources, a mod's file first (`runtime.Shared.files`), and
-`vfs.read_mod` reads the calling mod's own file (`Mod.readFile`). Scripts can't write files. Not
-ported: reading the game's loose files
-([#592](https://github.com/OpenReliant/openreliant/issues/592)).
+[`vfs.zig`](../../src/scripting/vfs.zig) reads files for scripts, which can't write files.
+`vfs.read_mod` reads the calling mod's own file (`Mod.readFile`). `vfs.read` looks a name up in three
+places (`vfs.find`):
+
+1. A mod's copy, found by the last part of the name.
+2. The game folder's loose file, found by its whole path in any case (`Mods.readLoose`, with the
+   folder in `runtime.Shared.game`). A folder is not a file.
+3. The member of `resource.hog` (`runtime.Shared.files`).
+
+A loose file is read up to half the mod's memory limit, since a copy goes into the script's string.
 
 ## The console
 

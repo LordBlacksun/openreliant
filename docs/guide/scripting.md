@@ -555,16 +555,20 @@ async.after(30, "reinforce", { wave = 2 })
 
 ## Files
 
-`openreliant.vfs` reads files, which come as strings of their bytes:
+`openreliant.vfs` reads files. A file comes as a string of its bytes.
 
-- `vfs.read(name)` reads a file the way the game reads its resources: the latest mod's copy, else
-  the game's own from `resource.hog`. The name is the file's name, such as `palette.tga`; any
-  folders before it are ignored, as the game ignores them.
+- `vfs.read(name)` reads a file the way the game does. It looks in three places in turn: the latest
+  mod's copy, the game folder's own file, and the game's `resource.hog`.
+  - A mod's file is found by its name alone, so `missions\mission1.dte` finds a mod's
+    `mission1.dte`.
+  - The game folder's file is found by its path from the game folder, in any case, such as
+    `missions\mission1.dte` or `music\theme.wav`. A name without a folder, such as `palette.tga`,
+    is looked up in the game folder itself, then in the archive.
 - `vfs.read_mod(name)` reads a file of the calling mod.
-- Both return nil where there's no such file. `vfs.exists(name)` says whether `vfs.read` would find
-  it.
-- The game's loose files, such as the missions in the `missions` folder, can't be read yet
-  ([#592](https://github.com/OpenReliant/openreliant/issues/592)).
+- Both return nil if there is no such file, or if the name is a folder. `vfs.exists(name)` says
+  whether `vfs.read` would find it.
+- A script can read a loose file of up to half its mod's memory limit (32 MB). A bigger file is an
+  error.
 
 ## The console
 
