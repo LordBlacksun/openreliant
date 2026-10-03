@@ -258,9 +258,42 @@ fonts, used for target ranges and the radio menu, still use their bitmaps
 Mods are loaded in alphabetical order of their names, ignoring case, and a later mod's file replaces
 an earlier mod's file with the same name. Use names such as `10-ships` and `20-music` to set the
 order. Mods take priority over all of the game's files, including loose files, so a mod's
-`mission18.dte` replaces the loose `missions\mission18.dte` in a retail install. A mod manager to
-choose and order mods in the game is planned
-([#497](https://github.com/OpenReliant/openreliant/issues/497)).
+`mission18.dte` replaces the loose `missions\mission18.dte` in a retail install.
+
+### The mods screen
+
+GAME OPTIONS has a MODS button, right of ABOUT OPENRELIANT, which opens the mods screen. It lists the
+mods in the `mods` folder, with what each one's manifest says of it. A check box turns a mod on or
+off, and the arrows beside the list move the chosen mod up or down the load order. The mods load from
+the top down, so a mod replaces the files of the mods above it. REFRESH reads the `mods` folder
+again, to find mods you've added or removed while the screen is open.
+
+- CANCEL CHANGES puts the mods back as they were when you opened the screen.
+- The changes take effect the next time OpenReliant starts. RESTART TO APPLY shows while the screen's
+  list differs from what's loaded.
+
+The screen keeps the order and which mods are off in `starlancer.ini` in the game's folder, in its
+own section, one line for each mod: the mod's name in the `mods` folder, and 1 if it's on or 0 if
+it's off. The lines are in load order:
+
+```ini
+[OpenReliantMods]
+10-ships=1
+coyote=0
+20-music=1
+```
+
+The mods the section doesn't list are on, and load after the listed ones, in the order of their names.
+Only 0 turns a mod off. To go back to loading every mod in the order of its name, delete the section.
+You can also edit it by hand.
+
+- A mod whose name has an equals sign, starts with a bracket or has spaces at either end can't be
+  listed. It stays on and loads with the unlisted mods.
+- The screen lists up to 255 mods, and leaves out the ones that need a newer OpenReliant
+  ([The manifest](#the-manifest)).
+- `--no-mods` loads none, and keeps the screen shut.
+- A screenshot taken with `--screenshot` ignores the section, so that it comes out the same for
+  everyone.
 
 ## Folder mods
 
@@ -349,8 +382,9 @@ mods.
 
 At startup, `openreliant` lists each mod it loads, in order, by its manifest name if it has one,
 followed by what each of its files does: which game file, texture, shape, picture or font it
-replaces, which earlier mod's file it replaces, or which file it adds. When a font is loaded, it
-says which outline font draws it.
+replaces, which earlier mod's file it replaces, or which file it adds. A mod that the mods screen
+has turned off is listed as off, and none of it is used. When a font is loaded, it says which
+outline font draws it.
 
 ```text
 info(mods): music.hog matches music.hog.sha256
@@ -359,6 +393,7 @@ info(mods): coyote replaces USA_Coyote.SHP
 info(mods): mod 2 of 2: music.hog
 info(mods): music.hog replaces New_Pensive.wav
 info(mods): music.hog adds msc_theme.wav
+info(mods): the mod old-ships is off
 info(fonts): optfnt.fnt uses Newtown, with strokes 0.002 em wider
 info(scripts): balance: ran balance.luau
 info(scripts): balance: the Laser Cannon hits shields for 10 and hulls for 10
