@@ -246,6 +246,95 @@ pub fn loadKeyConfig(devices: *input.Devices, settings_file: Profile) void {
         .joystick => loadBinding(binding, settings_file),
         .gamepad => loadPadBinding(binding, settings_file),
     };
+    loadModBindings(devices, settings_file);
+}
+
+/// Mod bindings use qualified names in separate sections, with no original-format changes.
+pub const mod_key_section = "OpenReliantActionKeys";
+pub const mod_joy_section = "OpenReliantActionJoystick";
+pub const mod_pad_section = "OpenReliantActionGamepad";
+
+pub fn loadModBindings(devices: *input.Devices, file: Profile) void {
+    const registry = devices.mod_actions orelse return;
+    for (registry.entries[0..registry.count]) |*entry| {
+        if (entry.owner == null) continue;
+        entry.binding.key = 0;
+        entry.binding.button = null;
+    }
+    for (registry.entries[0..registry.count], 0..) |entry, index| {
+        if (entry.owner != null) loadModBinding(devices, file, index);
+    }
+}
+
+pub fn loadModBinding(devices: *input.Devices, file: Profile, index: usize) void {
+    const entry = &devices.mod_actions.?.entries[index];
+    entry.binding = entry.default;
+    if (devices.joystick.kind == .gamepad) entry.binding.button = entry.gamepad_button;
+    const name = entry.nameOf();
+    if (file.value(mod_key_section, name)) |value| {
+        const buffer = buffered(value);
+        readKey(&entry.binding, &buffer);
+        if (entry.binding.key > std.math.maxInt(u8)) entry.binding.key = 0;
+    } else if (modKeyConflict(devices, index, entry.binding.key, entry.binding.modifier)) entry.binding.key = 0;
+    const section = if (devices.joystick.kind == .gamepad) mod_pad_section else mod_joy_section;
+    if (file.value(section, name)) |value| {
+        const buffer = buffered(value);
+        entry.binding.button = if (isButton(&buffer)) buttonNumber(read(buffer[button_name.len..])) else null;
+    } else if (entry.binding.button) |button| {
+        if (modButtonConflict(devices, index, button)) entry.binding.button = null;
+    }
+    entry.ready = false;
+    entry.held = false;
+}
+
+pub fn modKeyConflict(devices: *const input.Devices, except: usize, key: u16, modifier: Modifier) bool {
+    if (key == 0) return false;
+    return bindingConflict(devices, .{ .custom = except }, .{ .key = .{ .code = key, .modifier = modifier } }) != null;
+}
+
+pub fn modButtonConflict(devices: *const input.Devices, except: usize, button: u8) bool {
+    return bindingConflict(devices, .{ .custom = except }, .{ .button = button }) != null;
+}
+
+pub const BindingAction = union(enum) { original: controls.Action, custom: usize };
+pub const BindingControl = union(enum) {
+    key: struct { code: u16, modifier: Modifier },
+    button: u8,
+
+    fn matches(control: BindingControl, binding: controls.Binding) bool {
+        return switch (control) {
+            .key => |key| binding.key == key.code and binding.modifier == key.modifier,
+            .button => |button| binding.button == button,
+        };
+    }
+};
+
+/// Shared conflict lookup for default assignment and explicit controls-screen rebinding.
+pub fn bindingConflict(devices: *const input.Devices, except: BindingAction, control: BindingControl) ?BindingAction {
+    for (std.enums.values(controls.Action)) |original| {
+        const candidate: BindingAction = .{ .original = original };
+        if (!std.meta.eql(candidate, except) and control.matches(devices.bindings.get(original))) return candidate;
+    }
+    const registry = devices.mod_actions orelse return null;
+    for (registry.entries[0..registry.count], 0..) |entry, index| {
+        const candidate: BindingAction = .{ .custom = index };
+        if (entry.owner != null and !std.meta.eql(candidate, except) and control.matches(entry.binding)) return candidate;
+    }
+    return null;
+}
+
+pub fn saveModBindings(devices: *const input.Devices, file: *profile.File) Allocator.Error!void {
+    const registry = devices.mod_actions orelse return;
+    const section = if (devices.joystick.kind == .gamepad) mod_pad_section else mod_joy_section;
+    for (registry.entries[0..registry.count]) |*entry| {
+        if (entry.owner == null) continue;
+        var buffer: [32]u8 = undefined;
+        var key: std.Io.Writer = .fixed(&buffer);
+        keyValue(&key, entry.binding);
+        try file.write(mod_key_section, entry.nameOf(), key.buffered());
+        var button_buffer: [32]u8 = undefined;
+        try file.write(section, entry.nameOf(), buttonValue(&button_buffer, entry.binding.button));
+    }
 }
 
 /// An action's binding as `load_key_config` reads it: its `KeyConfig` value, a key or a button, then
@@ -319,6 +408,7 @@ pub fn deadZone(settings_file: Profile) u16 {
 /// **Fix:** for a key held with Alt, the game writes the address of the key's name, which loads as
 /// another key; OpenReliant writes the key's scan code, as it does with the other modifiers.
 pub fn saveKeyConfig(devices: *const input.Devices, settings_file: *profile.File) Allocator.Error!void {
+    try saveModBindings(devices, settings_file);
     const held = devices.settings;
     for (std.enums.values(Setting)) |setting| try saveSetting(held, settings_file, setting);
     try settings_file.writeInt(joy_section, "DeadZone", held.dead_zone / dead_zone_unit);
@@ -484,6 +574,35 @@ test saveKeyConfig {
         try std.testing.expectEqual(kept.modifier, loaded.modifier);
         try std.testing.expectEqual(kept.button, loaded.button);
     }
+}
+
+test "mod defaults do not steal controls and bindings persist by qualified name" {
+    const gpa = std.testing.allocator;
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    var registry: input.actions.Registry = .{};
+    var owner: u8 = 0;
+    const binding: controls.Binding = .{ .name = "", .string = 0, .key = @intFromEnum(input.Key.k), .modifier = .none, .button = 0 };
+    const a = try registry.add(&owner, "a:pulse", "Pulse", binding);
+    var shifted = binding;
+    shifted.modifier = .shift;
+    shifted.button = null;
+    const b = try registry.add(&owner, "b:pulse", "Other pulse", shifted);
+    var devices: input.Devices = .{ .mod_actions = &registry };
+    loadKeyConfig(&devices, .empty);
+    try std.testing.expectEqual(0, registry.entries[a].binding.key);
+    try std.testing.expectEqual(null, registry.entries[a].binding.button);
+    try std.testing.expectEqual(binding.key, registry.entries[b].binding.key);
+    registry.entries[a].binding = shifted;
+    registry.entries[a].binding.key = @intFromEnum(input.Key.f12);
+    var file: profile.File = .{ .arena = arena.allocator(), .profile = .empty };
+    try saveModBindings(&devices, &file);
+    loadModBindings(&devices, file.profile);
+    try std.testing.expectEqual(@intFromEnum(input.Key.f12), registry.entries[a].binding.key);
+    try std.testing.expectEqual(Modifier.shift, registry.entries[a].binding.modifier);
+    devices.joystick.kind = .gamepad;
+    loadModBindings(&devices, file.profile);
+    try std.testing.expectEqual(null, registry.entries[a].binding.button);
 }
 
 test "a gamepad keeps its own buttons" {

@@ -267,8 +267,9 @@ const taken_modifiers = [_]Modifier{ .none, .shift, .control };
 /// A row waiting for a key or a button: its action, and its binding as the wait began, which a
 /// wait ended with nothing taken puts back.
 const Waiting = struct {
-    action: Action,
+    action: RowAction,
     old: Binding,
+    generation: u64 = 0,
 };
 
 /// What a waiting row has taken that another action holds: a key of `controls.keys`, by its place
@@ -282,9 +283,62 @@ const Taken = union(enum) {
 /// `0x0042C1D4`, `0x0042C42B`): its words are put together as it is drawn (`question`).
 const Conflict = struct {
     taken: Taken,
-    holder: Action,
+    holder: RowAction,
+    generation: u64 = 0,
     question: dialog.Confirm = .{ .message = .{ .words = "" } },
 };
+
+/// The screen uses one binding path for original actions and registry entries.
+const RowAction = union(enum) {
+    original: Action,
+    custom: usize,
+
+    fn binding(action: RowAction, devices: *const input.Devices) *const Binding {
+        return switch (action) {
+            .original => |original| devices.bindings.getPtrConst(original),
+            .custom => |index| &devices.mod_actions.?.entries[index].binding,
+        };
+    }
+
+    fn mutable(action: RowAction, devices: *input.Devices) *Binding {
+        return switch (action) {
+            .original => |original| devices.bindings.getPtr(original),
+            .custom => |index| &devices.mod_actions.?.entries[index].binding,
+        };
+    }
+
+    fn label(action: RowAction, devices: *const input.Devices, strings: *const language.Language) []const u8 {
+        return switch (action) {
+            .original => strings.string(action.binding(devices).string) orelse "",
+            .custom => |index| devices.mod_actions.?.entries[index].labelOf(),
+        };
+    }
+
+    fn generation(action: RowAction, devices: *const input.Devices) u64 {
+        return switch (action) {
+            .original => 0,
+            .custom => |index| if (devices.mod_actions.?.entries[index].owner != null) devices.mod_actions.?.entries[index].generation else 0,
+        };
+    }
+};
+
+fn actionAt(devices: *const input.Devices, row: usize) ?RowAction {
+    if (row < controls.list.len) return .{ .original = controls.list[row] orelse return null };
+    const registry = devices.mod_actions orelse return null;
+    if (row == controls.list.len) return null;
+    return .{ .custom = registry.liveIndex(row - controls.list.len - 1) orelse return null };
+}
+
+fn conflictAt(devices: *const input.Devices, except: RowAction, control: interface.BindingControl) ?RowAction {
+    const excluded: interface.BindingAction = switch (except) {
+        .original => |original| .{ .original = original },
+        .custom => |index| .{ .custom = index },
+    };
+    return switch (interface.bindingConflict(devices, excluded, control) orelse return null) {
+        .original => |original| .{ .original = original },
+        .custom => |index| .{ .custom = index },
+    };
+}
 
 /// The tab's state, which the game keeps in globals and on `controls_screen`'s stack.
 pub const Controls = struct {
@@ -304,6 +358,8 @@ pub const Controls = struct {
     button_down: ?u8 = null,
     /// The arrow under the pointer, lit (`0x0051DA04`).
     arrow: ?Arrow = null,
+    kept_mod: [input.actions.max_actions]?Binding = @splat(null),
+    kept_generations: [input.actions.max_actions]u64 = @splat(0),
 
     /// `controls_screen`'s start (`0x0042BA75` on): the bindings read again from `starlancer.ini`,
     /// kept for CANCEL CHANGES, and the list at its top.
@@ -314,6 +370,13 @@ pub const Controls = struct {
             .kept = .{ .settings = devices.settings, .bindings = devices.bindings },
             .list = .of(controls.list.len, rows, context.ticks),
         };
+        if (devices.mod_actions) |registry| {
+            tab.list.rows.count = registry.rowCount();
+            for (registry.entries[0..registry.count], 0..) |entry, index| {
+                tab.kept_mod[index] = entry.binding;
+                tab.kept_generations[index] = entry.generation;
+            }
+        }
     }
 
     /// Whether the conflict's question or a button taken holds the frame: the question answered,
@@ -322,17 +385,18 @@ pub const Controls = struct {
     /// taken holds the screen until it comes up.
     pub fn busy(tab: *Controls, context: Context, escaped: bool) bool {
         const devices = context.devices;
+        tab.refresh(devices);
         if (tab.conflict) |*asking| {
             const answer = asking.question.frame(context.pointer, escaped) orelse return true;
             const conflict = asking.*;
             tab.conflict = null;
             const waiting = tab.waiting orelse return true;
-            const binding = devices.bindings.getPtr(waiting.action);
+            const binding = waiting.action.mutable(devices);
             if (!answer) {
                 binding.* = waiting.old;
                 return true;
             }
-            const holder = devices.bindings.getPtr(conflict.holder);
+            const holder = conflict.holder.mutable(devices);
             switch (conflict.taken) {
                 .key => |key| {
                     binding.key = controls.keys[key.index].code;
@@ -375,6 +439,7 @@ pub const Controls = struct {
     /// leaves the waiting row waiting; a controller that can be chosen steers, and is written.
     pub fn choose(tab: *Controls, item: Item, context: Context) Allocator.Error!bool {
         const devices = context.devices;
+        tab.refresh(devices);
         const settings_file = context.settings_file;
         switch (item) {
             .check => |check| if (check.usable(devices)) {
@@ -387,9 +452,9 @@ pub const Controls = struct {
             },
             .row => |row| {
                 tab.restore(devices);
-                const action = controls.list[tab.list.rows.first + row] orelse return false;
-                const binding = devices.bindings.getPtr(action);
-                tab.waiting = .{ .action = action, .old = binding.* };
+                const action = actionAt(devices, tab.list.rows.first + row) orelse return false;
+                const binding = action.mutable(devices);
+                tab.waiting = .{ .action = action, .old = binding.*, .generation = action.generation(devices) };
                 binding.key = 0;
                 binding.button = null;
                 binding.modifier = .none;
@@ -420,8 +485,9 @@ pub const Controls = struct {
     /// The waiting row's old binding back, where it has taken nothing: no key, button or modifier
     /// (`0x0042BD3C`).
     fn restore(tab: *Controls, devices: *input.Devices) void {
+        tab.refresh(devices);
         const waiting = tab.waiting orelse return;
-        const binding = devices.bindings.getPtr(waiting.action);
+        const binding = waiting.action.mutable(devices);
         if (binding.key == 0 and binding.button == null and binding.modifier == .none) binding.* = waiting.old;
     }
 
@@ -438,14 +504,15 @@ pub const Controls = struct {
     /// **Fix:** a key taken without a question counts as a change, which Escape asks about, as a
     /// button and a key taken from another action do.
     pub fn wait(tab: *Controls, context: Context) void {
+        tab.refresh(context.devices);
         const waiting = tab.waiting orelse return;
         const devices = context.devices;
-        const binding = devices.bindings.getPtr(waiting.action);
+        const binding = waiting.action.mutable(devices);
         keys: for (controls.keys, 0..) |key, index| {
             for (taken_modifiers) |modifier| {
                 if (!devices.keyboard.pressed(key.code, modifier, true)) continue;
-                if (interface.bindingFind(&devices.bindings, waiting.action, key.code, modifier)) |holder| {
-                    tab.conflict = .{ .taken = .{ .key = .{ .index = @intCast(index), .modifier = modifier } }, .holder = holder };
+                if (conflictAt(devices, waiting.action, .{ .key = .{ .code = key.code, .modifier = modifier } })) |holder| {
+                    tab.conflict = .{ .taken = .{ .key = .{ .index = @intCast(index), .modifier = modifier } }, .holder = holder, .generation = holder.generation(devices) };
                     return;
                 }
                 binding.key = key.code;
@@ -460,9 +527,8 @@ pub const Controls = struct {
             if (joystick.down(@intCast(number))) break @intCast(number);
         } else return;
         tab.button_down = button;
-        for (std.enums.values(Action)) |action| {
-            if (action == waiting.action or devices.bindings.get(action).button != button) continue;
-            tab.conflict = .{ .taken = .{ .button = button }, .holder = action };
+        if (conflictAt(devices, waiting.action, .{ .button = button })) |holder| {
+            tab.conflict = .{ .taken = .{ .button = button }, .holder = holder, .generation = holder.generation(devices) };
             return;
         }
         binding.button = button;
@@ -473,12 +539,35 @@ pub const Controls = struct {
     pub fn cancel(tab: *Controls, devices: *input.Devices) void {
         devices.settings = tab.kept.settings;
         devices.bindings = tab.kept.bindings;
+        if (devices.mod_actions) |registry| for (registry.entries[0..registry.count], 0..) |*entry, index| {
+            if (entry.owner != null and entry.generation == tab.kept_generations[index]) {
+                if (tab.kept_mod[index]) |binding| entry.binding = binding;
+            }
+        };
         tab.changed = false;
+    }
+
+    /// A reload can remove actions while the tab is open. Cancel a stale wait before using it.
+    fn refresh(tab: *Controls, devices: *const input.Devices) void {
+        if (devices.mod_actions) |registry| {
+            tab.list.rows.count = registry.rowCount();
+            tab.list.rows.first = @min(tab.list.rows.first, tab.list.rows.count -| tab.list.rows.shown);
+            if (tab.conflict) |conflict| {
+                if (conflict.holder.generation(devices) != conflict.generation) tab.conflict = null;
+            }
+            if (tab.waiting) |waiting| {
+                if (waiting.action.generation(devices) != waiting.generation) {
+                    tab.waiting = null;
+                    tab.conflict = null;
+                }
+            }
+        }
     }
 
     /// RESET DEFAULTS (`0x0042BE6A`): the defaults, written at once.
     pub fn reset(_: *Controls, devices: *input.Devices, settings_file: *profile.File) Allocator.Error!void {
         interface.keyConfigDefaults(devices);
+        interface.loadModBindings(devices, .empty);
         try interface.saveKeyConfig(devices, settings_file);
     }
 
@@ -495,6 +584,7 @@ pub const Controls = struct {
     /// screen is left from any tab, so that a visit to another wrote the defaults of the controller
     /// attached, or of none, as though they had been chosen.
     pub fn save(_: *Controls, devices: *const input.Devices, settings_file: *profile.File) Allocator.Error!void {
+        try interface.saveModBindings(devices, settings_file);
         var filed: input.Devices = .{ .joystick = devices.joystick };
         interface.loadKeyConfig(&filed, settings_file.profile);
         if (std.meta.eql(filed.settings, devices.settings) and std.meta.eql(filed.bindings, devices.bindings)) return;
@@ -505,7 +595,9 @@ pub const Controls = struct {
     /// the check boxes' labels, each dimmed where it can't be used, the list's rows, the boxes,
     /// the arrows, the one under the pointer lit, the ticks, and the conflict's question where it
     /// is up.
-    pub fn draw(tab: Controls, canvas: Canvas, art: *hud.Art, dialog_art: *hud.Art, devices: *const input.Devices) canvas_module.Error!void {
+    pub fn draw(given: Controls, canvas: Canvas, art: *hud.Art, dialog_art: *hud.Art, devices: *const input.Devices) canvas_module.Error!void {
+        var tab = given;
+        tab.refresh(devices);
         const small = canvas.fonts.small;
         const blue = canvas_module.blue;
         for (panes) |pane| pane.draw(canvas);
@@ -540,7 +632,7 @@ pub const Controls = struct {
         const small = canvas.fonts.small;
         for (tab.list.rows.first..tab.list.rows.end(), 0..) |entry, row| {
             const y = first_row_y + @as(i32, @intCast(row)) * row_height;
-            const action = controls.list[entry] orelse {
+            const action = actionAt(devices, entry) orelse {
                 // Its two lines stand 6 and 7 below where a row's text starts.
                 const line_y = y + 7;
                 for (divider_spans) |span| {
@@ -549,10 +641,17 @@ pub const Controls = struct {
                 }
                 continue;
             };
-            const waiting = if (tab.waiting) |waits| waits.action == action else false;
+            const waiting = if (tab.waiting) |waits| std.meta.eql(waits.action, action) else false;
             const colour = if (waiting) canvas_module.white else canvas_module.blue;
-            const binding = devices.bindings.get(action);
-            try canvas.string(small, .{ name_x, y }, binding.string, colour, .left);
+            const binding = action.binding(devices).*;
+            switch (action) {
+                .original => try canvas.string(small, .{ name_x, y }, binding.string, colour, .left),
+                .custom => {
+                    var label_buffer: [input.actions.label_size]u8 = undefined;
+                    const label = language.encode(&label_buffer, action.label(devices, canvas.strings));
+                    try canvas.text(small, .{ name_x, y }, label, colour, .left);
+                },
+            }
             var buffer: [96]u8 = undefined;
             const shown = bindingText(&buffer, binding, canvas.strings, &devices.key_names);
             if (shown.len != 0) {
@@ -637,7 +736,7 @@ fn question(buffer: []u8, conflict: Conflict, strings: *const language.Language,
         },
         .button => |button| writer.print("\"{s} {d}\"", .{ strings.string(joy_string) orelse "", button }) catch {},
     }
-    const holder = strings.string(devices.bindings.get(conflict.holder).string) orelse "";
+    const holder = conflict.holder.label(devices, strings);
     writer.print("\n{s} {s}\n{s}", .{ strings.string(assigned_string) orelse "", holder, strings.string(anyway_string) orelse "" }) catch {};
     return writer.buffered();
 }
@@ -690,7 +789,7 @@ test "a row waits for a key, and a click on nothing ends the wait" {
     // The first row is COCKPIT CAMERA's: a click clears its binding and waits.
     try std.testing.expectEqual(Item{ .row = 0 }, Controls.itemAt(.{ 100, 143 }).?);
     _ = try fixture.tab.choose(.{ .row = 0 }, fixture.context(.{}));
-    try std.testing.expectEqual(.cockpit_camera, fixture.tab.waiting.?.action);
+    try std.testing.expectEqual(.cockpit_camera, fixture.tab.waiting.?.action.original);
     try std.testing.expectEqual(0, devices.bindings.get(.cockpit_camera).key);
     // A click on nothing with nothing taken puts the old binding back.
     fixture.tab.endWait(devices);
@@ -705,13 +804,69 @@ test "a row waits for a key, and a click on nothing ends the wait" {
     try std.testing.expectEqual(k, devices.bindings.get(.cockpit_camera).key);
     try std.testing.expectEqual(Modifier.shift, devices.bindings.get(.cockpit_camera).modifier);
     try std.testing.expect(fixture.tab.changed and fixture.tab.conflict == null);
-    try std.testing.expectEqual(.cockpit_camera, fixture.tab.waiting.?.action);
+    try std.testing.expectEqual(.cockpit_camera, fixture.tab.waiting.?.action.original);
     // Pressed again, the row's own key asks nothing (a fix).
     fixture.press(k, .shift);
     try std.testing.expectEqual(null, fixture.tab.conflict);
     // A click on nothing ends the wait, keeping what was taken.
     fixture.tab.endWait(devices);
     try std.testing.expectEqual(k, devices.bindings.get(.cockpit_camera).key);
+}
+
+test "a mod row rebinds through original conflicts and cancel restores its binding" {
+    var fixture: Fixture = .init();
+    defer fixture.deinit();
+    var registry: input.actions.Registry = .{};
+    var owner: u8 = 0;
+    const index = try registry.add(&owner, "a:pulse", "Pulse", .{ .name = "", .string = 0, .key = 0, .modifier = .none, .button = null });
+    fixture.devices.mod_actions = &registry;
+    fixture.enter();
+    fixture.tab.list.rows.first = fixture.tab.list.rows.count - rows;
+    _ = try fixture.tab.choose(.{ .row = rows - 1 }, fixture.context(.{}));
+    try std.testing.expectEqual(index, fixture.tab.waiting.?.action.custom);
+    fixture.press(@intFromEnum(input.Key.k), .none);
+    try std.testing.expectEqual(.cloak_ship, fixture.tab.conflict.?.holder.original);
+    _ = fixture.tab.busy(fixture.context(.{ .at = .{ 295, 275 }, .down = true }), false);
+    _ = fixture.tab.busy(fixture.context(.{ .at = .{ 295, 275 } }), false);
+    try std.testing.expectEqual(@intFromEnum(input.Key.k), registry.entries[index].binding.key);
+    try std.testing.expectEqual(0, fixture.devices.bindings.get(.cloak_ship).key);
+    fixture.press(@intFromEnum(input.Key.k), .shift);
+    try std.testing.expectEqual(Modifier.shift, registry.entries[index].binding.modifier);
+    try fixture.tab.save(&fixture.devices, &fixture.file);
+    try std.testing.expect(fixture.file.profile.value(interface.mod_key_section, "a:pulse") != null);
+    fixture.tab.cancel(&fixture.devices);
+    try std.testing.expectEqual(0, registry.entries[index].binding.key);
+    try fixture.tab.reset(&fixture.devices, &fixture.file);
+    try std.testing.expectEqual(0, registry.entries[index].binding.key);
+    registry.removeOwner(&owner);
+    fixture.tab.refresh(&fixture.devices);
+    try std.testing.expectEqual(controls.list.len, fixture.tab.list.rows.count);
+}
+
+test "reused mod action slots cannot receive stale conflicts or cancelled bindings" {
+    var fixture: Fixture = .init();
+    defer fixture.deinit();
+    var registry: input.actions.Registry = .{};
+    var owner: u8 = 0;
+    const empty: Binding = .{ .name = "", .string = 0, .key = 0, .modifier = .none, .button = null };
+    const index = try registry.add(&owner, "a:old", "Old", empty);
+    fixture.devices.mod_actions = &registry;
+    fixture.enter();
+    fixture.tab.waiting = .{ .action = .{ .original = .cockpit_camera }, .old = fixture.devices.bindings.get(.cockpit_camera) };
+    fixture.tab.conflict = .{ .holder = .{ .custom = index }, .generation = registry.entries[index].generation, .taken = .{ .button = 3 } };
+    registry.removeOwner(&owner);
+    var replacement = empty;
+    replacement.key = @intFromEnum(input.Key.f12);
+    try std.testing.expectEqual(index, try registry.add(&owner, "a:new", "New", replacement));
+    fixture.tab.refresh(&fixture.devices);
+    try std.testing.expectEqual(null, fixture.tab.conflict);
+    fixture.tab.cancel(&fixture.devices);
+    try std.testing.expectEqual(replacement.key, registry.entries[index].binding.key);
+    fixture.tab.waiting = .{ .action = .{ .custom = index }, .old = replacement, .generation = registry.entries[index].generation };
+    registry.removeOwner(&owner);
+    _ = try registry.add(&owner, "a:new", "New again", empty);
+    fixture.tab.refresh(&fixture.devices);
+    try std.testing.expectEqual(null, fixture.tab.waiting);
 }
 
 test "a key another action holds asks, and YES takes it from that action" {
@@ -723,7 +878,7 @@ test "a key another action holds asks, and YES takes it from that action" {
     const k = @intFromEnum(input.Key.k);
     fixture.press(k, .none);
     const conflict = fixture.tab.conflict.?;
-    try std.testing.expectEqual(.cloak_ship, conflict.holder);
+    try std.testing.expectEqual(.cloak_ship, conflict.holder.original);
     // Its words: the key, whose action holds it, and the question.
     const strings: language.Language = .{ .strings = &.{} };
     var buffer: [128]u8 = undefined;
@@ -770,7 +925,7 @@ test "a joystick button is taken once, and held, holds the screen" {
     // FIRE LASERS' button 0 asks first.
     devices.joystick.state.buttons[0] = input.JoystickState.pressed;
     fixture.tab.wait(fixture.context(.{}));
-    try std.testing.expectEqual(.fire_lasers, fixture.tab.conflict.?.holder);
+    try std.testing.expectEqual(.fire_lasers, fixture.tab.conflict.?.holder.original);
 }
 
 test "the check boxes and the controllers" {
