@@ -37,7 +37,7 @@ fn allObjects(call: Call) handles.List {
     var list: handles.List = .{};
     var walk = held.objects.walk();
     while (walk.next()) |index| {
-        if (inMission(held.objects, index)) list.append(index);
+        if (inMission(held.objects, index)) list.append(.of(index));
     }
     return list;
 }
@@ -45,4 +45,11 @@ fn allObjects(call: Call) handles.List {
 /// Whether the object in slot `index` is in the mission: not a stand-in for an empty slot.
 pub fn inMission(all: *const create.Objects, index: u16) bool {
     return all.slots[index].object.type != .stand_in;
+}
+
+/// The object in slot `index`, as the game names one by its slot, where that's one of the slots
+/// and its object is in the mission; null otherwise.
+pub fn objectIn(all: *const create.Objects, index: u16) ?Object {
+    if (index >= all.slots.len or !inMission(all, index)) return null;
+    return .of(index);
 }
