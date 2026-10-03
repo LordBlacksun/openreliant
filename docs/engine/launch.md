@@ -1,14 +1,18 @@
 # Launches
 
-A ship leaves the ship it launches from, its carrier, under order 104, Launch (`launch.cpp`):
-`order_launch_init` (`0x00418EB0`) readies it, and `order_launch` (`0x004191C0`) runs it an update
-at a time. The carrier's type picks how the launch goes, its style. OpenReliant runs five styles:
-the Reliant, the torpedoes, the hangar bays, the Stork and the Zakov.
+A ship leaves its carrier under order 104, Launch (`launch.cpp`). `order_launch_init`
+(`0x00418EB0`) prepares the launch, and `order_launch` (`0x004191C0`) updates it. Torpedoes and
+escape pods select their own styles; other ships use the carrier's type and gate. OpenReliant
+runs all ten styles.
 [`launch.zig`](../../src/engine/game/launch.zig) holds the order, and
 [`launch/reliant.zig`](../../src/engine/game/launch/reliant.zig),
 [`launch/torpedo.zig`](../../src/engine/game/launch/torpedo.zig),
 [`launch/bay.zig`](../../src/engine/game/launch/bay.zig),
-[`launch/stork.zig`](../../src/engine/game/launch/stork.zig) and
+[`launch/badanov.zig`](../../src/engine/game/launch/badanov.zig),
+[`launch/escape_pod.zig`](../../src/engine/game/launch/escape_pod.zig),
+[`launch/rogue_base.zig`](../../src/engine/game/launch/rogue_base.zig),
+[`launch/stork.zig`](../../src/engine/game/launch/stork.zig),
+[`launch/yamato.zig`](../../src/engine/game/launch/yamato.zig) and
 [`launch/zakov.zig`](../../src/engine/game/launch/zakov.zig) hold the styles.
 
 ## How a launch is given
@@ -49,14 +53,14 @@ then runs again with the push of its argument before it.
    | Style | Of | Routines |
    |---|---|---|
    | 0 | A ship from the Victorious, the Endeavour, the Mitchell (`0x13`, `0xA0`), the Bremen, the Ramases (`0x34`, `0x9C`), the Pukov, the Kronstadt, the Krasnaya, the Varyag or the Kiev, and from the rogue base's seventh gate on | `launch_bay_init` (`0x0041A610`), `launch_bay_run` (`0x0041A9C0`) |
-   | 1 | A ship from the Yamato | `0x004192C0`, `0x00419840` |
-   | 2 | A ship from the Badanov or the Krasny | `0x00419F60`, `0x0041A100` |
+   | 1 | A ship from the Yamato | `launch_yamato_init` (`0x004192C0`), `launch_yamato_run` (`0x00419840`) |
+   | 2 | A ship from the Badanov or the Krasny | `launch_badanov_init` (`0x00419F60`), `launch_badanov_run` (`0x0041A100`) |
    | 3 | A torpedo (`0x4A`, `0x5C`), from anything | `launch_torpedo_init` (`0x0041A360`), `launch_torpedo_run` (`0x0041A390`) |
-   | 4 | An escape pod (`0x4D`) | `launch_point_init` (`0x0041A4B0`), `0x0041A4D0` |
+   | 4 | An escape pod (`0x4D`) | `launch_point_init` (`0x0041A4B0`), `launch_pod_run` (`0x0041A4D0`) |
    | 5 | A ship from the Stork | `launch_point_init` (`0x0041A4B0`), `launch_stork_run` (`0x0041AD10`) |
    | 6 | A ship from the Reliant | `launch_reliant_init` (`0x0041AE20`), `launch_reliant_run` (`0x0041B240`) |
-   | 7 | The other escape pod (`0x90`) | `launch_point_init` (`0x0041A4B0`), `0x0041B690` |
-   | 8 | A ship from the rogue base's first six gates | `0x0041B770`, `0x0041B7F0` |
+   | 7 | The other escape pod (`0x90`) | `launch_point_init` (`0x0041A4B0`), `launch_pod_other_run` (`0x0041B690`) |
+   | 8 | A ship from the rogue base's first six gates | `launch_rogue_init` (`0x0041B770`), `launch_rogue_run` (`0x0041B7F0`) |
    | 9 | A ship from the Zakov | `0x0041B8B0`, `0x0041B940` |
 
    The table of the styles' routines is at `0x004E3C98`, 24 bytes a style. From any other carrier,
@@ -166,6 +170,65 @@ flown, its language string one of a table of the dates of missions 1 to 28 (`0x0
 foot of the screen, 50 from the left and 30 up, a letter more each time 8 of the game's ticks have
 passed, with a cursor after it until the whole date shows ([Display](hud.md#the-launchs-date)).
 
+## The Yamato's launch
+
+`launch_yamato_init` (`0x004192C0`) clears the ship's steering and throttle and places it in
+child `gate + 3` of the carrier's root child list. It stands at the minimum X of that part's
+last drawn level bounds for gates below 8, maximum X otherwise, centred on Y and Z. Its
+orientation is a quarter turn about Y, positive for gates below 8 and negative otherwise,
+multiplied by the bay's world orientation. It rides the carrier's root. The bay mesh shows,
+and its two doors, children `gate * 2 + 31` and `gate * 2 + 32`, enable portal clipping.
+
+For the player, the carrier becomes `player_carrier`. A separate hangar (`yam_tube.shp`, type `0xD4`) is
+created in the cutaway slot, with no collisions. Its first three parts exclude every
+backdrop light but the first ambient (mask `0x3B`). Its front edge is aligned with the bay's
+maximum X, centred on Y and Z, and turned as the player's ship. The camera is locked in the
+cockpit, and the scene shows the launch cutaway. The player still rides the carrier's root.
+
+`launch_yamato_run` (`0x00419840`) waits strictly past the due tick at every step:
+
+| Step | What happens | Ticks to the next |
+|---|---|---|
+| 2 | The ship lets go and uses `motion_plain`. For the player, the four door vents emit steam for 200 ticks, and the shake is 0.1 | 100 |
+| 3 | For the player, the hangar's two doors play `opendoor` at speed 4, with sound `0x35` at door 1. The engine starts sounding, and the shake is 0.2 | 300 |
+| 4 | The throttle becomes 2. The carrier's two doors play `opendoor` at speed 4. For the player, sound `0x36` plays at the first door, and the shake is 0.3 | 50 |
+| 5 | For the player, the mission date starts, the hangar goes and the full scene shows. One of three cutaways is picked with the C runtime's `rand`; the ahead and aside views start at once | 150 |
+| 6 | The ship flies on. The beside cutaway starts during the last 50 ticks of this step | 300 |
+| 7 | The bay mesh hides and the doors disable portal clipping. Throttle and steering clear, `motion_forward` resumes, and the launch ends with the ship no longer passing through its carrier. For the player, the date stops and a launch camera returns to the chosen cockpit mode, unlocked | |
+
+The camera views (`camera_set_view`, `camera_frame`):
+
+- Beside (15): 1500 to the right and 500 ahead of the player, rising from 600 above to 300
+  below at 0.0013 of that distance per tick. The interpolation is not clamped. It watches the
+  player past step 5's due tick plus 150, or from step 6 onward; before then it looks along
+  the player's orientation.
+- Ahead (16): 40000 ahead and 600 above the player at the switch, with a pitch of 0.33 and a
+  half turn about Y. It stays still.
+- Aside (17): 800 left, 200 below and 5000 ahead of the player at the switch. It stays there
+  and watches the player fly out.
+
+`launches_init` (`0x00418A70`) creates six steam emitters. Their template (`0x0051D108`) has
+a particle life of 50 ticks plus up to 9, size through 20, 70 and 100, grey colour through
+1, 0.75 and 0, and a constant rate of 50 hundredths per tick. The particles leave at speed
+10 plus up to 3. The two hull vents point inward along X; the four door vents point inward
+and back. They stream in array order while the player's step is below 6, including the
+wait for StartLaunch. The two hull vents burst for 20 to 99 ticks and pause for 20 to 119
+ticks, with their first burst due up to 99 ticks after the hangar is created. Every choice
+uses the original's C runtime random calls. `launches_free` (`0x00418D80`) frees them in the
+original; OpenReliant keeps them as mission-local values in the player's state.
+
+**Improvement:** the steam's additive colour is scaled to 35% of the original brightness,
+which reduces saturated white patches and bloom glare. Its size, life, rate, timing and
+motion stay the same. `--launch-steam original` restores the original brightness without
+changing other graphics settings; `--original` also selects it. `--launch-steam soft`
+selects the improvement, which is the default.
+
+**Fix:** a model missing a bay or door is handled without reading past its child list.
+
+The original also places a camera marker at step 5. None of these three views reads it.
+OpenReliant uses its hardware-renderer position: 1000 outside the bay's X edge, 1000 above
+its minimum Y and at minimum Z. The software renderer places it 2000 beyond maximum Z.
+
 ## The torpedoes
 
 A torpedo's launch (`launch_torpedo_init`) places it at the launch point of its carrier its gate
@@ -207,6 +270,64 @@ the order's state.
 **Fix:** when the carrier's model lacks a door part, the game reads past the end of its root's
 child list. OpenReliant skips that door.
 
+## The Badanov and the Krasny
+
+A ship launching from the Badanov or Krasny (`launch_badanov_init`, `0x00419F60`) rides bay
+part 4 in the carrier's root child list. It waits at one of ten positions: gates 0 to 4 on
+one side, 5 to 9 on the other. Its position uses the bounds of the part's last drawn level.
+With `size` as the bounds' extent and `middle` as their midpoint, its local coordinates are:
+
+- X: `middle.x` plus half of `size.y` (gates 0 to 4) or minus it (5 to 9),
+- Y: `middle.y` plus a fifth of `size.y`,
+- Z: `middle.z + (gate - 2) * size.z / 5` for gates 0 to 4, or
+  `middle.z + (gate - 7) * size.z / 5` for gates 5 to 9.
+
+It starts with the part's orientation, turns a quarter turn about Y (positive for gates
+below 5, negative otherwise), then tilts its nose down by 0.37699112 radians about X.
+**Improvement:** OpenReliant uses an exact quarter turn in this style and the Yamato's,
+instead of the original's rounded angle.
+
+From step 2 (`launch_badanov_run`, `0x0041A100`):
+
+| Step | What happens | Ticks to the next |
+|---|---|---|
+| 2 | Doors 1 and 2 play `opendoor` from time zero, once, at speed 4. Sound `0x35` plays at door 1. If that door is already playing a track at nonzero speed, both doors are left unchanged | 200 plus 0 to 99, from `object_random15` |
+| 3 | The ship releases and uses `motion_plain` at throttle 2, starting with its carrier's velocity. Its yaw input is `(gate remainder 5 - 2.5) * 0.2`, negated for gates below 5. The remainder is signed, as in the original | 300 |
+| 4 | Throttle and steering clear, and `motion_forward` resumes. The carrier pass-through entry clears, the order pops, targeting returns and the Launched event is posted | |
+
+**Fix:** if the model lacks the bay or its level, OpenReliant leaves the ship in place,
+riding the carrier's root. The original dereferences the missing part.
+
+## The escape pods
+
+Both escape pods use `launch_point_init` (`0x0041A4B0`) to wait at the launch point selected
+by their gate, riding the part that holds it. The Stork uses the same init routine. The two
+pods have different launch steps, but both keep their carrier pass-through entry afterward.
+
+The first pod (type `0x4D`, `launch_pod_run`, `0x0041A4D0`):
+
+| Step | What happens | Ticks to the next |
+|---|---|---|
+| 2 | The pod releases and uses `motion_plain` at throttle `2 + rand / RAND_MAX * 0.5`. Yaw is `(gate - 3) / 12` for gates below 7, or `(gate - 7) / 16` otherwise. Sound `0x33` plays at the pod | 200 |
+| 3 | Throttle clears and `motion_forward` resumes. Yaw stays unchanged. The order pops, targeting returns and the Launched event is posted | |
+
+The other pod (type `0x90`, `launch_pod_other_run`, `0x0041B690`):
+
+| Step | What happens | Ticks to the next |
+|---|---|---|
+| 2 | The sound `0x33` plays at the pod | none: step 3 runs at the next update |
+| 3 | The pod releases and uses `motion_plain` at throttle 2 | 200 |
+| 4 | Throttle and yaw clear, and `motion_forward` resumes. The order pops, targeting returns and the Launched event is posted | |
+
+## The rogue base
+
+A ship using one of the rogue base's first six gates (`launch_rogue_init`, `0x0041B770`)
+waits 500 behind its launch point along its forward axis, riding the part that holds the
+point. Later gates use the [bay style](#hangar-bays). At step 2 (`launch_rogue_run`,
+`0x0041B7F0`), the ship releases with `motion_downward` at throttle -2. After 100 ticks,
+throttle and yaw clear, and `motion_forward` resumes. The carrier pass-through entry clears,
+the order pops, targeting returns and the Launched event is posted.
+
 ## The Stork
 
 A ship launching from the Stork is placed at the launch point of its gate (`launch_point_init`,
@@ -233,14 +354,14 @@ passes through the Zakov.
 
 ## In OpenReliant
 
-OpenReliant keeps the node a ship rides as its object and its part (`create.Slot.riding`), where
-the game keeps the node's address.
+OpenReliant stores a riding node as an object slot and optional part index
+(`create.Slot.riding`). The original stores the node's address.
 
-**Fix:** a carrier no ship launches from, which the game stops for, is taken as one whose style is
-not ported. A Launch aimed at nothing, whose carrier the game reads through the word before its
-objects (`0x00587CDC`), lets the ship go at once: the game's assertion "Launch Crash Imminent"
-(`0x004191E6`) compares the sign-extended index with 0xFFFF and never fires. A style that names no node, and a
-Reliant whose model lacks a tube's door, leave the ship where it stands.
+**Fix:** a launch from an unsupported carrier logs a warning, waits for StartLaunch and then lets
+the ship go where it stands. A Launch without a target releases the ship immediately. The
+original reads its carrier through the word before the object table (`0x00587CDC`): its
+"Launch Crash Imminent" assertion (`0x004191E6`) compares a sign-extended index with 0xFFFF
+and never fires. A missing riding node or Reliant tube door leaves the ship in place.
 
 **Improvement:** OpenReliant's shadows leave out a mesh that keeps the sun out by its light mask, so
 the hangar's walls cast none over the ship, which shows lit within them as in the original
@@ -262,10 +383,6 @@ normal reach and throws nothing back.
 
 Not ported:
 
-- The other styles ([#304](https://github.com/OpenReliant/openreliant/issues/304)). A ship that
-  launches in one rides its carrier's root while it waits, as every launching ship does, and is let
-  go where it stands as its style's steps would begin, passing through its carrier no more, its
-  Launched event posted as the style's end would post it.
 - The Kamov's LAUNCH MISSILE, which starts its torpedoes' launches
   ([#305](https://github.com/OpenReliant/openreliant/issues/305)), and a multiplayer game's
   ([#55](https://github.com/OpenReliant/openreliant/issues/55)).
