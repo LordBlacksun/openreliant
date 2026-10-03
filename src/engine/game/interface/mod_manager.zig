@@ -10,13 +10,14 @@
 //! (`settings.shapes_name`): a framed list with the lists' arrows, a second frame beside it, and the
 //! buttons of the settings screen. OK and MAIN MENU leave. REFRESH, where RESET DEFAULTS stands on the
 //! settings screen, reads the `mods` folder again, to find the mods added or removed since OpenReliant
-//! started. CANCEL CHANGES puts the mods back as they were when the screen opened.
+//! started. CANCEL CHANGES puts the mods back as they were when the screen opened. OPTIONS, in the
+//! panel, opens the page of options the chosen mod's scripts offer, where it has one
+//! (`mod_options`).
 //!
 //! **Improvement:** the original can't load mods.
 //!
 //! Not ported: a mod's thumbnail and its conflicts
-//! ([#497](https://github.com/OpenReliant/openreliant/issues/497)), and a page of options for a mod's
-//! scripts ([#597](https://github.com/OpenReliant/openreliant/issues/597)).
+//! ([#497](https://github.com/OpenReliant/openreliant/issues/497)).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -34,6 +35,7 @@ const Label = canvas_module.Label;
 const Arrow = canvas_module.Arrow;
 const settings = @import("settings.zig");
 const widgets = settings.widgets;
+const mod_options = @import("mod_options.zig");
 
 const Mod = bigfile.mods.Mod;
 const Order = bigfile.mods.Order;
@@ -136,6 +138,14 @@ const Button = enum {
     }
 };
 
+/// OPTIONS, in the panel's foot: a button of the settings screen's shapes, 25 by 16, its label right
+/// of it as the right column's buttons have theirs, and found 100 by 15 as they are.
+const button_height = 16;
+const options_button_at: [2]i32 = .{ details_frame.at[0] + details_inside, details_frame.at[1] + frame_height - details_inside - button_height };
+const options_button: canvas_module.Button = .{ .at = options_button_at, .label = .{ .text = .{ .words = "OPTIONS" }, .at = .{ options_button_at[0] + options_label_from, options_button_at[1] - 1 } } };
+const options_label_from = 33;
+const options_rect: Rect = .{ .x = @intCast(options_button_at[0]), .y = @intCast(options_button_at[1]), .width = 100, .height = 15 };
+
 /// A mod in the list and whether it is on.
 const Row = struct {
     mod: *const Mod,
@@ -156,6 +166,7 @@ const Row = struct {
 /// What the pointer finds on the screen.
 pub const Item = union(enum) {
     button: Button,
+    options,
     /// An arrow that moves the chosen mod up or down the order.
     move: Arrow,
     scroll: Arrow,
@@ -176,6 +187,14 @@ pub const Context = struct {
     source: Source,
 };
 
+/// How the screen ends.
+pub const Leave = union(enum) {
+    /// OK, MAIN MENU or Escape.
+    end: settings.End,
+    /// OPTIONS: on to the options of the mod of this name.
+    options: []const u8,
+};
+
 /// The mods, and where to find them again.
 pub const Source = struct {
     /// The mods OpenReliant started with.
@@ -186,6 +205,8 @@ pub const Source = struct {
     io: Io,
     game: Io.Dir,
     version: ?std.SemanticVersion,
+    /// The pages of options the mods' scripts offer.
+    pages: mod_options.Pages,
 };
 
 /// The screen's state.
@@ -205,6 +226,9 @@ pub const ModManager = struct {
     /// Whether the press that chose an item is still down, which chooses nothing more until it
     /// comes up.
     held: bool = false,
+    /// Whether the chosen mod's scripts offer a page of options, which OPTIONS opens; kept up to date
+    /// as each pass begins.
+    has_options: bool = false,
     /// The mods REFRESH opened, which the rows are of from then on, until the screen is left
     /// (`release`).
     scanned: ?struct { gpa: Allocator, mods: bigfile.Mods } = null,
@@ -217,6 +241,7 @@ pub const ModManager = struct {
         screen.kept = screen.rows;
         screen.list = .of(screen.count, shown_rows, context.ticks);
         if (screen.count > 0) screen.chosen = 0;
+        screen.has_options = screen.optionsOf(context.source) != null;
     }
 
     /// Frees what REFRESH opened, as the screen is left.
@@ -276,7 +301,7 @@ pub const ModManager = struct {
 
     /// A pass of the screen's loop: how it ends, once it does. What it can't write to the settings
     /// file is logged.
-    pub fn frame(screen: *ModManager, context: Context) ?settings.End {
+    pub fn frame(screen: *ModManager, context: Context) ?Leave {
         return screen.pass(context) catch |err| {
             log.warn("the mods are not kept: {s}", .{@errorName(err)});
             return null;
@@ -286,12 +311,13 @@ pub const ModManager = struct {
     /// Escape ends the screen, as OK does: the changes are kept as they are made. The wheel and the
     /// keys scroll the list, then the item under the pointer is chosen as the pointer's button goes
     /// down, and lit while it is up.
-    fn pass(screen: *ModManager, context: Context) Allocator.Error!?settings.End {
-        if (context.keyboard.pressed(input.scan.escape, .none, true)) return .back;
+    fn pass(screen: *ModManager, context: Context) Allocator.Error!?Leave {
+        if (context.keyboard.pressed(input.scan.escape, .none, true)) return .{ .end = .back };
         var pointer = context.pointer;
         if (pointer.down and screen.held) pointer.down = false else screen.held = false;
         screen.lit = null;
         screen.list.scrollBy(pointer.wheel, context.keyboard, context.ticks);
+        screen.has_options = screen.optionsOf(context.source) != null;
         const under = screen.itemAt(pointer.at) orelse return null;
         if (!pointer.down) {
             screen.lit = under;
@@ -300,11 +326,12 @@ pub const ModManager = struct {
         screen.held = true;
         switch (under) {
             .button => |button| switch (button) {
-                .ok => return .back,
-                .leave => return .main_menu,
+                .ok => return .{ .end = .back },
+                .leave => return .{ .end = .main_menu },
                 .refresh => try screen.refresh(context),
                 .cancel_changes => try screen.cancel(context),
             },
+            .options => if (screen.optionsOf(context.source)) |mod| return .{ .options = mod },
             .move => |way| try screen.move(way, context),
             .scroll => |way| {
                 screen.list.scrollHeld(way, context.ticks);
@@ -319,6 +346,7 @@ pub const ModManager = struct {
     /// What the pointer finds at `at`: the buttons, then the list's arrows, then the rows shown.
     pub fn itemAt(screen: ModManager, at: [2]i32) ?Item {
         for (std.enums.values(Button)) |button| if (button.rect().holds(at)) return .{ .button = button };
+        if (screen.has_options and options_rect.holds(at)) return .options;
         if (arrows.itemAt(at)) |arrow| return .{ .scroll = arrow };
         if (movers.itemAt(at)) |arrow| return .{ .move = arrow };
         for (screen.list.rows.first..screen.list.rows.end(), 0..) |row, place| {
@@ -326,6 +354,13 @@ pub const ModManager = struct {
             if (nameRect(place).holds(at)) return .{ .choose = @intCast(row) };
         }
         return null;
+    }
+
+    /// The name of the chosen mod, if its scripts offer a page of options.
+    fn optionsOf(screen: ModManager, source: Source) ?[]const u8 {
+        const row = screen.chosen orelse return null;
+        const name = screen.rows[row].mod.name;
+        return if (source.pages.page(name) != null) name else null;
     }
 
     /// Turns the row's mod on or off, where the settings file can keep that.
@@ -392,6 +427,7 @@ pub const ModManager = struct {
         details_frame.draw(canvas);
         try screen.drawList(canvas, art);
         try screen.drawDetails(canvas);
+        if (screen.has_options) try options_button.draw(canvas, art, settings.button_shapes, std.meta.eql(screen.lit, Item.options));
         for (std.enums.values(Button)) |button| {
             try button.shown().draw(canvas, art, settings.button_shapes, std.meta.eql(screen.lit, Item{ .button = button }));
         }
@@ -422,7 +458,7 @@ pub const ModManager = struct {
         return switch (screen.lit orelse return null) {
             .scroll => |arrow| if (pair == .scroll) arrow else null,
             .move => |arrow| if (pair == .move) arrow else null,
-            .button, .check, .choose => null,
+            .button, .options, .check, .choose => null,
         };
     }
 
@@ -481,17 +517,12 @@ fn nameRect(place: usize) Rect {
     return .{ .x = @intCast(box.at[0] + name_gap - 2), .y = @intCast(box.at[1]), .width = name_width + 4, .height = widgets.Box.size };
 }
 
-/// The middle of `rect`, where a click on it lands.
-fn centre(rect: Rect) [2]i32 {
-    return .{ rect.x + @divTrunc(rect.width, 2), rect.y + @divTrunc(rect.height, 2) };
-}
-
 fn boxCentre(place: usize) [2]i32 {
-    return centre(checkBox(place).rect());
+    return checkBox(place).rect().centre();
 }
 
 fn nameCentre(place: usize) [2]i32 {
-    return centre(nameRect(place));
+    return nameRect(place).centre();
 }
 
 /// What the tests stand a screen in with: three folder mods in a `mods` folder, and a settings file.
@@ -502,6 +533,8 @@ const Fixture = struct {
     file: profile.File,
     keyboard: input.Keyboard = .{},
     screen: ModManager = .{},
+    /// The options of the mod `beta`.
+    options: mod_options.Recorder,
 
     fn init(fixture: *Fixture, text: []const u8) !void {
         const gpa = std.testing.allocator;
@@ -524,6 +557,7 @@ const Fixture = struct {
         fixture.file = .{ .arena = fixture.arena.allocator(), .profile = .{ .text = text } };
         fixture.mods = try .openOrdered(gpa, io, fixture.tmp.dir, null, .{ .profile = fixture.file.profile });
         fixture.keyboard = .{};
+        fixture.options = .{ .mod = "beta", .page = .{ .title = "BETA", .options = &mod_options.test_options } };
         fixture.screen = .{};
         fixture.screen.enter(fixture.context(.{}));
     }
@@ -542,11 +576,12 @@ const Fixture = struct {
             .io = std.testing.io,
             .game = fixture.tmp.dir,
             .version = null,
+            .pages = fixture.options.pages(),
         } };
     }
 
     /// A click at `at`: the pointer there with its button up, then down.
-    fn click(fixture: *Fixture, at: [2]i32) ?settings.End {
+    fn click(fixture: *Fixture, at: [2]i32) ?Leave {
         _ = fixture.screen.frame(fixture.context(.{ .at = at }));
         return fixture.screen.frame(fixture.context(.{ .at = at, .down = true }));
     }
@@ -602,7 +637,7 @@ test "a name chooses the mod, and the lower arrows set the order" {
     _ = fixture.click(nameCentre(2));
     try std.testing.expectEqual(2, fixture.screen.chosen.?);
     // The up arrow takes gamma past beta, the down arrow back; the first can't go up, nor the last down.
-    _ = fixture.click(centre(movers.rect(.up)));
+    _ = fixture.click(movers.rect(.up).centre());
     try std.testing.expectEqualDeep(&[_][]const u8{ "alpha", "gamma", "beta" }, fixture.names(&buffer));
     try std.testing.expectEqual(1, fixture.screen.chosen.?);
     try std.testing.expect(fixture.screen.waits());
@@ -610,13 +645,13 @@ test "a name chooses the mod, and the lower arrows set the order" {
     try std.testing.expectEqual(1, order.position("gamma"));
     try std.testing.expectEqual(2, order.position("beta"));
     // The down arrow puts it back, as far as the list goes.
-    _ = fixture.click(centre(movers.rect(.down)));
+    _ = fixture.click(movers.rect(.down).centre());
     try std.testing.expectEqualDeep(&[_][]const u8{ "alpha", "beta", "gamma" }, fixture.names(&buffer));
     try std.testing.expect(!fixture.screen.waits());
-    _ = fixture.click(centre(movers.rect(.down)));
+    _ = fixture.click(movers.rect(.down).centre());
     try std.testing.expectEqual(2, fixture.screen.chosen.?);
     fixture.screen.chosen = 0;
-    _ = fixture.click(centre(movers.rect(.up)));
+    _ = fixture.click(movers.rect(.up).centre());
     try std.testing.expectEqualDeep(&[_][]const u8{ "alpha", "beta", "gamma" }, fixture.names(&buffer));
 }
 
@@ -629,15 +664,15 @@ test "CANCEL CHANGES puts the mods back as the screen opened them" {
     // A change, then CANCEL CHANGES: the screen as it opened, and the file says so.
     _ = fixture.click(boxCentre(0));
     try std.testing.expect(!fixture.screen.rows[0].on);
-    _ = fixture.click(centre(Button.cancel_changes.rect()));
+    _ = fixture.click(Button.cancel_changes.rect().centre());
     try std.testing.expect(fixture.screen.rows[0].on);
     try std.testing.expectEqualStrings("1", fixture.file.profile.value("OpenReliantMods", "gamma").?);
     try std.testing.expectEqualStrings("0", fixture.file.profile.value("OpenReliantMods", "beta").?);
     // A move, then CANCEL CHANGES, with the moved mod still chosen where it goes back to.
     fixture.screen.chosen = 2;
-    _ = fixture.click(centre(movers.rect(.up)));
+    _ = fixture.click(movers.rect(.up).centre());
     try std.testing.expectEqualDeep(&[_][]const u8{ "gamma", "alpha", "beta" }, fixture.names(&buffer));
-    _ = fixture.click(centre(Button.cancel_changes.rect()));
+    _ = fixture.click(Button.cancel_changes.rect().centre());
     try std.testing.expectEqualDeep(&[_][]const u8{ "gamma", "beta", "alpha" }, fixture.names(&buffer));
     try std.testing.expectEqual(2, fixture.screen.chosen.?);
 }
@@ -654,7 +689,7 @@ test "REFRESH reads the mods folder again" {
     try fixture.tmp.dir.deleteTree(io, "mods/alpha");
     var buffer: [capacity][]const u8 = undefined;
     try std.testing.expectEqualDeep(&[_][]const u8{ "alpha", "beta", "gamma" }, fixture.names(&buffer));
-    try std.testing.expectEqual(null, fixture.click(centre(Button.refresh.rect())));
+    try std.testing.expectEqual(null, fixture.click(Button.refresh.rect().centre()));
     // The list has the new mod, after the ones the file lists, and not the removed one; beta is
     // still off and still chosen.
     try std.testing.expectEqualDeep(&[_][]const u8{ "beta", "gamma", "delta" }, fixture.names(&buffer));
@@ -668,11 +703,26 @@ test "REFRESH reads the mods folder again" {
     // puts back the mods as they stood at the last refresh.
     _ = fixture.click(boxCentre(0));
     try std.testing.expect(fixture.screen.rows[0].on);
-    _ = fixture.click(centre(Button.refresh.rect()));
+    _ = fixture.click(Button.refresh.rect().centre());
     try std.testing.expect(fixture.screen.rows[0].on);
     _ = fixture.click(boxCentre(0));
-    _ = fixture.click(centre(Button.cancel_changes.rect()));
+    _ = fixture.click(Button.cancel_changes.rect().centre());
     try std.testing.expect(fixture.screen.rows[0].on);
+}
+
+test "OPTIONS opens the page of the mod that has one" {
+    var fixture: Fixture = undefined;
+    try fixture.init("");
+    defer fixture.deinit();
+    // Alpha is chosen and offers nothing: the panel has no button.
+    try std.testing.expectEqual(null, fixture.screen.itemAt(options_rect.centre()));
+    try std.testing.expectEqual(null, fixture.click(options_rect.centre()));
+    // Beta offers a page.
+    _ = fixture.click(nameCentre(1));
+    _ = fixture.screen.frame(fixture.context(.{}));
+    try std.testing.expectEqual(Item.options, fixture.screen.itemAt(options_rect.centre()).?);
+    const left = fixture.click(options_rect.centre()).?;
+    try std.testing.expectEqualStrings("beta", left.options);
 }
 
 test "the list scrolls, and OK, MAIN MENU and Escape end the screen" {
@@ -683,13 +733,13 @@ test "the list scrolls, and OK, MAIN MENU and Escape end the screen" {
     _ = fixture.screen.frame(fixture.context(.{ .wheel = -1 }));
     try std.testing.expectEqual(0, fixture.screen.list.rows.first);
     try std.testing.expectEqual(null, fixture.screen.itemAt(.{ 500, 300 }));
-    try std.testing.expectEqual(Item{ .scroll = .down }, fixture.screen.itemAt(centre(arrows.rect(.down))).?);
-    try std.testing.expectEqual(Item{ .move = .up }, fixture.screen.itemAt(centre(movers.rect(.up))).?);
-    try std.testing.expectEqual(Item{ .move = .down }, fixture.screen.itemAt(centre(movers.rect(.down))).?);
-    try std.testing.expectEqual(settings.End.back, fixture.click(centre(Button.ok.rect())).?);
-    try std.testing.expectEqual(settings.End.main_menu, fixture.click(centre(Button.leave.rect())).?);
+    try std.testing.expectEqual(Item{ .scroll = .down }, fixture.screen.itemAt(arrows.rect(.down).centre()).?);
+    try std.testing.expectEqual(Item{ .move = .up }, fixture.screen.itemAt(movers.rect(.up).centre()).?);
+    try std.testing.expectEqual(Item{ .move = .down }, fixture.screen.itemAt(movers.rect(.down).centre()).?);
+    try std.testing.expectEqual(Leave{ .end = .back }, fixture.click(Button.ok.rect().centre()).?);
+    try std.testing.expectEqual(Leave{ .end = .main_menu }, fixture.click(Button.leave.rect().centre()).?);
     fixture.keyboard.down[input.scan.escape] = true;
-    try std.testing.expectEqual(settings.End.back, fixture.screen.frame(fixture.context(.{})).?);
+    try std.testing.expectEqual(Leave{ .end = .back }, fixture.screen.frame(fixture.context(.{})).?);
 }
 
 test "a mod the settings file can't keep stays on and in place" {
