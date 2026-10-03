@@ -51,6 +51,7 @@ const api = @import("api.zig");
 const Call = api.Call;
 const running = @import("running.zig");
 const interfaces = @import("interfaces.zig");
+const world = @import("world.zig");
 
 /// Limits for game scripts: 100 milliseconds per call, since they run as the game plays, and
 /// 64 MiB per mod.
@@ -307,6 +308,17 @@ pub const Game = struct {
         for (game.runtime.mods, 0..) |*mod, at| {
             var listed = missionScripts(mod, mission.file) orelse continue;
             game.startMissionScripts(@intCast(at), &listed) catch |err| log.warn("{s}: the scripts of {s} can't start: {s}", .{ mod.name, mission.file, @errorName(err) });
+        }
+    }
+
+    /// Starts the scripts of a mission that runs already, as the scripts are reloaded partway
+    /// through it: the mission's scripts, and the scripts manifests attach to each object in it,
+    /// as its start would have them (`begin`), but without `on_mission_start` or
+    /// `on_object_added`.
+    pub fn resumeMission(game: *Game, orders: aigeneric.Context, mission: engine_hooks.Mission, seed: u64) void {
+        begin(game, orders, mission, seed);
+        for (0..game.objects.slots.len) |index| {
+            if (world.inMission(game.objects, @intCast(index))) game.objectAdded(@intCast(index));
         }
     }
 
@@ -648,6 +660,35 @@ test "the engine calls the scripts' handlers, and a mission's scripts run with i
     // As the mission ends, its script stops.
     scripts.ended(.{ .ending = .destroyed, .rating = .failure });
     try std.testing.expectEqual(200, fixture.scaled(fixture.sabre, 2));
+}
+
+test "scripts reloaded partway through a mission start on its objects, without its start" {
+    var fixture: Fixture = undefined;
+    try fixture.init(&.{
+        .{
+            "a",
+            &.{
+                .{ "mod.ini", "[Scripts]\nFighter=wing.luau\n[Missions]\nMISSION5.dte=mission.luau\n" },
+                .{
+                    "wing.luau",
+                    \\local self = require("openreliant.self")
+                    \\self:hook("damage_by_difficulty", function(e) e.value *= 0.5 end)
+                },
+                .{
+                    "mission.luau",
+                    \\local factor = 3
+                    \\require("openreliant.hooks").add("damage_by_difficulty", function(e) e.value *= factor end)
+                    \\return { engine_handlers = { on_mission_start = function() factor = 100 end } }
+                },
+            },
+        },
+    });
+    defer fixture.deinit();
+    // The Sabre is in the mission already: its script starts on it, and the mission's script
+    // starts without hearing the mission start.
+    fixture.game.resumeMission(fixture.mission.orders(), .{ .number = 5, .file = "mission5.dte" }, 1);
+    try std.testing.expectEqual(1, fixture.game.onObject(fixture.sabre).items.len);
+    try std.testing.expectEqual(3, fixture.scaled(fixture.sabre, 2));
 }
 
 test "object scripts run on the objects their manifest names, each with its own globals" {

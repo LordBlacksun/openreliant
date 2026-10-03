@@ -140,6 +140,15 @@ pub const Presentation = struct {
         shown.gpa.destroy(shown);
     }
 
+    /// Reads the folder mods' scripts again, and starts the menu scripts again, with `on_init`, as
+    /// the console's `reload` does. The player scripts start again with the game's
+    /// (`startGame`).
+    pub fn reload(shown: *Presentation) Allocator.Error!void {
+        shown.runner.stopAll(shown.lists.getPtr(.menu));
+        try shown.runtime.recompileFolders();
+        try shown.startScripts(.menu, false);
+    }
+
     /// The presentation side whose script makes `call`. Raises an error from a game script.
     pub fn of(call: Call, comptime label: []const u8) *Presentation {
         return call.runtime().presentation orelse call.raise("{s} can only be used by player and menu scripts", .{label});
@@ -360,6 +369,24 @@ test "menu scripts draw over the menus, and hear keys and the window" {
     try std.testing.expectEqual(1024, layer.commands.items[2].line.to.screen[0]);
 }
 
+test "menu scripts reload from their files, and start again" {
+    var fixture: Fixture = undefined;
+    try fixture.init(&.{.{ "a", &.{
+        .{ "mod.ini", "[Scripts]\nMenu=menu.luau\n" },
+        .{ "menu.luau", "local frames = 0\nreturn { engine_handlers = { on_frame = function() frames += 1; require('openreliant.ui').text(vector.zero, 'old ' .. frames) end } }" },
+    } }});
+    defer fixture.deinit();
+    const layer = fixture.shown.layers.getPtr(.ui);
+    fixture.frame(0.016, .{ 800, 600 });
+    fixture.frame(0.016, .{ 800, 600 });
+    try std.testing.expectEqualStrings("old 2", layer.text.items);
+    // The file saved again, the menu script starts again with the new code.
+    try fixture.tmp.dir.writeFile(std.testing.io, .{ .sub_path = "mods/a/menu.luau", .data = "local frames = 0\nreturn { engine_handlers = { on_frame = function() frames += 1; require('openreliant.ui').text(vector.zero, 'new ' .. frames) end } }" });
+    try fixture.shown.reload();
+    fixture.frame(0.016, .{ 800, 600 });
+    try std.testing.expectEqualStrings("new 1", layer.text.items);
+}
+
 test "player scripts run with the game, and send it events" {
     var fixture: Fixture = undefined;
     try fixture.init(&.{.{
@@ -478,15 +505,17 @@ test "the wingmen example's panel lists the wingmen nearby, and calls them back"
     fixture.shown.key(.f9, true);
     fixture.shown.frame(host);
     try std.testing.expectEqual(0, layer.commands.items.len);
-    // With the wingman out of the fight, F11 calls it back to the formation at the game's next
-    // update.
+    // With the wingman out of the fight, Shift+F9 calls it back to the formation at the game's
+    // next update.
     const slot = &fixture.mission.objects.slots[wingman];
     slot.object.armor = .all(1);
     slot.object.last_attacker = .of(0);
     game.scripts.update(0.1);
     try std.testing.expectEqual(.run_away, slot.current().?.order);
     game.scripts.update(0.1);
-    fixture.shown.key(.f11, true);
+    fixture.shown.key(.f9, false);
+    fixture.devices.keyboard.down[@intFromEnum(input.Key.left_shift)] = true;
+    fixture.shown.key(.f9, true);
     fixture.shown.frame(host);
     game.scripts.update(0.1);
     game.scripts.update(0.1);
