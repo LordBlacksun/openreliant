@@ -188,11 +188,23 @@ pub const Own = struct {
             smooth_motion: bool = true,
             /// Whether the interface's text is drawn from outline fonts.
             outline_fonts: bool = true,
+            /// Whether the mods' post effects are drawn. The presets leave it alone, since a mod's
+            /// effects are part of the mod, like its textures.
+            mod_effects: bool = true,
 
-            /// The preset they are, where they are one.
+            /// The preset these options match, if any, ignoring `mod_effects`.
             pub fn preset(chosen: Chosen) ?Preset {
-                for (std.enums.values(Preset)) |each| if (std.meta.eql(chosen, each.chosen())) return each;
+                var compared = chosen;
+                compared.mod_effects = true;
+                for (std.enums.values(Preset)) |each| if (std.meta.eql(compared, each.chosen())) return each;
                 return null;
+            }
+
+            /// The options of `wanted`, keeping `chosen`'s `mod_effects`.
+            pub fn withPreset(chosen: Chosen, wanted: Preset) Chosen {
+                var applied = wanted.chosen();
+                applied.mod_effects = chosen.mod_effects;
+                return applied;
             }
         };
 
