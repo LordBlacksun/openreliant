@@ -24,7 +24,8 @@ pub const Step = enum(i32) {
 /// How long the ship flies out, in ticks (`0x0041ADF4`).
 const out_ticks = 400;
 
-/// How long step 4 is set to wait (`0x0041ADD3`). It doesn't wait: it runs at the next update.
+/// The wait step 3 sets for step 4 (`0x0041ADD3`). Step 4 doesn't check it, so it runs at the next
+/// update.
 const deploy_ticks = 200;
 
 /// The throttle the ship flies out at (`0x0041ADDD`).
@@ -32,7 +33,7 @@ const out_throttle: f32 = 2;
 
 /// The track every part of the ship plays as it opens out (`0x004E1690`), from its start, once, at
 /// `deploy_speed` (`0x0041AD49`).
-const deploy_track = "deploy";
+const deploy_track = objects.deploy_track;
 const deploy_speed: f32 = 4;
 
 /// `launch_stork_run` (`0x0041AD10`): the launch of the ship in slot `index` from step 2 on.
@@ -123,6 +124,6 @@ test run {
     aigeneric.objectOrders(ctx, satellite);
     for (slot.model.?.parts) |part| try std.testing.expectEqual(deploy_speed, part.animation.speed);
     try std.testing.expectEqual(.forward, slot.motion.?);
-    try std.testing.expect(slot.current() == null or slot.current().?.order != .launch);
+    try std.testing.expect(launch.testing.ended(slot));
     try std.testing.expectEqual(null, slot.riding);
 }
